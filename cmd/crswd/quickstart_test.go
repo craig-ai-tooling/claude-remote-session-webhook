@@ -1463,9 +1463,15 @@ func TestQuickstartStory3Isolation(t *testing.T) {
 	// what they look like on the wire: the same request twice. That refusal is
 	// correct, and it is not what this test is asking about. Distinct timestamps
 	// make them distinct requests without weakening a single assertion.
+	//
+	// The ages count back from one reading of the clock, not a fresh one per
+	// probe. Read per probe, a second boundary between two of them makes now-2
+	// and (now+1)-3 the same timestamp, and the collision comes back whenever
+	// the clock happens to tick.
 	unknown := strings.Repeat("0", 32)
+	probedAt := time.Now().Unix()
 	probe := func(method, path, body, bearer string, age int) response {
-		return d.do(d.request(method, path, body, bearer, time.Now().Unix()-int64(age)))
+		return d.do(d.request(method, path, body, bearer, probedAt-int64(age)))
 	}
 	cases := map[string]response{
 		"an unknown id":            probe(http.MethodGet, "/sessions/"+unknown, "", a.Token, 1),
@@ -1492,8 +1498,10 @@ func TestQuickstartStory3Isolation(t *testing.T) {
 		t.Errorf("session b is gone after being probed through a's credential")
 	}
 
-	// Verified teardown.
-	resp := d.call(http.MethodDelete, "/sessions/"+a.ID, "", a.Token)
+	// Verified teardown. Signed at a timestamp held for the second DELETE below
+	// to count back from, rather than at whatever the clock reads by then.
+	destroyedAt := time.Now().Unix()
+	resp := d.do(d.request(http.MethodDelete, "/sessions/"+a.ID, "", a.Token, destroyedAt))
 	if resp.Status != http.StatusOK {
 		t.Fatalf("DELETE /sessions/%s = %d, want 200: %s", a.ID, resp.Status, resp.Body)
 	}
@@ -1507,8 +1515,11 @@ func TestQuickstartStory3Isolation(t *testing.T) {
 	// A second DELETE is the identical 404, not an idempotent 200. Signed a
 	// second earlier so that it is a new request rather than a byte-for-byte
 	// repeat of the one that just succeeded, which the replay cache would refuse
-	// before the handler could answer.
-	again := d.do(d.request(http.MethodDelete, "/sessions/"+a.ID, "", a.Token, time.Now().Unix()-1))
+	// before the handler could answer. A second before destroyedAt, not before
+	// now: the teardown takes long enough that the clock often ticks over during
+	// it, and now-1 then lands exactly on destroyedAt — the refused repeat,
+	// a 401, in about one run in ten.
+	again := d.do(d.request(http.MethodDelete, "/sessions/"+a.ID, "", a.Token, destroyedAt-1))
 	if again.Status != http.StatusNotFound {
 		t.Errorf("a second DELETE = %d, want 404: %s", again.Status, again.Body)
 	}
