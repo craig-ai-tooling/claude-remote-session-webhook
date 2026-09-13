@@ -225,13 +225,74 @@ func newHost(t *testing.T) *host {
 			return
 		}
 		for _, entry := range entries {
-			out, err := h.tmuxOn(filepath.Join(socketDir, entry.Name()), "kill-server")
+			socket := filepath.Join(socketDir, entry.Name())
+			// Read before the server goes, while there is still a server to ask.
+			pids := h.panePIDs(socket)
+			out, err := h.tmuxOn(socket, "kill-server")
 			if err != nil && !strings.Contains(out, "no server running") && !strings.Contains(out, "No such file") {
 				t.Logf("cleanup kill-server on %s: %v: %s", entry.Name(), err, out)
 			}
+			awaitExit(t, pids)
 		}
 	})
 	return h
+}
+
+// panePIDs is the process each pane on one server runs: the login shell tmux
+// started the session in. A socket with no server behind it has none, which is
+// the ordinary case for a daemon that never created a session, not an error.
+func (h *host) panePIDs(socket string) []int {
+	out, err := h.tmuxOn(socket, "list-panes", "-a", "-F", "#{pane_pid}")
+	if err != nil {
+		return nil
+	}
+	var pids []int
+	for _, field := range strings.Fields(out) {
+		if pid, err := strconv.Atoi(field); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// awaitExit holds cleanup until every pane process has finished exiting.
+// kill-server only signals the panes and returns, and each pane is an
+// interactive bash, which writes $HOME/.bash_history on its way out. Without
+// the wait, t.TempDir's RemoveAll — the next cleanup to run — could empty
+// h.home and then find .bash_history back in it before the final rmdir:
+// "TempDir RemoveAll cleanup: ... directory not empty", a few runs in a
+// hundred. Waiting removes the race; pre-creating or redirecting the file only
+// moves the instant the write can land.
+func awaitExit(t *testing.T, pids []int) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for _, pid := range pids {
+		for !exited(pid) {
+			if time.Now().After(deadline) {
+				t.Errorf("cleanup: pane process %d is still running 10s after kill-server", pid)
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+// exited reports whether pid has finished. A zombie counts: its exit-time writes
+// are done, and how promptly it is reaped depends on whatever the runner has for
+// an init, which is not what cleanup is waiting on.
+func exited(pid int) bool {
+	if err := syscall.Kill(pid, 0); err != nil {
+		return true
+	}
+	stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return false
+	}
+	// The state follows the command name, which is parenthesised and may itself
+	// hold spaces or parentheses, so it is read after the last ')'.
+	fields := strings.Fields(string(stat[bytes.LastIndexByte(stat, ')')+1:]))
+	return len(fields) > 0 && fields[0] == "Z"
 }
 
 // assertIsolated proves the daemon's environment lands on this run's socket and
