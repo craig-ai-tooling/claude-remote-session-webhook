@@ -1558,6 +1558,93 @@
 })();
 
 /*
+ * The header's weekly-quota bar (spec 016): GET /dashboard/quota, on load and
+ * every 60 seconds, on the same fetch options the auth pill's poll uses one
+ * block up. Simpler than that one on purpose — there is no dialog to open, no
+ * transition to watch for, and the route costs this daemon a stat and a small
+ * file rather than a subprocess, so there is nothing here worth pausing on a
+ * hidden tab to save.
+ */
+(() => {
+  'use strict';
+
+  const meter = document.querySelector('[data-quota-meter]');
+  const label = document.querySelector('[data-quota-label]');
+  if (!meter || !label) {
+    return;
+  }
+
+  const QUOTA_POLL_MS = 60000;
+
+  // Rendered as whole minutes under an hour, whole hours after: an operator
+  // reading "as of 3h ago" does not need to know it was 187 minutes, only
+  // roughly how stale the number beside it is.
+  const ageText = (iso) => {
+    if (typeof iso !== 'string' || !iso) {
+      return '';
+    }
+    const then = new Date(iso);
+    if (Number.isNaN(then.getTime())) {
+      return '';
+    }
+    const minutes = Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+    return minutes < 60 ? minutes + 'm ago' : Math.round(minutes / 60) + 'h ago';
+  };
+
+  // The reset time converted to the viewer's own locale and zone — never the
+  // host's, which is UTC, and never the operator's, who may be reading this
+  // from a phone in a different one than the one this daemon runs in.
+  const resetText = (iso) => {
+    if (typeof iso !== 'string' || !iso) {
+      return '';
+    }
+    const resets = new Date(iso);
+    if (Number.isNaN(resets.getTime())) {
+      return '';
+    }
+    return resets.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  };
+
+  const paintUnknown = () => {
+    meter.hidden = true;
+    label.classList.add('quota-label-unknown');
+    label.textContent = 'weekly quota: unknown';
+  };
+
+  const paintOk = (said) => {
+    meter.value = said.percentUsed;
+    meter.hidden = false;
+    label.classList.remove('quota-label-unknown');
+
+    let text = 'Weekly quota ' + said.percentUsed + '% used';
+    const resets = resetText(said.resetsAt);
+    if (resets) {
+      text += ' · resets ' + resets;
+    }
+    if (said.stale) {
+      const age = ageText(said.refreshedAt);
+      text += age ? ' · as of ' + age : ' · stale';
+    }
+    label.textContent = text;
+  };
+
+  const askQuota = () =>
+    fetch('/dashboard/quota', { credentials: 'same-origin', cache: 'no-store' })
+      .then((answer) => (answer.ok ? answer.json() : null))
+      .then((said) => {
+        if (said && said.state === 'ok' && typeof said.percentUsed === 'number') {
+          paintOk(said);
+        } else {
+          paintUnknown();
+        }
+      })
+      .catch(paintUnknown);
+
+  askQuota();
+  window.setInterval(askQuota, QUOTA_POLL_MS);
+})();
+
+/*
  * The working-directory picker's theme (T010, contracts/themed-combobox.md),
  * and FR-045's sentence, which now lives inside it.
  *

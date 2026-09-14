@@ -3363,6 +3363,43 @@ func TestHeaderRendersTheSignInDialog(t *testing.T) {
 	}
 }
 
+// TestHeaderRendersTheQuotaBarPlaceholder is spec 016: a <meter> and a text
+// label sit below the masthead bar on every page, and this render — which has
+// asked GET /dashboard/quota nothing yet — says so rather than guessing at a
+// number. The meter ships hidden and the label carries the unknown tone,
+// exactly the shape the auth pill starts in, so a page with no script never
+// shows a bar that looks like a real reading of 0% used.
+//
+// TestHeaderHasExactlyTwoAnchors, unmodified, is what proves this addition
+// carries no third link: the bar is a <meter> and a <p>, and both fail that
+// sweep's premise on their own if either ever became an <a>.
+//
+// **Must fail when** the meter is missing, is not hidden, carries a
+// non-zero starting value that could be mistaken for a reading, or the label
+// does not say "checking".
+func TestHeaderRendersTheQuotaBarPlaceholder(t *testing.T) {
+	t.Parallel()
+
+	masthead := mastheadOf(t, "the header component", renderedHeader(t))
+
+	if !strings.Contains(masthead, `<meter class="quota-meter"`) {
+		t.Fatalf("the header renders no quota meter:\n%s", masthead)
+	}
+	for _, want := range []string{
+		`min="0"`, `max="100"`, `value="0"`, "hidden",
+	} {
+		if !strings.Contains(masthead, want) {
+			t.Errorf("the quota meter does not carry %q:\n%s", want, masthead)
+		}
+	}
+	if !strings.Contains(masthead, `class="quota-label quota-label-unknown"`) {
+		t.Errorf("the quota label does not start in the unknown state:\n%s", masthead)
+	}
+	if !strings.Contains(masthead, "weekly quota: checking") {
+		t.Errorf("the quota label does not say \"weekly quota: checking\" before any fetch has run:\n%s", masthead)
+	}
+}
+
 // renderedPages is every page this daemon serves, keyed by the template that
 // renders it, each executed against the view its handler really builds.
 //

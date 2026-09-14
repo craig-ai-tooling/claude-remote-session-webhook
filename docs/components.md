@@ -247,6 +247,7 @@ on this host.
 | `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline |
 | `.operator` | The verified identity layer 1 built for this request |
 | `.masthead-link` | A link to another page of this daemon. Today there is exactly one, `/settings` |
+| `.quota-bar` | The weekly-quota bar's own row, below `.masthead-bar` and still inside `.masthead` |
 
 ### The auth control (spec 015)
 
@@ -277,6 +278,39 @@ Rules:
   `needs-auth` is a different fact — one session parked on the sign-in screen —
   and stays on that session's own pill. Folding the two together is explicitly
   out of scope (spec 015).
+
+### The weekly-quota bar (spec 016)
+
+A native `<meter min="0" max="100">` plus a `<p class="quota-label">`, in a
+`.quota-bar` row below `.masthead-bar`, on every page — the same "carried by
+the header, never composed per page" rule the auth control follows, and read
+from `GET /dashboard/quota`, which answers total usage from quota-axi's own
+on-disk cache (`internal/quota`).
+
+Rules:
+- **A native control with a theme over it**, the working-directory picker's
+  and the switch's own choice: a screen reader announces `value`/`min`/`max`
+  on its own, and the browser computes the fill's width from `value`, so no
+  script ever writes a `style` attribute the CSP forbids.
+- **Server-rendered `hidden`, reading "weekly quota: checking"**, exactly the
+  auth pill's shape: this render has asked the route nothing yet, so there is
+  nothing to show — a meter at 0% before the first fetch would be
+  indistinguishable from a real reading of none used.
+- **Three fill regions, not a script computing one.** `low="74" high="89"
+  optimum="0"` gives the browser its own optimum/sub-optimum/worst regions at
+  the 75%/90% thresholds (both bounds are inclusive of their lower region, so
+  `high="90"` would leave exactly 90% amber); `crswd.css` overrides each vendor's own
+  pseudo-elements to the same token pair (`--phosphor`, `--state-auth`,
+  `--state-bad`) so the fill's colour follows `value` with nothing else to
+  keep in sync.
+- **Text on every state, never colour alone.** The label always carries a
+  sentence — the percentage and reset time when known, "as of …" when stale,
+  "weekly quota: unknown" otherwise — and starts on `quota-label-unknown`
+  (`--state-unknown`) until a real reading lands, the same tone the auth
+  pill's `pill-unknown` spends for the same reason.
+- **A hidden meter is not a hidden failure.** "Unknown" hides the numeric bar
+  rather than showing a fabricated magnitude; the label is what carries the
+  fact, and it is never itself hidden.
 
 Rules for the bar as a whole:
 - **The settings link is in the bar, after the operator and the auth control,
