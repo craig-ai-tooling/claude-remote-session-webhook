@@ -1559,11 +1559,11 @@
 
 /*
  * The header's weekly-quota bar (spec 016): GET /dashboard/quota, on load and
- * every 60 seconds, on the same fetch options the auth pill's poll uses one
- * block up. Simpler than that one on purpose — there is no dialog to open, no
- * transition to watch for, and the route costs this daemon a stat and a small
- * file rather than a subprocess, so there is nothing here worth pausing on a
- * hidden tab to save.
+ * every 60 seconds while this tab is the one somebody could be looking at, with
+ * an immediate ask the moment it becomes that tab again — the auth pill's own
+ * cadence one block up. The read itself is cheap; what a background tab costs
+ * is the audit trail, which records every ask, and a number that only moves
+ * when quota-axi refreshes its cache has nothing new to tell a tab nobody sees.
  */
 (() => {
   'use strict';
@@ -1605,10 +1605,17 @@
     return resets.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   };
 
+  // The words truncate first on the bar's one line, so the whole sentence is
+  // carried in title as well — written together, so the two never disagree.
+  const say = (text) => {
+    label.textContent = text;
+    label.title = text;
+  };
+
   const paintUnknown = () => {
     meter.hidden = true;
     label.classList.add('quota-label-unknown');
-    label.textContent = 'weekly quota: unknown';
+    say('weekly quota: unknown');
   };
 
   const paintOk = (said) => {
@@ -1616,7 +1623,7 @@
     meter.hidden = false;
     label.classList.remove('quota-label-unknown');
 
-    let text = 'Weekly quota ' + said.percentUsed + '% used';
+    let text = 'Weekly ' + said.percentUsed + '% used';
     const resets = resetText(said.resetsAt);
     if (resets) {
       text += ' · resets ' + resets;
@@ -1625,7 +1632,7 @@
       const age = ageText(said.refreshedAt);
       text += age ? ' · as of ' + age : ' · stale';
     }
-    label.textContent = text;
+    say(text);
   };
 
   const askQuota = () =>
@@ -1640,8 +1647,27 @@
       })
       .catch(paintUnknown);
 
-  askQuota();
-  window.setInterval(askQuota, QUOTA_POLL_MS);
+  let quotaTimer;
+  const scheduleQuota = () => {
+    window.clearTimeout(quotaTimer);
+    quotaTimer = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        askQuota().then(scheduleQuota);
+      } else {
+        // Nothing asked for a tab nobody is looking at. The listener below
+        // resumes the cadence, with an ask of its own, when that changes.
+        scheduleQuota();
+      }
+    }, QUOTA_POLL_MS);
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      askQuota().then(scheduleQuota);
+    }
+  });
+
+  askQuota().then(scheduleQuota);
 })();
 
 /*
