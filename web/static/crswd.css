@@ -1810,6 +1810,14 @@ button.pill:hover {
     margin-block: calc(var(--s3) * -1);
   }
 
+  /* The auth control sits in the same bar and is reached the same way — by a
+     thumb, usually when a phone is the only thing to hand — so it takes the
+     masthead link's treatment rather than growing the bar. */
+  button.pill {
+    padding-block: var(--s3);
+    margin-block: calc(var(--s3) * -1);
+  }
+
   .field-switch {
     min-block-size: var(--tap);
   }
