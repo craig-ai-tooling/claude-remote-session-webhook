@@ -84,10 +84,6 @@
   /* The roles in the design system's typography table. Named here because that
      table gives every value but no token name, and rule 1 is about the values. */
   --fs-brand: 1.05rem;
-  /* The wordmark in the masthead only, sized to stand as tall as the two-row
-     identity column beside it (spec 016). The sign-in page's brand has no
-     column to match and keeps --fs-brand. */
-  --fs-masthead-brand: 1.75rem;
   /* One step below the eyebrow, for the version beside the wordmark. */
   /* Smaller than the micro eyebrow, for the version tucked against the
      wordmark: present, readable, and not competing. */
@@ -203,13 +199,12 @@ body {
 .masthead-bar {
   position: relative; /* over the one canvas the header is allowed to carry */
   display: flex;
-  /* One line above the breakpoint. Between it and the width where the brand and
-     the identity column fit side by side, a wrapping bar dropped the column under
-     the brand, left-aligned, and the sticky band grew to three rows. The column
-     shrinks instead — the operator and the quota label's tail truncate — and the
-     bar wraps only in the width block, where the column dissolves. */
+  /* One line above the breakpoint. A wrapping bar breaks on its items'
+     hypothetical sizes, so the quota words beside the brand pushed the settings
+     link onto a row of its own; on one line the words and the operator give way
+     instead, each with an ellipsis. It wraps in the width block only. */
   flex-wrap: nowrap;
-  align-items: center; /* the brand stands against both identity rows, not the first */
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--s3) var(--s4);
   max-inline-size: var(--shell-max);
@@ -242,48 +237,6 @@ body {
    mark's shape or spacing changes when a pointer crosses it. Keyboard users are
    unaffected either way: the global :focus-visible outline is the ring, and it
    is untouched here. */
-/* Scoped to the masthead: the sign-in page renders .brand without a column
-   beside it to match, and keeps the design system's own brand size. */
-.masthead-bar .brand {
-  flex: none; /* the column beside it gives way, never the wordmark */
-  font-size: var(--fs-masthead-brand);
-}
-
-.masthead-bar .brand-tag {
-  font-size: var(--fs-prose);
-}
-
-/* The identity column: who is signed in, the auth control and the settings
-   link on the first row, the weekly-quota bar under them on the second. A grid
-   so the second row takes the first row's width — the meter lines up under
-   the controls it sits beneath rather than being given a length of its own. */
-.masthead-side {
-  display: grid;
-  /* max-content when there is room, down to nothing when there is not, so a
-     narrow window shrinks what is inside the column instead of clipping it. */
-  grid-template-columns: minmax(0, max-content);
-  justify-items: end;
-  gap: var(--s2);
-  min-inline-size: 0;
-}
-
-.masthead-identity {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-  gap: var(--s3) var(--s4);
-  max-inline-size: 100%;
-  min-inline-size: 0;
-}
-
-/* Only the operator gives way when the column narrows; it already truncates
-   with an ellipsis. The auth control and the settings link are controls, and a
-   shrunk pill wrapped "auth: unknown" onto two lines and made the band taller. */
-.masthead-identity .pill,
-.masthead-identity .masthead-link {
-  flex: none;
-}
-
 .brand-link {
   /* Cancels the tracking that trails the final D.
      
@@ -360,6 +313,15 @@ body {
 .masthead-link:hover {
   color: var(--text);
   text-decoration-color: currentcolor;
+}
+
+/* What holds its size on the bar's one line: the mark and the two controls. A
+   shrunk pill wraps "auth: unknown" onto two lines, and a shrunk brand breaks
+   its tagline under the wordmark. */
+.masthead-bar .brand,
+.masthead-bar .pill,
+.masthead-link {
+  flex: none;
 }
 
 .shell {
@@ -1216,28 +1178,32 @@ button.pill:hover {
    carries `hidden` — before the first fetch, and whenever the daemon could
    not tell. A hidden meter is not a hidden failure; it is the alternative to
    the one failure this bar exists to rule out, a bar reading a false 0%. */
-.quota-bar {
-  display: flex;
-  align-items: center;
-  justify-self: stretch;
-  gap: var(--s3);
-}
-
+/* Edge to edge: the meter is a child of .masthead rather than of the bar, so it
+   spans the whole band instead of the shell's width, and sits along its bottom
+   edge. Relative for the reason .masthead-bar is — over the rain canvas. */
 .quota-meter {
-  flex: 1 1 0;
-  min-inline-size: calc(var(--s7) * 2);
-  block-size: var(--s2);
+  position: relative;
+  display: block;
+  inline-size: 100%;
+  block-size: var(--s1);
+  /* Without this WebKit draws its own native meter, which ignores the width
+     above and every pseudo-element below. Chromium paints the themed fill
+     either way — measured with and without before this line was added. */
+  appearance: none;
 }
 
+/* The words ride the bar's one line after the brand, and are the first thing on
+   it to give way — the full sentence stays in the title crswd.js sets. */
 .quota-label {
+  flex: 0 1 auto;
   min-inline-size: 0;
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--dim);
   font-family: var(--sans);
   font-size: var(--fs-prose);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Starts on the label in the markup, exactly as .pill-unknown starts on the
@@ -1257,8 +1223,8 @@ button.pill:hover {
    naming and Firefox's pseudo-class-on-the-host naming render identically. */
 .quota-meter::-webkit-meter-bar {
   background: var(--surface-lift);
-  border: var(--edge-width) solid var(--edge);
-  border-radius: var(--r);
+  border: 0;
+  border-radius: 0; /* a line along an edge, not a pill-shaped control */
 }
 
 .quota-meter::-webkit-meter-optimum-value {
@@ -1275,7 +1241,7 @@ button.pill:hover {
 
 .quota-meter::-moz-meter-bar {
   background: var(--phosphor);
-  border-radius: var(--r);
+  border-radius: 0;
 }
 
 .quota-meter:-moz-meter-optimum::-moz-meter-bar {
@@ -2178,31 +2144,13 @@ button.pill:hover {
     text-align: end;
   }
 
-  /* A phone has no room for the two-row identity column beside a wordmark sized
-     to match it. The brand returns to the design system's own size, the column
-     dissolves so the identity row sits beside the brand as it always did, and
-     the weekly-quota row takes a line of its own under both — the label first,
-     the meter wrapping to the full width below it. */
-  .masthead-bar .brand {
-    font-size: var(--fs-brand);
-  }
-
-  .masthead-side {
-    display: contents;
-  }
-
-  .masthead-identity {
-    flex: 1 1 0;
-  }
-
-  .quota-bar {
+  /* A phone has no room for the quota words on the line the brand and the
+     identity share, so they take a line of their own below both. Only the
+     display moves: in the markup they still follow the brand, where a desktop
+     shows them. */
+  .quota-label {
     flex-basis: 100%;
-    flex-wrap: wrap;
-    gap: var(--s2);
-  }
-
-  .quota-meter {
-    flex-basis: 100%;
+    order: 1;
   }
 }
 

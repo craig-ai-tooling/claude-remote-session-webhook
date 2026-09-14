@@ -243,13 +243,12 @@ on this host.
 | Class | What it is |
 |---|---|
 | `.masthead` | The band, and the only place besides the empty state a rain canvas may sit |
-| `.masthead-bar` | The row inside it: the brand on the left, `.masthead-side` on the right, centred against each other. One line above `780px` — the column shrinks rather than wrapping under the brand |
-| `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline. Inside the masthead it takes `--fs-masthead-brand`, sized to stand as tall as the two identity rows opposite it |
-| `.masthead-side` | The identity column: `.masthead-identity` over `.quota-bar`, right-aligned. A grid, so the quota row takes the identity row's width and the meter lines up under the controls |
-| `.masthead-identity` | The column's first row: operator, the auth control, settings link. When the column narrows only the operator gives way; the two controls never shrink |
+| `.masthead-bar` | The row inside it: brand, the weekly-quota words, operator, the auth control, settings link. One line above `780px` — the quota words and the operator truncate; the brand and the two controls never shrink |
+| `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline |
 | `.operator` | The verified identity layer 1 built for this request |
 | `.masthead-link` | A link to another page of this daemon. Today there is exactly one, `/settings` |
-| `.quota-bar` | The column's second row: the weekly-quota label, then its meter filling the rest of the row |
+| `.quota-label` | The weekly-quota words, in `.masthead-bar` right after the brand. Below `780px` they take a line of their own |
+| `.quota-meter` | The weekly-quota meter: a thin line along the whole bottom edge of `.masthead`, edge to edge rather than the shell's width |
 
 ### The auth control (spec 015)
 
@@ -283,8 +282,9 @@ Rules:
 
 ### The weekly-quota bar (spec 016)
 
-A `<p class="quota-label">` plus a native `<meter min="0" max="100">`, in the
-`.quota-bar` row under the auth control and the settings link, on every page — the same "carried by
+A `<p class="quota-label">` in `.masthead-bar` right after the brand, plus a
+native `<meter min="0" max="100">` along the whole bottom edge of the header, on
+every page — the same "carried by
 the header, never composed per page" rule the auth control follows, and read
 from `GET /dashboard/quota`, which answers total usage from quota-axi's own
 on-disk cache (`internal/quota`).
@@ -313,6 +313,14 @@ Rules:
 - **A hidden meter is not a hidden failure.** "Unknown" hides the numeric bar
   rather than showing a fabricated magnitude; the label is what carries the
   fact, and it is never itself hidden.
+- **It asks only while the tab is visible**: every 60 seconds, and immediately
+  on coming back to the tab — the auth control's own cadence. The number cannot
+  move faster than quota-axi refreshes its cache, and every ask is an audit
+  record, so a background tab asking once a minute was noise with nothing new
+  behind it.
+- **The words are the first thing on the bar to give way.** They truncate with
+  an ellipsis above the breakpoint and carry the whole sentence in `title`,
+  which the script writes together with the text.
 
 Rules for the bar as a whole:
 - **The settings link is in the bar, after the operator and the auth control,
