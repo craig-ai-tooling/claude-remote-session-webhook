@@ -246,7 +246,7 @@ on this host.
 | `.masthead-bar` | The row inside it: the brand on the left, `.masthead-side` on the right, centred against each other. One line above `780px` — the column shrinks rather than wrapping under the brand |
 | `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline. Inside the masthead it takes `--fs-masthead-brand`, sized to stand as tall as the two identity rows opposite it |
 | `.masthead-side` | The identity column: `.masthead-identity` over `.quota-bar`, right-aligned. A grid, so the quota row takes the identity row's width and the meter lines up under the controls |
-| `.masthead-identity` | The column's first row: operator, the auth control, settings link |
+| `.masthead-identity` | The column's first row: operator, the auth control, settings link. When the column narrows only the operator gives way; the two controls never shrink |
 | `.operator` | The verified identity layer 1 built for this request |
 | `.masthead-link` | A link to another page of this daemon. Today there is exactly one, `/settings` |
 | `.quota-bar` | The column's second row: the weekly-quota label, then its meter filling the rest of the row |

@@ -276,6 +276,14 @@ body {
   min-inline-size: 0;
 }
 
+/* Only the operator gives way when the column narrows; it already truncates
+   with an ellipsis. The auth control and the settings link are controls, and a
+   shrunk pill wrapped "auth: unknown" onto two lines and made the band taller. */
+.masthead-identity .pill,
+.masthead-identity .masthead-link {
+  flex: none;
+}
+
 .brand-link {
   /* Cancels the tracking that trails the final D.
      
