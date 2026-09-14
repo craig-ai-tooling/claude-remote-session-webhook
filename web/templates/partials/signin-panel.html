@@ -1,0 +1,81 @@
+{{/*
+  The sign-in dialog's own fragment — GET /dashboard/signin/view (spec 015).
+  This is the one route in this daemon that renders the sign-in URL, and it
+  renders it only here because the URL is a one-shot PKCE challenge: it is not
+  on the fleet, not in a query string, not in the trail, and not in
+  GET /dashboard/auth's JSON.
+
+  It used to be a section of the settings page (`{{ with .SignIn }}`, before
+  spec 015) and the content below is that section's, unmoved: the header's
+  auth control opens `#signin-dialog` and crswd.js fetches this route to fill
+  its body in, so what changed is only who supplies the heading — the dialog's
+  own `<h2 class="modal-title">`, in header.html, rather than a
+  `<h2 class="settings-title">` here.
+
+  Every control is a plain form post carrying the page token, so the whole flow
+  works with scripting off — which matters more here than anywhere else on this
+  product, because the moment an operator needs it is the moment they are not
+  at a computer. What does not work with scripting off is *reaching* this
+  fragment at all: the dialog's `.modal-body` ships a short line saying so
+  (header.html) until a script replaces it with what follows.
+
+  The root element carries the two facts D4 asks for, so crswd.js can read
+  them without re-deriving Available/SignedIn/nil into the same three words a
+  second time: data-auth-state is the header pill's own vocabulary for this
+  exact answer, and data-signin-running says whether the poll below should
+  keep going. No class of its own — nothing here is a control by itself, and a
+  spelling for a wrapper that carries only data attributes is the second
+  vocabulary docs/components.md exists to prevent.
+*/}}<div data-auth-state="{{ .AuthState }}" data-signin-running="{{ if .Running }}true{{ else }}false{{ end }}">
+
+{{ if not .Available }}<p class="settings-note">This host has no sign-in relay. The configured start command names no runnable program, so there is nothing for this daemon to run <code>auth login</code> with. Fix <code>start_command</code> and restart.</p>{{ else }}
+
+{{/*
+  What this host's credential is, asked of the CLI rather than read off a screen.
+
+  Nil is checked first, and by itself: a host that could not be asked is not a
+  host that is signed out, and saying so would send somebody to repair a
+  credential that is fine. The other two branch on SignedInTrue and never on
+  .SignedIn itself — html/template's {{ if }} on a pointer tests whether it is
+  nil, not what it points at, so a *bool holding false rendered exactly as
+  truthy as one holding true and the sentence below was unreachable.
+*/}}{{ if eq .SignedIn nil }}<p class="settings-note">This daemon could not ask whether this host is signed in. That is a fault on the host rather than an answer — check the daemon's own output.</p>
+{{ else if .SignedInTrue }}<p class="settings-note">This host <strong>is signed in</strong>. Every session shares this one login, so there is nothing to do here unless it stops working.</p>
+{{ else }}<p class="settings-note">This host is <strong>not signed in</strong>. Every session on it shares this one login, so none of them can make a request until it is. Press the button below to start one.</p>{{ end }}
+
+{{ if .Running }}{{/*
+  A sign-in is up. The link, then the box.
+
+  rel="noopener noreferrer" on a link carrying a credential in its query string:
+  a page opened from here must not be handed a window reference, and must not be
+  told where it came from.
+*/}}{{ if .Link }}<p class="settings-note">Open this link, sign in, and paste the code it gives you into the box below.</p>
+<p class="signin-link"><a href="{{ .Link }}" rel="noopener noreferrer" target="_blank">Open the Claude sign-in</a></p>
+{{ else }}<p class="settings-note">A sign-in is starting. The link appears here once Claude Code has drawn it — reload this page in a moment.</p>{{ end }}
+
+{{ if .Token }}<form method="post" action="/dashboard/signin/code">
+<input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<label class="field-label" for="signin-code">Code from the sign-in page</label>
+{{/*
+  autocomplete, autocapitalize and spellcheck are all off. This is a credential
+  typed on a phone, and a keyboard that capitalises it or a browser that
+  remembers it are both wrong — the first breaks the code, the second stores one.
+*/}}<input class="setting-input" id="signin-code" name="code" type="text" inputmode="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+<button class="button" type="submit">Send the code</button>
+</form>
+
+<form method="post" action="/dashboard/signin/cancel">
+<input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<button class="button" type="submit">Cancel this sign-in</button>
+<p class="update-caution">Ends the sign-in window on the host. The code it is waiting for stops working, and nothing on this host is signed in or out by pressing it.</p>
+</form>{{ end }}
+
+{{ else }}{{ if .Token }}<form method="post" action="/dashboard/signin">
+<input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<input type="hidden" name="confirm" value="yes">
+<button class="button" type="submit">Start a sign-in</button>
+<p class="update-caution">Runs Claude Code's own login in a window of its own on this host. It touches none of your sessions — it cannot, it is not one — and nothing changes until you paste back a code.</p>
+</form>{{ end }}{{ end }}
+
+{{ end }}
+</div>

@@ -1351,6 +1351,22 @@
         form.reset();
       }
 
+      /*
+       * The sign-in dialog's own forms (spec 015) leave this host's credential
+       * in a different state than the fragment they were rendered from
+       * showed — a start puts a window up, a code may complete a sign-in, a
+       * cancel takes the window down — so the fragment is asked for again
+       * rather than left describing an attempt that just finished.
+       *
+       * window.crswdReloadSignInPanel is that module's own loadPanel,
+       * exposed the way window.waitOutTheUpdate is: this module runs first
+       * and cannot call a function a later one has not defined yet, and a
+       * form the dialog is not open around finds nothing to close either.
+       */
+      if (form.closest('dialog')?.id === 'signin-dialog') {
+        window.crswdReloadSignInPanel?.();
+      }
+
       show(sentence(said) || 'The host answered without a message.', form);
       reenable();
     } catch {
@@ -1362,6 +1378,183 @@
       reenable();
     }
   });
+})();
+
+/*
+ * The header's auth control (spec 015): the pill reading GET /dashboard/auth,
+ * and the dialog it opens onto GET /dashboard/signin/view — the sign-in panel
+ * that used to be a section of the settings page.
+ *
+ * Every page carries the header, so this runs on every page, and it is the
+ * one control on this dashboard that needs a script to reach its real form at
+ * all: `#signin-dialog` ships a static line saying so, and this is what
+ * replaces it. Opening the dialog — by a click on the pill, which the
+ * declarative `command="show-modal"` (or the invoker fallback above) already
+ * handles — only starts the fetch; neither of those mechanisms knows this
+ * dialog wants one.
+ */
+(() => {
+  'use strict';
+
+  const pill = document.querySelector('[data-auth-pill]');
+  const dialog = document.getElementById('signin-dialog');
+  if (!pill || !dialog) {
+    return;
+  }
+  const body = dialog.querySelector('[data-signin-body]');
+
+  // How often the pill polls, and how often the open dialog's own fragment
+  // refreshes while a sign-in is running (D8). The panel's is far shorter
+  // because it is the one place an operator is actively watching for a
+  // window to draw a link or a delivered code to land — sixty seconds of
+  // silence there would read as broken rather than as waiting.
+  const AUTH_POLL_MS = 60000;
+  const PANEL_POLL_MS = 3000;
+
+  // The three words this pill ever shows. Anything GET /dashboard/auth did
+  // not answer with one of the other two reads as `unknown` — a fetch that
+  // failed outright included, since a daemon that could not be asked is
+  // exactly what that word is for.
+  const paintPill = (state) => {
+    const known = state === 'ok' || state === 'bad' ? state : 'unknown';
+    pill.classList.remove('pill-ok', 'pill-bad', 'pill-unknown');
+    pill.classList.add('pill-' + known);
+    pill.textContent = 'auth: ' + known;
+  };
+
+  /*
+   * The auto-open rule (D8), held as one comparison rather than a flag this
+   * module has to remember to clear.
+   *
+   * "Bad on the first answer, or a transition into bad from anything else"
+   * is exactly "state is bad and the last answer this page saw was not" —
+   * lastState starts null, so the first answer is a transition by
+   * construction. "Do not auto-open again until state leaves bad and comes
+   * back" then falls out for free: once lastState is recorded as `bad`, every
+   * further poll that is still `bad` fails this comparison on its own,
+   * whether or not the operator closed the dialog in between. A dialog
+   * `close` event was tried for that and rejected — command="close" does not
+   * reliably fire one (measured elsewhere in this file, of the create
+   * dialog), and this needs none of it.
+   */
+  let lastState = null;
+  const notesTransitionToBad = (state) => {
+    const opens = state === 'bad' && lastState !== 'bad';
+    lastState = state;
+    return opens;
+  };
+
+  const openDialog = () => {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    loadPanel();
+  };
+
+  /*
+   * The fragment fetch. Guarded on dialog.open at the point the answer
+   * arrives rather than at the point it was asked for, because the operator
+   * may have closed the dialog while this was in flight — there is then
+   * nowhere to put the answer and no reason to schedule another.
+   */
+  let panelTimer;
+  function loadPanel() {
+    window.clearTimeout(panelTimer);
+    fetch('/dashboard/signin/view', { credentials: 'same-origin', cache: 'no-store' })
+      .then((answer) => (answer.ok ? answer.text() : null))
+      .then((markup) => {
+        if (markup == null || !dialog.open || !body) {
+          return;
+        }
+        const fresh = new DOMParser().parseFromString(markup, 'text/html').body.firstElementChild;
+        if (!fresh) {
+          return;
+        }
+        // Imported rather than assigned through innerHTML, exactly as the
+        // settings page's own update swap does it: this fragment is
+        // daemon-authored, and importNode is what attaches a parsed subtree
+        // to the live document without a second parse of untrusted text.
+        body.replaceChildren(document.importNode(fresh, true));
+
+        // The pill takes this answer too (D8: "update the pill from
+        // data-auth-state") — it is a fresher ask than whatever the 60-second
+        // poll last cached, since signin/view never reads that cache at all.
+        paintPill(fresh.dataset.authState);
+        notesTransitionToBad(fresh.dataset.authState);
+
+        if (dialog.open && fresh.dataset.signinRunning === 'true') {
+          panelTimer = window.setTimeout(loadPanel, PANEL_POLL_MS);
+        }
+      })
+      .catch(() => {
+        // Left on screen: whatever the dialog showed before this attempt —
+        // the static no-script line, or the last successful fetch — is a
+        // more honest answer than replacing it with nothing.
+      });
+  }
+
+  // The pill's own poll (D8): on load, then every 60 seconds while this tab
+  // is the one somebody could be looking at, with an immediate ask and a
+  // reset countdown the moment it becomes that tab again.
+  const askAuth = () =>
+    fetch('/dashboard/auth', { credentials: 'same-origin', cache: 'no-store' })
+      .then((answer) => (answer.ok ? answer.json() : null))
+      .then((said) => {
+        const state = said && (said.state === 'ok' || said.state === 'bad') ? said.state : 'unknown';
+        paintPill(state);
+        if (notesTransitionToBad(state)) {
+          openDialog();
+        }
+      })
+      .catch(() => {
+        paintPill('unknown');
+        notesTransitionToBad('unknown');
+      });
+
+  let authTimer;
+  const scheduleAuth = () => {
+    window.clearTimeout(authTimer);
+    authTimer = window.setTimeout(() => {
+      if (document.visibilityState === 'visible') {
+        askAuth().then(scheduleAuth);
+      } else {
+        // No exec spent on a tab nobody is looking at. The visibilitychange
+        // listener below is what resumes the cadence, with an immediate ask
+        // of its own, the moment that stops being true.
+        scheduleAuth();
+      }
+    }, AUTH_POLL_MS);
+  };
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      askAuth().then(scheduleAuth);
+    }
+  });
+
+  // The click starts the fetch; the platform (or the invoker fallback above,
+  // feature-detected there and not repeated here) is what actually opens the
+  // dialog this button names.
+  pill.addEventListener('click', loadPanel);
+
+  // Exposed so the submit handler (above, in file order and therefore already
+  // defined by the time anyone submits anything) can ask this dialog to
+  // re-read its own state after one of its forms posts — see the comment
+  // there.
+  window.crswdReloadSignInPanel = loadPanel;
+
+  /*
+   * The no-script fallback for the three action routes' own redirect (D6):
+   * a browser that followed the 303 rather than being intercepted by the
+   * submit handler above lands here carrying the marker, and this is what
+   * tells the dashboard to open the dialog it would otherwise have to be
+   * pressed for a second time.
+   */
+  if (new URLSearchParams(window.location.search).get('signin') === 'open') {
+    openDialog();
+  }
+
+  askAuth().then(scheduleAuth);
 })();
 
 /*

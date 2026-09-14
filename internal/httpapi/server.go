@@ -115,6 +115,12 @@ type Server struct {
 	// leaves open does not poll somebody else's API forever (settings.go).
 	releases releaseCache
 
+	// authCache caches what the sign-in relay last said about this host's own
+	// credential, on the same terms releases does and for the same reason: the
+	// header's auth pill polls this every 60 seconds from every open tab, and
+	// each ask is a subprocess exec (authstatus.go, spec 015).
+	authCache authCache
+
 	// releaseFeed asks what is published, and is nil in tests.
 	//
 	// A seam rather than a direct call because composing a page must not depend
@@ -266,7 +272,13 @@ type Server struct {
 	// a refusal to start: a host that cannot relay a login is one an operator can
 	// still reach every other way, and taking the whole dashboard down over it
 	// would remove the page that explains the problem.
-	signin *loginrelay.Relay
+	//
+	// The narrowed interface (signin.go) rather than *loginrelay.Relay itself,
+	// for loginrelay.Controller's own reason: it is what a test doubles for a
+	// server whose auth cache needs to count how many times SignedIn really ran,
+	// without shelling out to a real `claude` to do it. *loginrelay.Relay
+	// satisfies it unchanged.
+	signin signInRelay
 
 	// registered records what was actually handed to the mux, which is not the
 	// same claim as the routes table above. See Routes.
@@ -689,6 +701,18 @@ func newServer(
 	// that table is contracts/http-api.md's six operations, each authorised by a
 	// signature, and this is authorised by an identity.
 	s.handleBrowser(patternVersion, audit.ActionDashboardVersion, s.version)
+	// The header's auth pill, on the same terms as the version route one line up
+	// and for the same reason: FR-006's closed set admits no unauthenticated
+	// route, and whether this host is signed in to Claude is exactly the fact a
+	// scanner would like for free (spec 015). It reads the cache in authstatus.go
+	// and changes nothing, so it needs no action gate — a poll every 60 seconds
+	// from every open tab must never cost more than the cache's own TTL bounds.
+	s.handleBrowser(patternDashboardAuth, audit.ActionDashboardAuth, s.dashboardAuth)
+	// The sign-in dialog's own fragment (spec 015), replacing the panel that used
+	// to live on the settings page. A browser route and not an action: it reads,
+	// exactly as the settings page it replaces did, and it is what forces the
+	// fresh ask that the auth pill's cache above then reuses.
+	s.handleBrowser(patternDashboardSignInView, audit.ActionDashboardSignInView, s.signInView)
 	// The resume control's own read (spec 012). It is a browser route rather than
 	// an action because it changes nothing, and it carries ActionDashboardView
 	// rather than an action of its own because what it discloses is what the

@@ -52,6 +52,8 @@ var designTokens = map[string]string{
 	"--state-failed":  "#ff8c1a",
 	"--state-blocked": "#ff3b3b",
 	"--state-unknown": "#9b8cff",
+	"--state-ok":      "#00ff41",
+	"--state-bad":     "#ff4d4d",
 	"--mono":          `ui-monospace, "SF Mono", "JetBrains Mono", "Fira Mono", Menlo, Consolas, monospace`,
 	"--sans":          `ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`,
 	"--s1":            ".25rem",
@@ -86,6 +88,12 @@ var documentedStates = map[string]string{
 	"failed":     "--state-failed",
 	"blocked":    "--state-blocked",
 	"unknown":    "--state-unknown",
+
+	// ok and bad (spec 015) are the header's auth control, not a session state —
+	// the pill component is shared rather than duplicated, so they belong in
+	// this table on the same terms every other state does.
+	"ok":  "--state-ok",
+	"bad": "--state-bad",
 }
 
 // cssComment is what every sweep below reads past. A /* … */ comment is not a
@@ -3841,8 +3849,26 @@ func TestTheInvokerFallbackIsFeatureDetected(t *testing.T) {
 	if !strings.Contains(guarded, "showModal()") {
 		t.Error("crswd.js calls showModal() outside the feature-detection block; on a current browser the listener and the platform's own command action both fire")
 	}
-	if outside := strings.Count(source, "showModal()") - strings.Count(guarded, "showModal()"); outside != 0 {
-		t.Errorf("crswd.js calls showModal() %d times outside the feature-detection block; every one of them races the declarative invocation", outside)
+
+	/*
+	 * The auth control's own programmatic open (spec 015) is the one call
+	 * this sweep must not require inside the block above, and it is
+	 * accounted for by number rather than folded into the guard's own count:
+	 * folding it in would make the guard's condition — "can this page open a
+	 * dialog without me" — false for a call this file makes on every
+	 * browser regardless of the answer.
+	 *
+	 * It is not a race the way an unconditional trigger-click listener would
+	 * be. That shape — a listener bound to the same element the declarative
+	 * `command` attribute already watches — is what the guard above exists
+	 * to keep out, because a capable browser then fires both. This call runs
+	 * from a poll's answer or a query marker read on load, never from a
+	 * click on the trigger, so there is no declarative invocation for it to
+	 * ever arrive alongside.
+	 */
+	const authControlOpens = 1
+	if outside := strings.Count(source, "showModal()") - strings.Count(guarded, "showModal()") - authControlOpens; outside != 0 {
+		t.Errorf("crswd.js calls showModal() %d times neither inside the feature-detection block nor accounted for as the auth control's own programmatic open; every one of them races the declarative invocation", outside)
 	}
 
 	// showModal() throws InvalidStateError on a dialog that is already open, and

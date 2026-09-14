@@ -278,6 +278,23 @@ const (
 	// host holding a challenge.
 	ActionDashboardSignInCancel Action = "dashboard.signin.cancel"
 
+	// ActionDashboardAuth is the header's own auth pill asking whether this host
+	// is signed in (spec 015). It is its own action rather than
+	// dashboard.version's shape reused, because what an operator counting
+	// dashboard.version is counting is "who asked what this build is" — a
+	// question with no exec behind it — where this one answers from a cache that
+	// may just have run `claude auth status`. The two must not be counted
+	// together.
+	ActionDashboardAuth Action = "dashboard.auth"
+
+	// ActionDashboardSignInView is the sign-in dialog's own fragment served
+	// (spec 015): the panel that used to be part of settings.view, now read on
+	// its own so an operator counting who read the daemon's configuration is not
+	// counting a poll of the sign-in dialog with it. It is a read, on the same
+	// door and the same terms as ActionDashboardVersion, and it is what forces
+	// the fresh ask that ActionDashboardAuth's cache then reuses.
+	ActionDashboardSignInView Action = "dashboard.signin.view"
+
 	// ActionLoginView is the sign-in form served, and ActionLoginSubmit is one
 	// sign-in attempt decided — allow or deny, one record per attempt (M12/T004).
 	//

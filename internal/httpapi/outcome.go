@@ -211,12 +211,12 @@ const queryOutcome = "outcome"
 // there, and a created one is a card that is.
 const pathFleet = "/"
 
-// pathSettingsPage is where an action whose result lives in a settings panel
-// returns the operator to. Spelled here beside pathFleet rather than derived
-// from patternSettings, because one is a route pattern and the other is a
-// destination, and a redirect built by trimming a method off a pattern is one
-// that breaks silently the day the pattern gains anything.
-const pathSettingsPage = "/settings"
+// pathSettingsPage lived here until spec 015 moved the sign-in relay's panel
+// off the settings page — it was redirectSection's only destination, and that
+// function went with it (see signin.go's own redirectSignIn, which points at
+// pathFleet with a marker instead). Settings itself is reached by the header
+// link (patternSettings), never by an action's redirect, so nothing replaces
+// either.
 
 // headerLocation is written by hand on the one kind of response that has one.
 const headerLocation = "Location"
@@ -600,19 +600,5 @@ func bannerFor(raw string) *outcomeView {
 // a thing to keep.
 func (s *Server) redirectOutcome(w http.ResponseWriter, r *http.Request, code outcome) {
 	to := url.URL{Path: pathFleet, RawQuery: url.Values{queryOutcome: []string{string(code)}}.Encode()}
-	http.Redirect(w, r, to.String(), http.StatusSeeOther)
-}
-
-// redirectSection is redirectOutcome for an action whose result is shown on a
-// section of the settings page rather than on the fleet.
-//
-// The same closed vocabulary and the same 303: what changes is only where the
-// operator lands, and the section name comes from this package rather than from
-// the request, so this adds no way to put a caller's bytes in a URL either.
-func (s *Server) redirectSection(w http.ResponseWriter, r *http.Request, section string, code outcome) {
-	to := url.URL{Path: pathSettingsPage, RawQuery: url.Values{
-		querySection: []string{section},
-		queryOutcome: []string{string(code)},
-	}.Encode()}
 	http.Redirect(w, r, to.String(), http.StatusSeeOther)
 }

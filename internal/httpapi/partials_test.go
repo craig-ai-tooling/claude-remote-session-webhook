@@ -3304,6 +3304,65 @@ func TestHeaderHasExactlyTwoAnchors(t *testing.T) {
 	}
 }
 
+// TestHeaderRendersTheAuthControl is spec 015 (D1, D2): a <button> between the
+// operator's identity and the settings link, opening the sign-in dialog with
+// no script at all, styled as the status pill's own "unknown" state and
+// reading the one word this render can honestly say before it has asked
+// GET /dashboard/auth anything.
+//
+// It is a <button> and not an <a> on purpose — TestHeaderHasExactlyTwoAnchors
+// above stays green unchanged because this control was never counted as one
+// of the bar's two anchors.
+//
+// **Must fail when** the control is missing, is an anchor instead of a
+// button, lacks the Invoker Commands attributes, or starts on any word but
+// "checking".
+func TestHeaderRendersTheAuthControl(t *testing.T) {
+	t.Parallel()
+
+	masthead := mastheadOf(t, "the header component", renderedHeader(t))
+
+	if !strings.Contains(masthead, "<button") {
+		t.Fatalf("the header renders no button at all:\n%s", masthead)
+	}
+	for _, want := range []string{
+		`command="show-modal"`,
+		`commandfor="signin-dialog"`,
+		`class="pill pill-unknown"`,
+		"auth: checking",
+	} {
+		if !strings.Contains(masthead, want) {
+			t.Errorf("the header's auth control does not carry %q:\n%s", want, masthead)
+		}
+	}
+}
+
+// TestHeaderRendersTheSignInDialog is D2: the dialog lives in the header
+// partial so every page that carries the header carries it, and its body
+// ships a short no-JS fallback line until crswd.js swaps the real panel in.
+//
+// **Must fail when** the dialog, its close control, its outcome region, or
+// the fallback line is missing.
+func TestHeaderRendersTheSignInDialog(t *testing.T) {
+	t.Parallel()
+
+	header := renderedHeader(t)
+
+	if !strings.Contains(header, `<dialog class="modal" id="signin-dialog"`) {
+		t.Fatalf("the header renders no #signin-dialog:\n%s", header)
+	}
+	for _, want := range []string{
+		`class="modal-outcome"`,
+		`class="modal-close"`,
+		`commandfor="signin-dialog"`,
+		"JavaScript",
+	} {
+		if !strings.Contains(header, want) {
+			t.Errorf("the sign-in dialog does not carry %q:\n%s", want, header)
+		}
+	}
+}
+
 // renderedPages is every page this daemon serves, keyed by the template that
 // renders it, each executed against the view its handler really builds.
 //

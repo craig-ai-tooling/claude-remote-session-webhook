@@ -34,11 +34,49 @@
   registered on that path, so reaching it from every page adds a route to read
   and no way to write — the absence of a mutating handler is the safeguard, not
   the obscurity of the address it just lost.
+
+  The auth control sits between the operator's identity and that link (spec
+  015, docs/components.md's "The auth control"). It is a <button>, never an
+  <a> — TestHeaderHasExactlyTwoAnchors is unchanged by design, because this
+  control opens a dialog rather than leading to a page. It is styled with the
+  status pill's own shape and vocabulary (docs/components.md, Status pill)
+  rather than a second button or a second pill: `pill-unknown` is the existing
+  class for a state this daemon admits it cannot yet characterise, and
+  "checking" is a word on it rather than a colour of its own, for the same
+  reason "could not ask" will be. It always renders that word, because this
+  render has not asked GET /dashboard/auth yet — a page with no script never
+  will, and keeps reading "checking" forever, which is the honest answer to a
+  question it never asked.
+
+  `command="show-modal" commandfor="signin-dialog"` opens the dialog with no
+  script at all, the Invoker Commands API the create dialog already uses
+  (docs/components.md, Modal). The dialog itself lives here, on every page
+  that carries this header, rather than only on the page that used to hold the
+  sign-in panel — a session's own `needs-auth` is a different fact and is
+  explicitly out of scope for folding into this control (spec 015, D9).
+
+  Its body ships a short line for a page with no script running, because
+  reaching the real panel costs a fetch this dialog cannot make without one:
+  `GET /dashboard/signin/view`, swapped in by crswd.js the moment the dialog
+  opens. Every other control in this tree still needs no script; this is the
+  one exception, named as one rather than pretended around, and the fallback
+  says so instead of drawing a form that could not be submitted.
 */}}<header class="masthead">
 {{ template "rain" }}
 <div class="masthead-bar">
 <h1 class="brand"><a class="brand-link" href="/">crswd</a><span class="brand-version">{{ version }}</span> <span class="brand-tag">session control</span></h1>
 <p class="operator" title="{{ .Email }}">{{ .Email }}</p>
+<button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>
 <a class="masthead-link" href="/settings">Settings</a>
 </div>
 </header>
+<dialog class="modal" id="signin-dialog" closedby="any" aria-labelledby="signin-title">
+<div class="modal-head">
+<h2 class="modal-title" id="signin-title">Sign in</h2>
+<button class="modal-close" type="button" command="close" commandfor="signin-dialog" aria-label="Close">×</button>
+</div>
+<p class="modal-outcome" role="status" aria-live="polite"></p>
+<div class="modal-body" data-signin-body>
+<p class="settings-note">This needs JavaScript. Reload this page with scripting enabled, or run <code>claude auth login --claudeai</code> directly on the host.</p>
+</div>
+</dialog>

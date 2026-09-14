@@ -494,10 +494,35 @@ reports the relay's own window as showing nothing.
 
 **The relay** is the rest of it, in `internal/loginrelay` plus three action routes
 (`/dashboard/signin`, `/dashboard/signin/code`, `/dashboard/signin/cancel`) and a
-panel on the settings page. The daemon runs `claude auth login --claudeai` in a tmux
-window of its own, reads the link off that window, and carries back a code the
-operator pastes. The code reaches tmux on stdin through Paste, never in an argv;
-nothing about it is logged, audited, echoed into an outcome, or rendered back.
+panel behind the header's own auth control (spec 015) — not the settings page,
+which no longer offers it at all. The daemon runs `claude auth login --claudeai`
+in a tmux window of its own, reads the link off that window, and carries back a
+code the operator pastes. The code reaches tmux on stdin through Paste, never in
+an argv; nothing about it is logged, audited, echoed into an outcome, or
+rendered back.
+
+**Since spec 015 the panel is a fragment, not a section.** Every page carries
+the header, and the header carries a pill — `auth: ok` / `auth: bad` /
+`auth: unknown` / `auth: checking` — reading a server-side cache
+(`GET /dashboard/auth`, JSON, `{"state": …}`, 60s TTL, one exec shared by
+concurrent callers) and a `<dialog id="signin-dialog">` that opens it. Opening
+the dialog fetches `GET /dashboard/signin/view`, which does a **fresh** ask —
+never the cache — and stores what it learns back into it, so a poll shortly
+after does not repeat the exec. That route's HTML is the one place any of this
+still applies:
+
+- **The sign-in URL is still rendered nowhere else.** It is an `href` in that
+  fragment and nothing else — never JSON, never a `data-` attribute, never a
+  query string, never a log line, never an audit record. `GET /dashboard/auth`
+  answers a bare state word and nothing about a window, a link, or whether one
+  is running; that question belongs to `/dashboard/signin/view` alone.
+- **The three action routes now redirect to `/`**, not to a settings section,
+  carrying the same outcome-code mechanism plus a marker (`signin=open`) that
+  tells the dashboard to open the dialog on load — the no-script fallback for an
+  operator whose browser followed the 303 instead of the fetch.
+- Settings' menu, section and panel for this are gone. `?section=Sign-in` on
+  `/settings` is an unrecognised value like any other and falls through to the
+  ordinary default, exactly as it would for a section that had never existed.
 
 **It never drives a working session**, and the two facts below are why — both of
 them shaped this design rather than merely constraining it:
@@ -540,6 +565,7 @@ This is the most fragile thing in the project and the most sensitive:
 | Access assertion clock leeway | 60 seconds, fixed — drift between the edge and this host is real, and anything wider extends every minted token's life in both directions |
 | Access key-set refetch floor | 60 seconds between fetch attempts, refetched only on an unknown `kid` |
 | Live stream poll interval | 1 second — also the window within which a stream must notice it is no longer authorised |
+| Auth status cache (spec 015) | 60 seconds, one exec shared by concurrent callers — the header pill's own poll interval, so a tab left open never asks `claude auth status` more often than once a window. `GET /dashboard/signin/view` bypasses it with a fresh ask and stores the answer back in, and each of the three sign-in action routes invalidates it outright |
 | Request signature window | 5 minutes |
 | Replay cache TTL | 10 minutes |
 | Page token lifetime | 12 hours — long enough that a dashboard left open through a working day still acts, short enough to bound what one captured token is worth. Nothing else depends on the number: expiry fails visibly and a reload fixes it |
