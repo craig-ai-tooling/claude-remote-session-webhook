@@ -82,9 +82,18 @@ legibility at a glance beats theme purity:
 | `failed` | `--state-failed` | `#ff8c1a` | Between the amber that asks for attention and the red that reports an ending, which is exactly what it means | **Spec 012** |
 | `blocked` | `--state-blocked` | `#ff3b3b` | Closer to alarm than `failed`: a human typing the one keystroke a named dialog is waiting for fixes it immediately, and nothing here will ever send it | Pane dialog heuristic (`internal/session/dialog.go`) |
 | `unknown` | `--state-unknown` | `#9b8cff` | Off the green-to-red health spectrum on purpose — this is not a claim about how healthy the session is, it is the heuristic admitting it does not recognise a dialog-shaped pane | Pane dialog heuristic (`internal/session/dialog.go`) |
+| `ok` | `--state-ok` | `#00ff41` | The header's auth control, answered: this host can make a Claude request. Phosphor, the same value `running` spends, because the two say the same thing about two different things | Spec 015, header auth indicator |
+| `bad` | `--state-bad` | `#ff4d4d` | The header's auth control, answered the other way: this host cannot make a Claude request until somebody signs it in. The same red `dead` spends, for the same reason `failed` and `dead` are told apart by fact and not by a shade they happen to share | Spec 015, header auth indicator |
 
 Do not invent a parallel palette for state, and do not fold state back into green
 for the sake of the theme. A dead session that reads as green is a bug.
+
+`ok` and `bad` are the header auth control's only new colours (spec 015). Its
+other two words, `checking` (the initial answer, before the first fetch lands)
+and the could-not-ask case (the daemon has no relay, or cannot exec `claude`),
+are text on the existing `unknown` state rather than colours of their own —
+the pill does not know how to be uncertain in a third hue, and both are exactly
+that: an operator has not yet been told, one way or the other.
 
 `failed` and `dead` are different colours because they are different facts, and
 an operator has to be able to tell them apart at a glance: `dead` is a session

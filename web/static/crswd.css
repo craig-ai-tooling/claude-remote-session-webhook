@@ -66,6 +66,14 @@
      name it. A colour from the same family as "healthy" or "dead" would be a
      confidence this state does not have. */
   --state-unknown: #9b8cff;
+  /* The header's auth control (spec 015). ok is the same value running
+     spends — both say "this is fine" about two different things — and bad is
+     the same red dead spends, for dead's own reason: this is a fact the
+     operator has to be able to tell apart from failed and blocked at a
+     glance, and reusing a token name across two components would make that a
+     coincidence the next edit could break. */
+  --state-ok: #00ff41;
+  --state-bad: #ff4d4d;
 
   /* Mono is what the machine says; sans is what a human wrote. No webfont URL:
      the policy in docs/security.md permits no CDN, so a linked face would fail
@@ -1115,6 +1123,36 @@ body {
   --pill-state: var(--state-unknown);
 }
 
+/* ok and bad, spent by the header's auth control and nothing else (spec 015):
+   this daemon can, or cannot, make a Claude request right now. Two more
+   states the pill needed no edit for, which is what this component is built
+   to keep being true. */
+.pill-ok {
+  --pill-state: var(--state-ok);
+}
+
+.pill-bad {
+  --pill-state: var(--state-bad);
+}
+
+/* The auth control (spec 015): a real <button> wearing the pill's shape,
+   because it opens the sign-in dialog rather than only reporting a state. A
+   <button> does not inherit the page's font and keeps the platform's own
+   background the way .button already has to correct for every other control
+   in this tree, so the same declarations are repeated here rather than a
+   second button vocabulary being invented — .pill still owns the border, the
+   padding, the dot and the label. */
+button.pill {
+  background: none;
+  font-family: var(--mono);
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+
+button.pill:hover {
+  border-color: var(--phosphor);
+}
+
 /* The pane viewer. The container is styled and the content never is — the
    design system's fourth non-negotiable, which is a security rule wearing design
    clothes: what is inside this element is a text node the host wrote.
@@ -1768,6 +1806,14 @@ body {
      taken back from the layout with a negative margin, so the masthead is the
      size it always was and the target inside it is not. */
   .masthead-link {
+    padding-block: var(--s3);
+    margin-block: calc(var(--s3) * -1);
+  }
+
+  /* The auth control sits in the same bar and is reached the same way — by a
+     thumb, usually when a phone is the only thing to hand — so it takes the
+     masthead link's treatment rather than growing the bar. */
+  button.pill {
     padding-block: var(--s3);
     margin-block: calc(var(--s3) * -1);
   }

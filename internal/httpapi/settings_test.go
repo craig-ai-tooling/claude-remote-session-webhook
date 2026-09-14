@@ -29,7 +29,6 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/buildinfo"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/updater"
 
-	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
@@ -1024,6 +1023,8 @@ func registeredPatterns(t *testing.T) []string {
 		patternFleetStream,
 		patternSettings,
 		patternVersion,
+		patternDashboardAuth,
+		patternDashboardSignInView,
 		patternDashboardCreate,
 		patternDashboardDestroy,
 		patternDashboardRename,
@@ -1267,6 +1268,8 @@ func TestFullRouteSweepLeaksNoSecret(t *testing.T) {
 		{"the settings page, limits", http.MethodGet, settingsPath + "?section=Limits", nil, http.StatusOK},
 		{"the settings page, updates", http.MethodGet, settingsPath + "?section=Updates", nil, http.StatusOK},
 		{"what the daemon calls itself", http.MethodGet, versionPath, nil, http.StatusOK},
+		{"the header's auth status", http.MethodGet, authPath, nil, http.StatusOK},
+		{"the sign-in dialog's fragment", http.MethodGet, signInViewPath, nil, http.StatusOK},
 		{"the page a card links to", http.MethodGet, "/sessions/" + browser.ID + "/view", nil, http.StatusOK},
 		// A recorder cannot lift a write deadline, so an open that got past
 		// identity, the cross-site check, the ownership lookup and the cap answers
@@ -2457,108 +2460,42 @@ func TestTheSettingsTableIsWellFormed(t *testing.T) {
 	}
 }
 
-// signInPanelPage executes the settings template directly against a
-// constructed signInPanel, the way TestEmbeddedTemplatesRenderTheFleetPage
-// executes it against a fleetView.
-//
-// Driving this through a real *loginrelay.Relay would mean a fake `claude`
-// binary on the test binary's own PATH to control what SignedIn() answers, for
-// a defect that lives entirely in the template's branching over a value it
-// already has. Executing the template against a hand-built panel proves the
-// same thing without any of that, and matches how render_test.go already tests
-// this template set.
-func signInPanelPage(t *testing.T, signedIn *bool) string {
-	t.Helper()
+// The sign-in panel's own template tests moved to signinview_test.go in spec
+// 015, alongside the fragment it now renders (GET /dashboard/signin/view)
+// rather than a section of this page.
 
-	view := settingsView{
-		Operator: &access.VerifiedOperator{Email: testOperatorEmail, Owner: auth.CallerOperator},
-		Shown:    sectionSignIn,
-		SignIn:   &signInPanel{Available: true, Token: "test-token", SignedIn: signedIn},
-	}
-
-	var page strings.Builder
-	if err := newTestServer(t, loopbackListen).templates.ExecuteTemplate(&page, "settings", view); err != nil {
-		t.Fatalf("execute the settings template: %v", err)
-	}
-	return page.String()
-}
-
-// TestSignInPanelDistinguishesSignedOutFromSignedIn is the failing-first proof
-// of the bug: html/template's {{ if }} on a pointer tests whether it is nil, not
-// what it points at, so a *bool holding false has always rendered exactly as
-// truthy as one holding true.
+// TestSettingsNoLongerOffersSignIn is spec 015's D5: the sign-in relay's
+// panel moved behind the header's own auth control, and this page must
+// neither link to it nor still know how to render it.
 //
-// Measured 2026-09-09 against crswd v0.106: an isolated daemon with HOME pointed
-// at an empty scratch dir, where `claude auth status --json` answered
-// `{"loggedIn": false}`, rendered "This host <strong>is signed in</strong>."
-// anyway — the one moment an operator opens this panel to find out why sessions
-// are failing, it told them there was nothing to do.
-//
-// **Must fail when** a non-nil *bool pointing at false renders the signed-in
-// sentence, or fails to render the signed-out one.
-func TestSignInPanelDistinguishesSignedOutFromSignedIn(t *testing.T) {
+// **Must fail when** the menu still links to a Sign-in section, or when
+// ?section=Sign-in still renders the panel instead of falling through to
+// whatever an unrecognised section already falls through to.
+func TestSettingsNoLongerOffersSignIn(t *testing.T) {
 	t.Parallel()
 
-	signedOut := false
-	page := signInPanelPage(t, &signedOut)
+	f := newFleet(t)
 
-	if strings.Contains(page, "<strong>is signed in</strong>") {
-		t.Errorf("a *bool pointing at false rendered the signed-in sentence:\n%s", page)
+	menu := settingsDefaultBody(t, f)
+	if strings.Contains(menu, "section=Sign-in") {
+		t.Errorf("the settings menu still links to a Sign-in section:\n%s", menu)
 	}
-	if !strings.Contains(page, "<strong>not signed in</strong>") {
-		t.Errorf("a *bool pointing at false did not render a signed-out sentence at all:\n%s", page)
-	}
-}
-
-// TestSignInPanelStates is the table this bug argues for: three states, three
-// mutually exclusive sentences, asserted together so a fix for one cannot
-// silently break another.
-//
-// The wanted and refused strings carry the <strong> tags around "is signed in"
-// and "not signed in" rather than the bare phrases: the "could not ask"
-// sentence itself contains the bare substring "is signed in" ("...whether this
-// host is signed in..."), which made an earlier draft of this test fail for the
-// wrong reason.
-func TestSignInPanelStates(t *testing.T) {
-	t.Parallel()
-
-	signedIn, signedOut := true, false
-
-	tests := map[string]struct {
-		signedIn *bool
-		want     string
-		refuse   []string
-	}{
-		"signed in": {
-			signedIn: &signedIn,
-			want:     "<strong>is signed in</strong>",
-			refuse:   []string{"<strong>not signed in</strong>", "could not ask"},
-		},
-		"signed out": {
-			signedIn: &signedOut,
-			want:     "<strong>not signed in</strong>",
-			refuse:   []string{"<strong>is signed in</strong>", "could not ask"},
-		},
-		"could not ask": {
-			signedIn: nil,
-			want:     "could not ask",
-			refuse:   []string{"<strong>is signed in</strong>", "<strong>not signed in</strong>"},
-		},
+	if strings.Contains(menu, ">Sign-in<") {
+		t.Errorf("the settings menu still names a Sign-in entry:\n%s", menu)
 	}
 
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			page := signInPanelPage(t, tc.signedIn)
-			if !strings.Contains(page, tc.want) {
-				t.Errorf("rendered page does not contain %q:\n%s", tc.want, page)
-			}
-			for _, absent := range tc.refuse {
-				if strings.Contains(page, absent) {
-					t.Errorf("rendered page unexpectedly contains %q:\n%s", absent, page)
-				}
-			}
-		})
+	// An old link, or a bookmark, now names a section this page has never
+	// heard of — exactly the case shownSection already handles for any other
+	// retired or misspelled section name, and the page it lands on must be
+	// byte for byte the one an operator's first click already reaches.
+	asked := settingsSectionBody(t, f, "Sign-in")
+	fallback := settingsDefaultBody(t, f)
+	if asked != fallback {
+		t.Errorf("?section=Sign-in renders something other than the ordinary default section:\ngot:\n%s\nwant:\n%s", asked, fallback)
+	}
+	for _, gone := range []string{"sign-in relay", "Start a sign-in", "Claude Code's own login"} {
+		if strings.Contains(asked, gone) {
+			t.Errorf("?section=Sign-in still renders %q from the old sign-in panel:\n%s", gone, asked)
+		}
 	}
 }

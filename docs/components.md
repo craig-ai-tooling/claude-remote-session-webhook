@@ -243,18 +243,51 @@ on this host.
 | Class | What it is |
 |---|---|
 | `.masthead` | The band, and the only place besides the empty state a rain canvas may sit |
-| `.masthead-bar` | The row inside it: brand, operator, settings link |
+| `.masthead-bar` | The row inside it: brand, operator, the auth control, settings link |
 | `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline |
 | `.operator` | The verified identity layer 1 built for this request |
 | `.masthead-link` | A link to another page of this daemon. Today there is exactly one, `/settings` |
 
+### The auth control (spec 015)
+
+A `<button type="button" class="pill pill-unknown">auth: checking</button>`
+between `.operator` and `.masthead-link`, styled with the status pill's shape
+rather than a second button of its own — see Status pill below for the class
+family and Modal for the dialog it opens.
+
 Rules:
-- **The settings link is in the bar, after the operator, and outside the
-  heading.** The wordmark is the route home and it lives inside the page's one
-  first-level heading; a second anchor in there would compete for that role, and
-  a heading holding two links is a heading that has become a menu.
-- **One link is not a navigation bar.** If a third element ever wants a place
-  here, that is the moment to reconsider the shape rather than to keep appending.
+- **It is a `<button>`, never an `<a>`.** `TestHeaderHasExactlyTwoAnchors` counts
+  anchors and is unchanged by design: this control changes what the operator
+  sees next (it opens a dialog), which is a button's job, and the header's "two
+  anchors, no more" rule is about links to another page and was never about
+  every interactive thing the bar may hold.
+- **`command="show-modal" commandfor="signin-dialog"`.** The Invoker Commands
+  API opens the dialog with no script at all, exactly as the create dialog's
+  trigger does (see Modal).
+- **Server-rendered as `auth: checking`, always.** The daemon answers this
+  request over a page that has not fetched anything yet, so there is nothing
+  server-side to report — the pill starts uncertain and a script fills in what
+  `GET /dashboard/auth` says. A page with no script keeps reading `checking`
+  forever, which is the honest answer to a question it never asked.
+- **Text on every state, never colour alone**, the same rule the status pill
+  keeps: `auth: ok`, `auth: bad`, `auth: unknown` (this daemon could not ask —
+  no relay, or the exec failed), `auth: checking` (before the first answer).
+  The last two share the `pill-unknown` class and differ only in the words.
+- **No session-scoped state folds into it.** A single session's own
+  `needs-auth` is a different fact — one session parked on the sign-in screen —
+  and stays on that session's own pill. Folding the two together is explicitly
+  out of scope (spec 015).
+
+Rules for the bar as a whole:
+- **The settings link is in the bar, after the operator and the auth control,
+  and outside the heading.** The wordmark is the route home and it lives inside
+  the page's one first-level heading; a second anchor in there would compete for
+  that role, and a heading holding two links is a heading that has become a
+  menu.
+- **Two anchors is still the whole of what this bar's links are allowed to be**
+  (`TestHeaderHasExactlyTwoAnchors`). The auth control does not count against
+  that — it is a button — and a third *link* is still the moment to reconsider
+  the shape rather than to keep appending.
 - **`.operator` carries `margin-inline-start: auto`, and it is load-bearing.**
   The bar is `space-between`; a third child without it puts the identity in the
   centre, which is a different component from the one this document describes.
@@ -971,9 +1004,27 @@ Rules:
 
 ## Modal
 
-**Built, with no partial** — the create control is the one call site
-(`partials/create-form.html`, milestone 11). It takes Button's and Field's path
+**Built, with no partial** — the create control was the one call site
+(`partials/create-form.html`, milestone 11) until spec 015 added a second, the
+sign-in dialog in `partials/header.html`. It takes Button's and Field's path
 above rather than the canonical inventory's, and two facts put it there.
+
+**A second call site is not yet the partial this section always said would
+follow.** The sign-in dialog's markup is Button's and Field's path too —
+written out in `header.html` rather than lifted into a shared template — for
+the same reason a Modal partial could not be written the first time: this
+template set is parsed with no function map, so a partial would still need a
+`dict` of title, body and actions that does not exist. The two dialogs are
+independent renders of one vocabulary, not one component with two callers yet.
+
+The sign-in dialog (`#signin-dialog`) opens from the header's auth control (see
+Header) rather than from a trigger inside its own body, and its `.modal-body`
+starts holding a short no-JS fallback line: `crswd.js` fetches
+`GET /dashboard/signin/view` and swaps in the real panel — the sign-in forms
+that used to live on the settings page (spec 015) — the moment the dialog
+opens, by click or by the auto-open rules in `crswd.js`. A page with no script
+never fetches it and is told, in that line, that this dialog needs one; every
+other dialog and every other control on this dashboard still needs none.
 
 The first is that the illustration this section used to carry could not be
 written. It showed a call site handing `modal` a `dict` of Title, Body and

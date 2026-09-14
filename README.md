@@ -42,14 +42,18 @@ fleet stops being able to make a request, and until this existed the only way to
 fix it was to sit at the machine and answer a device-code prompt in a terminal —
 which is the thing you installed this to avoid.
 
-**Settings → Sign-in** does it from wherever you are:
+The **`auth:`** pill in the header does it from wherever you are — it reads
+`ok`, `bad`, `unknown` or `checking`, and pressing it opens a dialog:
 
 1. Press **Start a sign-in**. The daemon runs `claude auth login` in a tmux window
    of its own.
 2. Open the link it shows, sign in, and copy the code Anthropic gives you.
 3. Paste the code into the box and press **Send the code**.
-4. The panel says whether this host is signed in, and you press **Cancel this
+4. The dialog says whether this host is signed in, and you press **Cancel this
    sign-in** to close the window.
+
+A `bad` pill opens the dialog on its own the first time it turns up, so you do
+not have to notice the colour change to be told.
 
 **It never types into one of your sessions.** The window it drives is not a
 session — it has no identifier, carries none of the tmux options adoption looks

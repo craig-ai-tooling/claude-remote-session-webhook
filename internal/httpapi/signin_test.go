@@ -80,6 +80,19 @@ func (d *signInDoor) post(t *testing.T, path string, form url.Values) *httptest.
 	return w
 }
 
+// get is the fleet's own open, restated for a door that is not a *fleet: the
+// verified identity assertion and nothing else, for a route that only reads.
+func (d *signInDoor) get(t *testing.T, target string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.Header.Set(headerAccessAssertion, d.keys.mint(t, d.keys.claims()))
+
+	w := httptest.NewRecorder()
+	d.ServeHTTP(w, r)
+	return w
+}
+
 // outcomeOf reads the code a 303 carried back to the operator.
 func outcomeOf(t *testing.T, w *httptest.ResponseRecorder) string {
 	t.Helper()
@@ -119,13 +132,17 @@ func TestSignInStartSummonsAWindow(t *testing.T) {
 	}
 }
 
-// TestSignInStartReturnsToItsOwnPanel is the one action on this door that does
-// not return to the fleet.
+// TestSignInStartReturnsToTheDashboardWithTheOpenMarker is D6 (spec 015): the
+// sign-in relay's panel moved off the settings page and behind the header's
+// own dialog, so what "reflects what the action did" is the dashboard's own
+// outcome banner, with a marker telling a scriptless browser to open the
+// dialog it would otherwise have to press the pill for a second time to see.
 //
-// The flow's steps happen on the panel — the link to open, the box to paste
-// into — and an operator on a phone bounced to a grid of cards after each step
-// would have to navigate back into it three times while holding a code.
-func TestSignInStartReturnsToItsOwnPanel(t *testing.T) {
+// It used to return to a section of the settings page (settingsPath,
+// sectionSignIn) — this is that redirect target updated, per spec 015's own
+// instruction, and nothing about the ordering or the confirming step below it
+// changed.
+func TestSignInStartReturnsToTheDashboardWithTheOpenMarker(t *testing.T) {
 	t.Parallel()
 
 	d := newSignInDoor(t)
@@ -135,11 +152,14 @@ func TestSignInStartReturnsToItsOwnPanel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse the redirect: %v", err)
 	}
-	if to.Path != pathSettingsPage {
-		t.Errorf("redirected to %q, want the settings page", to.Path)
+	if to.Path != pathFleet {
+		t.Errorf("redirected to %q, want the dashboard", to.Path)
 	}
-	if got := to.Query().Get(querySection); got != sectionSignIn {
-		t.Errorf("redirected to section %q, want %q", got, sectionSignIn)
+	if got := to.Query().Get(queryOutcome); got != string(outcomeSignInStarted) {
+		t.Errorf("redirected with outcome %q, want %q", got, outcomeSignInStarted)
+	}
+	if got := to.Query().Get(querySignInOpen); got != signInOpenMarker {
+		t.Errorf("redirected with signin=%q, want %q — the dialog will not open itself for a scriptless browser without it", got, signInOpenMarker)
 	}
 }
 
