@@ -243,11 +243,13 @@ on this host.
 | Class | What it is |
 |---|---|
 | `.masthead` | The band, and the only place besides the empty state a rain canvas may sit |
-| `.masthead-bar` | The row inside it: brand, operator, the auth control, settings link |
-| `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline |
+| `.masthead-bar` | The row inside it: the brand on the left, `.masthead-side` on the right, centred against each other. One line above `780px` — the column shrinks rather than wrapping under the brand |
+| `.brand` | The page's one `<h1>`, holding the wordmark link and the tagline. Inside the masthead it takes `--fs-masthead-brand`, sized to stand as tall as the two identity rows opposite it |
+| `.masthead-side` | The identity column: `.masthead-identity` over `.quota-bar`, right-aligned. A grid, so the quota row takes the identity row's width and the meter lines up under the controls |
+| `.masthead-identity` | The column's first row: operator, the auth control, settings link. When the column narrows only the operator gives way; the two controls never shrink |
 | `.operator` | The verified identity layer 1 built for this request |
 | `.masthead-link` | A link to another page of this daemon. Today there is exactly one, `/settings` |
-| `.quota-bar` | The weekly-quota bar's own row, below `.masthead-bar` and still inside `.masthead` |
+| `.quota-bar` | The column's second row: the weekly-quota label, then its meter filling the rest of the row |
 
 ### The auth control (spec 015)
 
@@ -281,8 +283,8 @@ Rules:
 
 ### The weekly-quota bar (spec 016)
 
-A native `<meter min="0" max="100">` plus a `<p class="quota-label">`, in a
-`.quota-bar` row below `.masthead-bar`, on every page — the same "carried by
+A `<p class="quota-label">` plus a native `<meter min="0" max="100">`, in the
+`.quota-bar` row under the auth control and the settings link, on every page — the same "carried by
 the header, never composed per page" rule the auth control follows, and read
 from `GET /dashboard/quota`, which answers total usage from quota-axi's own
 on-disk cache (`internal/quota`).

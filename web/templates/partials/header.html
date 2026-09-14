@@ -62,8 +62,12 @@
   one exception, named as one rather than pretended around, and the fallback
   says so instead of drawing a form that could not be submitted.
 
-  The weekly-quota bar (spec 016) sits below the bar proper, still inside this
-  header so it is on every page the header is. Same discipline as the auth
+  The weekly-quota bar (spec 016) is the second row of the identity column,
+  right-aligned under the auth control and the settings link, with the brand
+  sized to the height of both rows opposite it. It first shipped as a row of
+  its own spanning the shell, and on a desktop that left its label stranded
+  under the wordmark at the far left, a long way from the identity it is about.
+  Same discipline as the auth
   pill above it: this render has not asked GET /dashboard/quota yet, so it
   says "checking" rather than a number, and crswd.js fills in what that route
   answers. The <meter> ships `hidden` for the same reason the pill's word is
@@ -83,13 +87,17 @@
 {{ template "rain" }}
 <div class="masthead-bar">
 <h1 class="brand"><a class="brand-link" href="/">crswd</a><span class="brand-version">{{ version }}</span> <span class="brand-tag">session control</span></h1>
+<div class="masthead-side">
+<div class="masthead-identity">
 <p class="operator" title="{{ .Email }}">{{ .Email }}</p>
 <button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>
 <a class="masthead-link" href="/settings">Settings</a>
 </div>
 <div class="quota-bar">
-<meter class="quota-meter" data-quota-meter min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
 <p class="quota-label quota-label-unknown" data-quota-label>weekly quota: checking</p>
+<meter class="quota-meter" data-quota-meter min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
+</div>
+</div>
 </div>
 </header>
 <dialog class="modal" id="signin-dialog" closedby="any" aria-labelledby="signin-title">
