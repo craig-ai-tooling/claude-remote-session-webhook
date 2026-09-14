@@ -296,9 +296,10 @@ Rules:
   auth pill's shape: this render has asked the route nothing yet, so there is
   nothing to show — a meter at 0% before the first fetch would be
   indistinguishable from a real reading of none used.
-- **Three fill regions, not a script computing one.** `low="74" high="90"
+- **Three fill regions, not a script computing one.** `low="74" high="89"
   optimum="0"` gives the browser its own optimum/sub-optimum/worst regions at
-  the 75%/90% thresholds; `crswd.css` overrides each vendor's own
+  the 75%/90% thresholds (both bounds are inclusive of their lower region, so
+  `high="90"` would leave exactly 90% amber); `crswd.css` overrides each vendor's own
   pseudo-elements to the same token pair (`--phosphor`, `--state-auth`,
   `--state-bad`) so the fill's colour follows `value` with nothing else to
   keep in sync.
