@@ -144,6 +144,7 @@ needed, inline it as a `@font-face` data URI and embed it via `go:embed`.
 | Role | Size / line-height | Treatment |
 |---|---|---|
 | Brand | `1.05rem` | 700, uppercase, `letter-spacing: .22em`, phosphor + glow |
+| Masthead brand | `1.75rem` | The header's wordmark only, as `--fs-masthead-brand`: as tall as the two identity rows opposite it. The tagline beside it steps up to the prose size. Below `780px` both return to the rows above |
 | Section eyebrow | `.72rem` | 600, uppercase, `letter-spacing: .2em`, `--dim` |
 | Body | `14px / 1.5` | mono, `--text` |
 | Prose / help | `.86rem` | **sans**, `--dim` |
@@ -291,8 +292,13 @@ Everything inside `@media (max-width: 780px)`:
 | `.settings-table tr` | `display: grid` + `grid-template-columns: minmax(0, 1fr)` | Key, value and source do not fit ~358px. The editable row is why it matters rather than the width alone — its input and Save button make it the widest row on the page, so changing a setting meant typing inside a horizontal pan |
 | `.settings-table th`, `.settings-table td` | `overflow-wrap: anywhere` | A config key is one unbroken token with no column beside it left to give way |
 | `.card-name`, `.card-path` | `white-space: normal` + `overflow-wrap: anywhere` | The ellipsis puts the full value in a `title`, and a `title` needs a hover a touch device does not have — so both were unreachable rather than shortened. The base rule keeps `nowrap`: on a desktop the ellipsis is what stops one long path setting the height of a whole grid row |
-| `.masthead-bar` | gutters `--s5` → `--s4` | `.shell` narrows here and the header did not, so the one band on every screen sat 8px outside every card and table beneath it. The rule is the page's gutter rather than a number of its own, and the test reads `.shell` rather than naming a token, so the two cannot drift apart quietly |
+| `.masthead-bar` | gutters `--s5` → `--s4`, and `flex-wrap: wrap` | `.shell` narrows here and the header did not, so the one band on every screen sat 8px outside every card and table beneath it. The rule is the page's gutter rather than a number of its own, and the test reads `.shell` rather than naming a token, so the two cannot drift apart quietly. It wraps only here: above `780px` the bar is one line and the identity column shrinks, truncating the operator and the quota label's tail, rather than dropping under the brand and tripling the sticky band |
 | `.operator` | `flex: 1 1 0` + `min-inline-size: 0` + `text-align: end` | A flex line wraps on its items' *hypothetical* sizes, so a long address wrapped the sticky bar to two rows and the ellipsis already on the identity only helped after it had. Basis `0` makes that hypothetical size zero and the ellipsis does the work instead. `min-inline-size` says what the base rule's `overflow: hidden` already buys; `text-align` is because basis `0` grows the item to fill, and identity at the top right is the second non-negotiable of this file |
+| `.masthead-bar .brand` | `font-size: var(--fs-brand)` | The masthead wordmark is sized to stand beside a two-row identity column, and a phone has no room for that column beside it |
+| `.masthead-side` | `display: contents` | The column dissolves, so the identity row sits beside the brand as it did before the quota bar and the quota row can take a line of its own |
+| `.masthead-identity` | `flex: 1 1 0` | With the column gone it is a flex item of the bar, and it has to take the space the brand leaves for the operator's ellipsis to do its job |
+| `.quota-bar` | `flex-basis: 100%` + `flex-wrap: wrap` + `gap: var(--s2)` | Its own line under brand and identity. The label is wider than the space beside the brand on a phone |
+| `.quota-meter` | `flex-basis: 100%` | The meter wraps under its label at full width rather than being squeezed beside it |
 
 **Adding a rule to that block adds a row to this table, in the same commit** —
 and removing one removes its row, for the same reason. An enumeration that has
