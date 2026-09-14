@@ -61,6 +61,24 @@
   opens. Every other control in this tree still needs no script; this is the
   one exception, named as one rather than pretended around, and the fallback
   says so instead of drawing a form that could not be submitted.
+
+  The weekly-quota bar (spec 016) sits below the bar proper, still inside this
+  header so it is on every page the header is. Same discipline as the auth
+  pill above it: this render has not asked GET /dashboard/quota yet, so it
+  says "checking" rather than a number, and crswd.js fills in what that route
+  answers. The <meter> ships `hidden` for the same reason the pill's word is
+  "checking" rather than a guess — a bar showing 0% before the first fetch
+  lands would be indistinguishable from a real reading of none used, which is
+  the exact failure D4 exists to rule out. Its low/high/optimum give the
+  browser's own three fill regions the same 75%/90% thresholds crswd.css
+  colours from tokens, so the number the script writes into `value` is the
+  only thing that has to change for the colour to follow it.
+
+  `.quota-label-unknown` starts on the label for the same reason the auth
+  pill's button starts as `pill-unknown`: this render has told nobody
+  anything yet, and unknown is the honest colour for that until the first
+  fetch lands. crswd.js removes it on a known reading and puts it back on a
+  failed one — never a second spelling for "this daemon could not tell".
 */}}<header class="masthead">
 {{ template "rain" }}
 <div class="masthead-bar">
@@ -68,6 +86,10 @@
 <p class="operator" title="{{ .Email }}">{{ .Email }}</p>
 <button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>
 <a class="masthead-link" href="/settings">Settings</a>
+</div>
+<div class="quota-bar">
+<meter class="quota-meter" data-quota-meter min="0" max="100" low="74" high="90" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
+<p class="quota-label quota-label-unknown" data-quota-label>weekly quota: checking</p>
 </div>
 </header>
 <dialog class="modal" id="signin-dialog" closedby="any" aria-labelledby="signin-title">

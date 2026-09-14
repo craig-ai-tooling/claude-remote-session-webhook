@@ -287,6 +287,14 @@ const (
 	// together.
 	ActionDashboardAuth Action = "dashboard.auth"
 
+	// ActionDashboardQuota is the header's own weekly-quota bar asking what
+	// quota-axi's on-disk cache last said about total usage (spec 016). Its own
+	// action rather than dashboard.auth's reused, for the reason that one is its
+	// own rather than dashboard.version's: an operator counting one must not be
+	// counting the other with it, and this one has no exec and no cache behind
+	// it at all — a plain file read every request.
+	ActionDashboardQuota Action = "dashboard.quota"
+
 	// ActionDashboardSignInView is the sign-in dialog's own fragment served
 	// (spec 015): the panel that used to be part of settings.view, now read on
 	// its own so an operator counting who read the daemon's configuration is not

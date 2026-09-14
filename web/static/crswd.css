@@ -1153,6 +1153,87 @@ button.pill:hover {
   border-color: var(--phosphor);
 }
 
+/* The weekly-quota bar (spec 016): a native <meter> themed rather than a
+   custom-drawn one, the same "native control with a theme over it" choice the
+   working-directory picker and the switch already make — a screen reader
+   announces value/min/max on its own, and the browser computes the fill's
+   width from `value` so no script ever writes a `style` attribute this CSP
+   forbids anyway.
+
+   Colour is reinforcement only: `.quota-label` beside it is the text FR-030
+   requires, and it is the only thing rendered at all while the meter still
+   carries `hidden` — before the first fetch, and whenever the daemon could
+   not tell. A hidden meter is not a hidden failure; it is the alternative to
+   the one failure this bar exists to rule out, a bar reading a false 0%. */
+.quota-bar {
+  max-inline-size: var(--shell-max);
+  margin-inline: auto;
+  padding: 0 var(--s5) var(--s3);
+}
+
+.quota-meter {
+  display: block;
+  inline-size: 100%;
+  block-size: var(--s2);
+}
+
+.quota-label {
+  margin: var(--s2) 0 0;
+  color: var(--dim);
+  font-family: var(--sans);
+  font-size: var(--fs-prose);
+}
+
+/* Starts on the label in the markup, exactly as .pill-unknown starts on the
+   auth control: this daemon has told nobody anything yet, or the last thing
+   it said was "I could not tell" — the same tone off the green-to-red health
+   spectrum on purpose, because neither is a claim about how healthy the
+   quota is. crswd.js removes it the moment a real reading lands. */
+.quota-label-unknown {
+  color: var(--state-unknown);
+}
+
+/* Three fill regions a browser derives on its own from the meter's
+   low/high/optimum (optimum sits in the low region, so low is "good", the
+   middle band is "sub-optimal" and high is "the worst") — every engine's own
+   name for the same three thresholds crswd.js never has to compute. Each
+   pseudo-element is overridden to the same token pair so WebKit's three-part
+   naming and Firefox's pseudo-class-on-the-host naming render identically. */
+.quota-meter::-webkit-meter-bar {
+  background: var(--surface-lift);
+  border: var(--edge-width) solid var(--edge);
+  border-radius: var(--r);
+}
+
+.quota-meter::-webkit-meter-optimum-value {
+  background: var(--phosphor);
+}
+
+.quota-meter::-webkit-meter-suboptimum-value {
+  background: var(--state-auth);
+}
+
+.quota-meter::-webkit-meter-even-less-good-value {
+  background: var(--state-bad);
+}
+
+.quota-meter::-moz-meter-bar {
+  background: var(--phosphor);
+  border-radius: var(--r);
+}
+
+.quota-meter:-moz-meter-optimum::-moz-meter-bar {
+  background: var(--phosphor);
+}
+
+.quota-meter:-moz-meter-sub-optimum::-moz-meter-bar {
+  background: var(--state-auth);
+}
+
+.quota-meter:-moz-meter-sub-sub-optimum::-moz-meter-bar {
+  background: var(--state-bad);
+}
+
 /* The pane viewer. The container is styled and the content never is — the
    design system's fourth non-negotiable, which is a security rule wearing design
    clothes: what is inside this element is a text node the host wrote.

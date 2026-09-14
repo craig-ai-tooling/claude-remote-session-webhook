@@ -39,6 +39,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/quota"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 	"github.com/nctiggy/claude-remote-session-webhook/web"
@@ -120,6 +121,20 @@ type Server struct {
 	// header's auth pill polls this every 60 seconds from every open tab, and
 	// each ask is a subprocess exec (authstatus.go, spec 015).
 	authCache authCache
+
+	// quotaCachePath is where quota-axi's own cache lives, resolved once at
+	// construction the same way quota-axi resolves it itself (quota.DefaultCachePath).
+	// Unlike authCache this needs no in-memory cache of its own: a read here is a
+	// stat and a small file, not a subprocess (quotastatus.go, spec 016). Empty
+	// means construction could not resolve a cache directory at all — vanishingly
+	// rare, since it only happens when neither XDG_CACHE_HOME nor $HOME resolves —
+	// and the route answers "unknown" rather than the daemon refusing to start
+	// over a feature that only reads.
+	//
+	// A field rather than a call to quota.DefaultCachePath per request, like
+	// listen and clock: a test points it at a fixture instead of this host's
+	// real ~/.cache.
+	quotaCachePath string
 
 	// releaseFeed asks what is published, and is nil in tests.
 	//
@@ -615,6 +630,13 @@ func newServer(
 		return nil, fmt.Errorf("httpapi: build the sign-in rate limiter: %w", err)
 	}
 
+	// Resolved once, here, rather than per request (quotastatus.go, spec 016).
+	// Not fatal on failure: a daemon that could not work out its own cache
+	// directory still serves every other route, and the quota route answers
+	// "unknown" the same way it does for a host with no quota-axi installed at
+	// all.
+	quotaCachePath, _ := quota.DefaultCachePath() //nolint:errcheck // an unresolved path leaves the field empty, and dashboardQuota already answers "unknown" for that case — see the comment above.
+
 	mux := http.NewServeMux()
 	s := &Server{
 		cfg: cfg,
@@ -627,21 +649,22 @@ func newServer(
 			IdleTimeout:       idleTimeout,
 			MaxHeaderBytes:    maxHeaderBytes,
 		},
-		listen:     listen,
-		authn:      authn,
-		browser:    browser,
-		trail:      trail,
-		pageKey:    key,
-		templates:  templates,
-		sessions:   sessions,
-		creates:    creates,
-		logins:     logins,
-		streams:    streams,
-		closing:    make(chan struct{}),
-		panes:      newPanes(),
-		streamTick: streamInterval,
-		clock:      systemClock{},
-		report:     reportToStderr,
+		listen:         listen,
+		authn:          authn,
+		browser:        browser,
+		trail:          trail,
+		pageKey:        key,
+		templates:      templates,
+		sessions:       sessions,
+		creates:        creates,
+		logins:         logins,
+		streams:        streams,
+		closing:        make(chan struct{}),
+		panes:          newPanes(),
+		streamTick:     streamInterval,
+		clock:          systemClock{},
+		report:         reportToStderr,
+		quotaCachePath: quotaCachePath,
 	}
 
 	// The Server, not the mux. ServeHTTP refuses a non-clean path before the mux
@@ -708,6 +731,14 @@ func newServer(
 	// and changes nothing, so it needs no action gate — a poll every 60 seconds
 	// from every open tab must never cost more than the cache's own TTL bounds.
 	s.handleBrowser(patternDashboardAuth, audit.ActionDashboardAuth, s.dashboardAuth)
+	// The header's weekly-quota bar, on the same terms as the auth pill one line
+	// up and for the same reason: FR-006's closed set admits no unauthenticated
+	// route, and total weekly usage is exactly the fact a scanner would like for
+	// free (spec 016). It only reads quota-axi's own cache file — no exec, no
+	// network — so unlike the auth pill it needs no cache of its own: a stat and
+	// a small file every 60 seconds from every open tab costs nothing worth
+	// sharing across callers.
+	s.handleBrowser(patternDashboardQuota, audit.ActionDashboardQuota, s.dashboardQuota)
 	// The sign-in dialog's own fragment (spec 015), replacing the panel that used
 	// to live on the settings page. A browser route and not an action: it reads,
 	// exactly as the settings page it replaces did, and it is what forces the
