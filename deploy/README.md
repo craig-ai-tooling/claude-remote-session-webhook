@@ -351,19 +351,44 @@ systemctl --user daemon-reload
 systemctl --user restart crswd
 ```
 
-**`ProtectKernelTunables=false` is the line that does the work, and dropping it
-gives you a file that changes nothing.** Measured on a real host:
+**The measure of success is `sudo -n true`, not `NoNewPrivs`.** Every earlier
+version of this section — and the tests and comments that shipped with it —
+checked only whether `NoNewPrivs` dropped to `0`. It does, with three of the
+five lines below in place, while `sudo` keeps failing on the fourth: `NoNewPrivs`
+and "is root mapped in this namespace" are different facts. Measured on a real
+host, systemd 255, user manager, each setting alone (`systemd-run --user -p
+<setting> …`):
 
-| Merged settings | Effective `NoNewPrivs` |
-|---|---|
-| `ProtectKernelTunables=true` | `1` |
-| `ProtectKernelTunables=true` + `NoNewPrivileges=false` | **`1`** |
-| `ProtectKernelTunables` overridden to `false` | `0` |
+| setting alone | `/proc/self/uid_map` | `NoNewPrivs` | `sudo -n id -u` |
+|---|---|---|---|
+| `NoNewPrivileges=true` | `0 0 4294967295` | `1` | "no new privileges flag is set" |
+| `RestrictSUIDSGID=true` | `0 0 4294967295` | `1` (implied) | same |
+| `ProtectKernelTunables=true` | `1000 1000 1` | `1` | "/etc/sudo.conf is owned by uid 65534" |
+| `ProtectSystem=full` | `1000 1000 1` | `0` | "/etc/sudo.conf is owned by uid 65534" |
+| `ProtectControlGroups=true` | `1000 1000 1` | `0` | "/etc/sudo.conf is owned by uid 65534" |
+| all five relaxed | `0 0 4294967295` | `0` | prints `0` |
 
 `ProtectKernelTunables=true` *implies* `NoNewPrivileges`, and systemd treats that
-as a floor rather than a value: an explicit `no` in the merged unit does not lower
-it back. Relax the obvious setting alone and `sudo` still fails, with nothing in
-either file that looks like the cause.
+as a floor rather than a value: an explicit `no` in the merged unit does not
+lower it back — that is real, and it is the trap the drop-in example names, but
+it is not the whole trap. In a *user* manager (this unit, always), **any one**
+mount-namespacing directive left standing — `ProtectKernelTunables`,
+`ProtectSystem=full`, or `ProtectControlGroups` alone — puts the service in a
+private user namespace that maps only your own uid, so root is unmapped and
+`sudo` reports `/etc/sudo.conf` as owned by uid 65534 instead of saying it is
+not permitted. The row above with only `ProtectControlGroups=true` standing
+shows `NoNewPrivs: 0` and `sudo -n` still failing — `NoNewPrivs` proves nothing
+about this second mechanism. `PrivateUsers=false` does not prevent it either
+(measured): the sandboxing directive is what triggers the namespace, not
+`PrivateUsers`.
+
+**Already-open sessions don't get this until the tmux server they're on
+exits.** Sessions are shells forked from a long-lived tmux server this daemon
+starts once and keeps alive across restarts (`KillMode=process`, so
+`daemon-reload` and `restart crswd` alone do not touch it — see
+`crswd.example.service`). That changes what a *new* server would start under;
+an existing server keeps the sandbox it already has until it actually exits —
+`tmux kill-server`, or a full logout.
 
 **What you are granting**: a path from an authenticated request to **root on this
 host**, not just to your account. `allowed_roots` does not bound it — that bounds
@@ -373,7 +398,14 @@ working directory. Delete the file, `daemon-reload` and restart to take it back.
 Check what is actually in effect rather than what the files suggest:
 
 ```bash
-systemctl --user show crswd -p NoNewPrivileges -p ProtectKernelTunables
+systemctl --user show crswd -p NoNewPrivileges -p ProtectKernelTunables -p ProtectControlGroups -p ProtectSystem
+```
+
+And, the check that actually answers the question, from inside a session itself:
+
+```bash
+cat /proc/self/uid_map    # "0 0 4294967295" means root is mapped
+sudo -n true && echo sudo works
 ```
 
 ### Moving a hand-edited unit back onto the supported path

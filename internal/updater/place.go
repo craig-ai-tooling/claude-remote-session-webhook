@@ -7,8 +7,9 @@ package updater
 //
 // A unit this daemon did not write is never overwritten. install.sh has said so
 // since it shipped and it is right: the operator this milestone is for relaxed
-// NoNewPrivileges, RestrictSUIDSGID and ProtectSystem in theirs so that `sudo`
-// works inside a session, and an update that replaced units would undo that on
+// NoNewPrivileges, RestrictSUIDSGID, ProtectKernelTunables,
+// ProtectControlGroups and ProtectSystem in theirs so that `sudo` works
+// inside a session, and an update that replaced units would undo that on
 // every release and make them rediscover it every time.
 //
 // What is new here is the other half of it. Refusing to touch their file was

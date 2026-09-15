@@ -1566,18 +1566,28 @@ func TestEveryInstallerFunctionIsCalled(t *testing.T) {
 // dropInExamplePath is the documented copy of the override install.sh writes.
 const dropInExamplePath = repoRoot + "/deploy/crswd.service.d/10-relax.conf.example"
 
-// hardeningRelaxed is every directive the override has to carry, and the third
-// one is the whole reason this list is asserted rather than eyeballed.
+// hardeningRelaxed is every directive the override has to carry, and it is
+// asserted rather than eyeballed because the fifth entry is the one every
+// earlier version of this list, and the tests built on it, got wrong.
 //
-// Measured on a real host: `ProtectKernelTunables=true` IMPLIES NoNewPrivileges
-// and systemd treats that as a floor, so relaxing NoNewPrivileges alone leaves
-// the process with NoNewPrivs:1 and sudo still broken — with nothing in either
-// file that looks like the cause. An override missing that line is not a weaker
-// override, it is an inert one.
+// **The measure of success is `sudo -n true` (or a `/proc/self/uid_map` that
+// maps 0), not `NoNewPrivs`.** Measured on a real host: `ProtectKernelTunables
+// =true` IMPLIES NoNewPrivileges and systemd treats that as a floor, so
+// relaxing NoNewPrivileges alone leaves the process with NoNewPrivs:1 and sudo
+// still broken — with nothing in either file that looks like the cause. But
+// NoNewPrivs dropping to 0 is not the whole story either: with the first four
+// settings below relaxed and `ProtectControlGroups=true` left hardened,
+// NoNewPrivs already reads 0 and `sudo -n` still fails, because a *user*
+// manager's service loses root to a private, unprivileged user namespace the
+// moment ANY ONE mount-namespacing directive — ProtectKernelTunables,
+// ProtectSystem=full, or ProtectControlGroups alone — is left standing. An
+// override missing any line here is not a weaker override, it is one where
+// sudo does not work.
 var hardeningRelaxed = []string{
 	"NoNewPrivileges=false",
 	"RestrictSUIDSGID=false",
 	"ProtectKernelTunables=false",
+	"ProtectControlGroups=false",
 	"ProtectSystem=false",
 }
 
@@ -1602,7 +1612,7 @@ func TestTheShippedUnitStaysHardened(t *testing.T) {
 }
 
 // TestTheDropInGrantsWhatItClaims holds the installer's heredoc and the
-// documented example to the same four directives.
+// documented example to the same five directives.
 //
 // They are two copies by necessity — the installer writes the file inline rather
 // than fetching a fifth release asset, because what it becomes is a file systemd
@@ -1633,6 +1643,131 @@ func TestTheDropInGrantsWhatItClaims(t *testing.T) {
 	for path, body := range map[string]string{installerPath: string(script), dropInExamplePath: string(example)} {
 		if !strings.Contains(body, "ProtectKernelTunables") || !strings.Contains(body, "implies") && !strings.Contains(body, "IMPLIES") {
 			t.Errorf("%s relaxes hardening without explaining that ProtectKernelTunables implies NoNewPrivileges; an operator who trims it gets a silently inert override", path)
+		}
+	}
+}
+
+// sandboxingDirectives is every systemd sandboxing directive this project
+// might plausibly reach for, enumerated rather than discovered so that adding
+// one to the shipped unit is caught here — by name — instead of by an
+// operator whose `sudo` (or whatever else the new directive blocks) silently
+// stays broken behind a drop-in that no longer covers it.
+//
+// It is deliberately wider than hardeningRelaxed, which is only the settings
+// this project's drop-in currently expresses. That is the reason this list
+// exists at all: hardeningRelaxed grew from four entries to five only after a
+// fifth directive, ProtectControlGroups, shipped hardened in the unit with no
+// line for it in the drop-in, and every test built on the four-entry list
+// stayed green throughout, because none of them looked past the settings it
+// already knew to ask about.
+var sandboxingDirectives = []string{
+	"NoNewPrivileges", "RestrictSUIDSGID",
+	"ProtectKernelTunables", "ProtectKernelModules", "ProtectKernelLogs",
+	"ProtectControlGroups", "ProtectSystem", "ProtectHome", "ProtectClock", "ProtectHostname",
+	"PrivateTmp", "PrivateDevices", "PrivateMounts", "PrivateUsers",
+	"RestrictNamespaces", "LockPersonality", "MemoryDenyWriteExecute",
+	"RestrictRealtime", "SystemCallFilter",
+}
+
+// serviceAssignments is systemd's own rule for a non-list directive inside
+// [Service]: the last assignment wins, and a comment or another section is
+// not one. This project's own unit files carry no trailing comments — the
+// updater package has its own reader for a hand-edited unit that might —  so
+// unlike that one this does not need to fall back to a default on a value it
+// cannot parse; a directive here that fails to parse is a bug in this
+// project's own files, not something to read past.
+func serviceAssignments(t *testing.T, raw []byte) map[string]string {
+	t.Helper()
+
+	out := map[string]string{}
+	section := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "", strings.HasPrefix(trimmed, "#"), strings.HasPrefix(trimmed, ";"):
+			continue
+		case strings.HasPrefix(trimmed, "["):
+			section = trimmed
+			continue
+		}
+		if section != "[Service]" {
+			continue
+		}
+		key, value, ok := strings.Cut(trimmed, "=")
+		if !ok {
+			t.Fatalf("a [Service] line has no '=': %q", trimmed)
+		}
+		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+// isRelaxedDirectiveValue reports whether value is the permissive direction
+// of a sandboxing directive. Every one of them defaults to systemd's own
+// permissive posture, so "false" (however systemd spells it) or no value at
+// all is what a drop-in has to assign to undo one the shipped unit hardens.
+func isRelaxedDirectiveValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "false", "no", "off", "0":
+		return true
+	default:
+		return false
+	}
+}
+
+// TestTheDropInRelaxesEveryHardenedSandboxingDirective is the guard against
+// this recurring under a different setting than the one it shipped under.
+//
+// The bug it guards against: ProtectControlGroups=true shipped hardened in the
+// unit with no line for it in the drop-in — four settings relaxed, sudo still
+// broken, because a user MANAGER's service only needs ONE mount-namespacing
+// directive left standing to be trapped in a private user namespace that
+// unmaps root. TestTheDropInGrantsWhatItClaims did not catch it and could not
+// have — it only checks that the directives hardeningRelaxed ALREADY NAMES
+// appear in both files, which is silent about a sixth directive the unit
+// starts hardening tomorrow.
+//
+// This instead reads every directive the shipped unit actually assigns a
+// non-relaxed value, against the wider list above, and requires the drop-in
+// example to relax each one — so a future hardening change to the unit (say,
+// ProtectHome=read-only) fails here instead of shipping a drop-in that quietly
+// stops covering it.
+//
+// **Must fail when** the drop-in example is the one this repository shipped
+// before this test existed: verified by hand against
+// `git show origin/main:deploy/crswd.service.d/10-relax.conf.example`, which
+// carries no ProtectControlGroups line and so leaves that directive hardened
+// while the unit asserts it.
+func TestTheDropInRelaxesEveryHardenedSandboxingDirective(t *testing.T) {
+	t.Parallel()
+
+	unit, err := os.ReadFile(unitPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", unitPath, err)
+	}
+	example, err := os.ReadFile(dropInExamplePath)
+	if err != nil {
+		t.Fatalf("read %s: %v", dropInExamplePath, err)
+	}
+
+	shipped := serviceAssignments(t, unit)
+	relaxed := serviceAssignments(t, example)
+
+	for _, directive := range sandboxingDirectives {
+		hardValue, assigned := shipped[directive]
+		if !assigned || isRelaxedDirectiveValue(hardValue) {
+			// The unit does not harden this one, so there is nothing for the
+			// drop-in to undo — demanding a line for it would be demanding
+			// the drop-in grant a privilege the unit never took away.
+			continue
+		}
+		gotValue, ok := relaxed[directive]
+		if !ok {
+			t.Errorf("%s sets %s=%s and %s has no line for it, so whatever %s blocks stays broken behind this drop-in", unitPath, directive, hardValue, dropInExamplePath, directive)
+			continue
+		}
+		if !isRelaxedDirectiveValue(gotValue) {
+			t.Errorf("%s sets %s=%s and %s sets %s=%s, which is not the relaxed direction", unitPath, directive, hardValue, dropInExamplePath, directive, gotValue)
 		}
 	}
 }

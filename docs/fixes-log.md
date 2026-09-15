@@ -18,6 +18,7 @@ Why this exists: without a log, ad-hoc fixes are invisible. A recurring entry he
 is a signal that something needs a real design change rather than a fifth patch.
 
 - 2026-09-09 — The settings page's Sign-in panel held `SignedIn *bool` and branched on it directly; html/template's `{{ if }}` on a pointer tests whether it is nil, not what it points at, so a host reported signed *out* rendered "This host is signed in" — the one moment the panel mattered, it said there was nothing to do. `signInPanel.SignedInTrue()` dereferences it explicitly, only after the template has ruled out nil, and the template now checks nil first rather than last. (#159)
+- 2026-09-15 — The sudo drop-in relaxed four hardening settings and measured only `NoNewPrivs`, which dropped to 0 while sudo kept failing on the fifth: the shipped unit also sets `ProtectControlGroups=true`, and a user *manager*'s service is trapped in a private user namespace that unmaps root by ANY ONE mount-namespacing directive left standing, not just the ones this repo had tested for. Added `ProtectControlGroups=false` to both copies of the drop-in and to `internal/updater/adopt.go`'s relocatable settings, rewrote every doc/comment that measured this by `NoNewPrivs` alone, and added a guard test that reads every sandboxing directive the shipped unit hardens and fails if the drop-in example does not relax it — verified to fail against the old example, pass against the fix. (#170)
 
 ---
 

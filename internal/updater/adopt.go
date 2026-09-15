@@ -62,6 +62,7 @@ var dropInSettings = []string{
 	"NoNewPrivileges",
 	"RestrictSUIDSGID",
 	"ProtectKernelTunables",
+	"ProtectControlGroups",
 	"ProtectSystem",
 }
 
@@ -72,13 +73,14 @@ var dropInSettings = []string{
 // that host relaxes its hardening by commenting the lines out, so every relaxation
 // it makes is an absence.
 //
-// All four default off, which is systemd's own posture — a service gets no
+// All five default off, which is systemd's own posture — a service gets no
 // hardening it does not ask for. That is why the release's unit has to assign
 // them and why an operator removing an assignment is a relaxation.
 var systemdDefaults = map[string]string{
 	"NoNewPrivileges":       "false",
 	"RestrictSUIDSGID":      "false",
 	"ProtectKernelTunables": "false",
+	"ProtectControlGroups":  "false",
 	"ProtectSystem":         "false",
 }
 
@@ -544,7 +546,7 @@ func refuseOnUnexpressibleRelaxation(current, waiting unitFile) []Refusal {
 // refuseOnWeakerDropIn is FR-009's other half: an existing override is never
 // overwritten, so it must already grant what the operator's unit grants.
 //
-// Without this, a host with a drop-in that relaxes two of the four settings would
+// Without this, a host with a drop-in that relaxes two of the five settings would
 // be adopted into a state where the other two are hardened — silently, at the
 // moment the operator ran a command described as changing nothing.
 func refuseOnWeakerDropIn(existing unitFile, needed []Relaxation) []Refusal {

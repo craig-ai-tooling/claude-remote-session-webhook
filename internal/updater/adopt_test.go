@@ -578,13 +578,17 @@ func TestAdoptGrantsOnlyWhatTheUnitAlreadyGranted(t *testing.T) {
 	t.Parallel()
 
 	// Hardened everywhere except ProtectSystem, which is the one thing this
-	// operator loosened.
+	// operator loosened. ProtectControlGroups is spelled out explicitly and
+	// hardened, rather than left absent, so this fixture cannot silently pass
+	// by falling back to systemdDefaults' relaxed default for a directive the
+	// test means to keep hardened.
 	const oneRelaxation = `[Service]
 Type=simple
 ExecStart=%h/.local/bin/crswd
 NoNewPrivileges=true
 RestrictSUIDSGID=true
 ProtectKernelTunables=true
+ProtectControlGroups=true
 ProtectSystem=false
 `
 
@@ -635,6 +639,7 @@ ProtectSystem=false
 		"NoNewPrivileges":       "true",
 		"RestrictSUIDSGID":      "true",
 		"ProtectKernelTunables": "true",
+		"ProtectControlGroups":  "true",
 		"ProtectSystem":         "false",
 	} {
 		if after[setting] != want {
@@ -681,7 +686,10 @@ NoNewPrivileges=true     # this one is not a comment either
 		t.Errorf("NoNewPrivileges = %q; an unparseable value is ignored, so the default stands", got)
 	}
 
-	// End to end: the whole unit, as deployed, must yield all four relaxations.
+	// End to end: the whole unit, as actually deployed on the motivating host,
+	// must yield exactly the four relaxations it makes — ProtectControlGroups
+	// stays uncommented and true here on purpose, because that is what this
+	// host's own unit does and is the reason sudo still failed on it.
 	const asDeployed = `[Service]
 Type=simple
 ExecStart=%h/.local/bin/crswd
@@ -703,8 +711,15 @@ ProtectSystem=false      # relaxed on this host so /usr is writable
 	if !plan.Adoptable {
 		t.Fatalf("refused: %+v", plan.Refusals)
 	}
-	if len(plan.Relaxations) != len(dropInSettings) {
-		t.Fatalf("the plan carries %+v; this unit relaxes all four", plan.Relaxations)
+	// Four, not len(dropInSettings): asDeployed is the motivating host's own
+	// unit exactly as deployed, which hardens ProtectControlGroups=true
+	// alongside its four commented-out/false relaxations — the real-world bug
+	// this package's ProtectControlGroups support exists to fix. A count tied
+	// to len(dropInSettings) would silently start expecting five the moment a
+	// setting was added there, on a host that never touched the fifth.
+	const relaxedOnThisHost = 4
+	if len(plan.Relaxations) != relaxedOnThisHost {
+		t.Fatalf("the plan carries %+v; this unit relaxes NoNewPrivileges, RestrictSUIDSGID, ProtectKernelTunables and ProtectSystem — not ProtectControlGroups, which it leaves hardened", plan.Relaxations)
 	}
 
 	// And the drop-in it would write is one systemd can read, which the operator's
