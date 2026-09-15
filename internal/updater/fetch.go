@@ -16,7 +16,7 @@ package updater
 // exactly one named asset from it. It is the only file in this package that
 // touches the network, and the only one that is allowed to.
 //
-// Three refusals live here. Each is a requirement, not caution:
+// Four refusals live here. Each is a requirement, not caution:
 //
 //   - **TLS, always** (FR-026). A release fetched over plain HTTP can be
 //     replaced by anyone on the path, and so can the checksum that travels
@@ -30,6 +30,17 @@ package updater
 //     looser check research.md R3 considered and rejected: a release carrying a
 //     second asset with a matching tail is one where a loose matcher downloads
 //     the wrong file and every later step verifies it happily.
+//   - **No major crossed, ever, blank or named** (k8s-18). An empty version
+//     resolves to the newest non-prerelease release sharing this build's own
+//     major, read off the list of releases rather than trusted from GitHub's
+//     `latest` pointer — `latest` is whatever is newest across every major, and
+//     the day somebody publishes a v2 and marks it latest, a blank ask would
+//     otherwise install it over a v0 production daemon with nothing about the
+//     request suggesting a refusal. A named version is held to the identical
+//     boundary, refused by comparing the two strings before anything is asked
+//     of GitHub. And a build that cannot read its own version — the unstamped
+//     `dev` build most of all — refuses either kind of ask outright: guessing
+//     which major is safe is exactly what this refusal exists to never do.
 //
 // What it does *not* do is check the bytes. That is T015, and it is a separate
 // file for the reason at the top of this one.
@@ -43,6 +54,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,6 +92,15 @@ const (
 	// for it. It covers the body as well as the response, so a server that
 	// accepts the connection and then dribbles cannot hold an update open.
 	fetchTimeout = 5 * time.Minute
+
+	// releaseListPerPage is the page size a blank ask lists releases with —
+	// the largest GitHub's API accepts, and more than this project ever has at
+	// once. .github/workflows/release.yml prunes to twenty (its KEEP) on every
+	// publish, so one page sees the whole history a blank ask could ever need
+	// to choose from; this is not a general-purpose GitHub client and has no
+	// reason to paginate a list bounded by this project's own release
+	// workflow.
+	releaseListPerPage = 100
 )
 
 // releaseHosts are the hosts a release may be served from, and the whole of the
@@ -128,6 +149,28 @@ var (
 	// ErrInsecureTransport is FR-026's first half: a URL that is not https,
 	// wherever it came from.
 	ErrInsecureTransport = errors.New("a release may only be fetched over an authenticated transport")
+
+	// ErrRunningVersionUnknown is a daemon whose own version cannot be read as
+	// a release tag — the unstamped "dev" build most of all (k8s-18). There is
+	// no major to protect on a build that does not know its own, so this
+	// refuses before anything is asked of GitHub, blank ask or named: guessing
+	// which release is safe to install over an unreadable version is exactly
+	// what "refusing is always safe" (FR-028) rules out.
+	ErrRunningVersionUnknown = errors.New("this build's own version cannot be read, so no update can be judged safe")
+
+	// ErrMajorMismatch is a release whose major version segment differs from
+	// the running build's (k8s-18) — Craig's own reason for asking: "what I
+	// don't want to do is accidentally update crswd" past a rewrite that a v2
+	// tag would represent. Wrapped with %w so the sentence after it can name
+	// both majors without a caller having to parse it back out.
+	ErrMajorMismatch = errors.New("a release is a different major version than the running build")
+
+	// ErrNoMatchingMajor is a blank ask that found nothing: every release this
+	// project has published under the running build's major is a prerelease,
+	// or none was published under it at all. Refusing is the FR-028 answer;
+	// there is nothing to fall back to across a major boundary without
+	// becoming the bug k8s-18 exists to close.
+	ErrNoMatchingMajor = errors.New("no non-prerelease release is published under the running build's major version")
 )
 
 // AssetName is the release asset carrying the binary for one version and one
@@ -198,58 +241,48 @@ func newFetcher(api, repo string, hosts []string, transport http.RoundTripper) *
 	return f
 }
 
-// Release asks what one version published. An empty version asks for whatever
-// the `latest` pointer resolves to; naming one is what makes a rollback an
-// ordinary update (FR-022).
-func (f *Fetcher) Release(ctx context.Context, version string) (*Release, error) {
-	endpoint := f.api + "/repos/" + f.repo + "/releases/latest"
-	if version != "" {
-		if !versionShape.MatchString(version) {
-			// The value is not echoed. It arrives from a form field, and a
-			// refusal that quotes it is a refusal that carries whatever was
-			// sent into a log.
-			return nil, ErrMalformedVersion
-		}
-		endpoint = f.api + "/repos/" + f.repo + "/releases/tags/" + version
-	}
+// releaseAsset is one entry of a release's assets, exactly as GitHub's API
+// describes it. Shared by the single-release decode and the list decode below
+// so the two never drift on what they read out of the same field.
+type releaseAsset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+}
 
-	body, err := f.get(ctx, endpoint, maxAPIBytes)
-	if err != nil {
-		return nil, fmt.Errorf("ask for release %q: %w", version, err)
-	}
+// describedRelease is what this file reads out of one release's JSON
+// description, regardless of which endpoint answered it.
+//
+// DisallowUnknownFields is the rule at this project's own boundaries
+// (docs/security.md §2) and would be wrong here: the GitHub API answers with
+// dozens of fields this daemon has no opinion about, and adding one is a thing
+// it does without telling anybody. What is constrained instead is what is
+// *read* — a handful of fields, none of which reaches a filesystem or a
+// command line. Draft and Prerelease are read only by the list path below; the
+// single-release endpoints decode them too and simply carry them unused, which
+// costs nothing and keeps one struct rather than two that could drift.
+type describedRelease struct {
+	TagName    string         `json:"tag_name"`
+	Body       string         `json:"body"`
+	Draft      bool           `json:"draft"`
+	Prerelease bool           `json:"prerelease"`
+	Assets     []releaseAsset `json:"assets"`
+}
 
-	// DisallowUnknownFields is the rule at this project's own boundaries
-	// (docs/security.md §2) and would be wrong here: the GitHub API answers with
-	// dozens of fields this daemon has no opinion about, and adding one is a
-	// thing it does without telling anybody. What is constrained instead is what
-	// is *read* — two fields, both strings, neither reaching a filesystem or a
-	// command line.
-	var described struct {
-		TagName string `json:"tag_name"`
-		Body    string `json:"body"`
-		Assets  []struct {
-			Name string `json:"name"`
-			URL  string `json:"browser_download_url"`
-		} `json:"assets"`
-	}
-	if err := json.Unmarshal(body, &described); err != nil {
-		return nil, fmt.Errorf("read the description of release %q: %w", version, err)
-	}
-	if described.TagName == "" {
-		return nil, fmt.Errorf("the description of release %q names no tag", version)
-	}
-
+// toRelease builds the *Release this package hands its callers, the one place
+// the asset map is assembled so the "two assets, one name" refusal cannot be
+// forgotten by whichever path decoded the JSON.
+func (d describedRelease) toRelease() (*Release, error) {
 	rel := &Release{
-		Version: described.TagName,
+		Version: d.TagName,
 		// Notes are the release's own prose, rendered as text and never as
 		// markup: this string is written by whoever can publish a release, and a
 		// page that interpreted it would be letting the release feed decide what
 		// this daemon's own settings page contains. html/template escapes it,
 		// and that is the point rather than an inconvenience.
-		Notes:  described.Body,
-		assets: make(map[string]string, len(described.Assets)),
+		Notes:  d.Body,
+		assets: make(map[string]string, len(d.Assets)),
 	}
-	for _, a := range described.Assets {
+	for _, a := range d.Assets {
 		if _, dup := rel.assets[a.Name]; dup {
 			// "The asset named exactly this" has to identify one file. Two of
 			// them is an ambiguity to refuse rather than resolve by order.
@@ -258,6 +291,168 @@ func (f *Fetcher) Release(ctx context.Context, version string) (*Release, error)
 		rel.assets[a.Name] = a.URL
 	}
 	return rel, nil
+}
+
+// versionMajor reads the leading integer off a version already shaped like
+// versionShape — "v0.118" is 0, "v2.0.0" is 2 — and reports whether it could.
+//
+// It is also the check buildinfo.Version is put through, and that is the
+// point of the second return value: nothing before k8s-18 needed to know this
+// build's own major, so nothing ever validated buildinfo.Version against
+// versionShape. The unstamped "dev" default fails it, on purpose (k8s-18) —
+// see ErrRunningVersionUnknown.
+func versionMajor(v string) (int, bool) {
+	if !versionShape.MatchString(v) {
+		return 0, false
+	}
+	head, _, _ := strings.Cut(strings.TrimPrefix(v, "v"), ".")
+	n, err := strconv.Atoi(head)
+	if err != nil {
+		// Unreachable: versionShape already requires the head to be all
+		// digits. Kept as a refusal rather than a panic for the reason every
+		// other should-not-happen branch in this package is one.
+		return 0, false
+	}
+	return n, true
+}
+
+// versionLess reports whether a names an earlier release than b. Both must
+// already be versionShape's shape. The comparison is numeric per
+// dot-separated segment — "v0.9" sorting after "v0.10" as a string is not
+// "newest" under any reading of the word, and .github/workflows/release.yml's
+// own prune step gives the identical reason for not trusting string or date
+// order when "newest" is what is being decided.
+func versionLess(a, b string) bool {
+	as := strings.Split(strings.TrimPrefix(a, "v"), ".")
+	bs := strings.Split(strings.TrimPrefix(b, "v"), ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var an, bn int
+		// A segment that fails to parse — unreachable given versionShape's
+		// precondition — is treated as 0 rather than discarded with `_`, so
+		// errcheck's check-blank has something other than a blank identifier
+		// to see.
+		if i < len(as) {
+			if v, err := strconv.Atoi(as[i]); err == nil {
+				an = v
+			}
+		}
+		if i < len(bs) {
+			if v, err := strconv.Atoi(bs[i]); err == nil {
+				bn = v
+			}
+		}
+		if an != bn {
+			return an < bn
+		}
+	}
+	return false
+}
+
+// Release asks what one version published. An empty version resolves to the
+// newest non-prerelease release sharing this build's own major
+// (internal/buildinfo.Version) — never GitHub's `latest` pointer (k8s-18):
+// `latest` answers with whatever is newest across every major, so the day
+// somebody publishes a v2 release and marks it latest, a blank ask would
+// otherwise install it over a v0 production daemon. Naming a version is what
+// makes a rollback an ordinary update (FR-022), and it is held to the same
+// boundary: a named version whose major does not match this build's is
+// refused before anything is asked of GitHub, naming both majors.
+//
+// Neither path is attempted on a build that cannot read its own version.
+// Guessing which major is safe on a build that does not know its own is the
+// one thing this method must never do (k8s-18) — an unstamped "dev" build is
+// refused up front, for a blank ask and a named one alike.
+func (f *Fetcher) Release(ctx context.Context, version string) (*Release, error) {
+	runMajor, ok := versionMajor(buildinfo.Version)
+	if !ok {
+		return nil, fmt.Errorf("%w: this build reports its version as %q", ErrRunningVersionUnknown, buildinfo.Version)
+	}
+
+	if version == "" {
+		return f.newestSameMajor(ctx, runMajor)
+	}
+
+	if !versionShape.MatchString(version) {
+		// The value is not echoed. It arrives from a form field, and a
+		// refusal that quotes it is a refusal that carries whatever was
+		// sent into a log.
+		return nil, ErrMalformedVersion
+	}
+
+	// The major is read out of the string itself, so a cross-major ask is
+	// refused before the network is touched — the same shape a malformed
+	// version already gets (TestVersionNamesOneEndpoint proves neither reaches
+	// GitHub).
+	askedMajor, ok := versionMajor(version)
+	if !ok {
+		// Unreachable: versionShape just matched, and versionMajor's own shape
+		// check is the same regexp. Kept as a refusal for the reason every
+		// other should-not-happen branch here is one.
+		return nil, ErrMalformedVersion
+	}
+	if askedMajor != runMajor {
+		return nil, fmt.Errorf("%w: %s is major %d; this build (%s) is major %d",
+			ErrMajorMismatch, version, askedMajor, buildinfo.Version, runMajor)
+	}
+
+	endpoint := f.api + "/repos/" + f.repo + "/releases/tags/" + version
+	body, err := f.get(ctx, endpoint, maxAPIBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ask for release %q: %w", version, err)
+	}
+
+	var described describedRelease
+	if err := json.Unmarshal(body, &described); err != nil {
+		return nil, fmt.Errorf("read the description of release %q: %w", version, err)
+	}
+	if described.TagName == "" {
+		return nil, fmt.Errorf("the description of release %q names no tag", version)
+	}
+	return described.toRelease()
+}
+
+// newestSameMajor is a blank ask (k8s-18): the newest non-prerelease, non-draft
+// release sharing runMajor, read off GitHub's list of releases rather than its
+// `latest` pointer.
+//
+// "Newest" is decided by comparing version numbers (versionLess) rather than
+// trusting the order GitHub answers in, or assuming the first matching entry
+// is the best one: .github/workflows/release.yml's own prune step gives the
+// identical reason for not trusting date order, and nothing here requires a
+// release feed to list releases in tag order either.
+func (f *Fetcher) newestSameMajor(ctx context.Context, runMajor int) (*Release, error) {
+	endpoint := fmt.Sprintf("%s/repos/%s/releases?per_page=%d", f.api, f.repo, releaseListPerPage)
+	body, err := f.get(ctx, endpoint, maxAPIBytes)
+	if err != nil {
+		return nil, fmt.Errorf("ask which releases %s has published: %w", f.repo, err)
+	}
+
+	var described []describedRelease
+	if err := json.Unmarshal(body, &described); err != nil {
+		return nil, fmt.Errorf("read the list of releases %s has published: %w", f.repo, err)
+	}
+
+	var best *describedRelease
+	for i := range described {
+		d := &described[i]
+		if d.Draft || d.Prerelease || d.TagName == "" {
+			continue
+		}
+		major, ok := versionMajor(d.TagName)
+		if !ok || major != runMajor {
+			// Not this build's major — the whole of k8s-18 is that this is
+			// silently skipped rather than ever being the answer to a blank
+			// ask, however new it is.
+			continue
+		}
+		if best == nil || versionLess(best.TagName, d.TagName) {
+			best = d
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("%w %d", ErrNoMatchingMajor, runMajor)
+	}
+	return best.toRelease()
 }
 
 // Asset returns the bytes of exactly the named asset, and nothing that resembles

@@ -34,10 +34,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/buildinfo"
 )
 
 const (
@@ -70,6 +73,50 @@ func releaseBody(t *testing.T, tag string, assets []apiAsset) []byte {
 		t.Fatalf("marshal the release description: %v", err)
 	}
 	return raw
+}
+
+// listedRelease is one entry of a fake GitHub "list releases" response.
+type listedRelease struct {
+	Tag        string
+	Prerelease bool
+}
+
+// releaseListJSON is releaseBody's counterpart for the endpoint a blank ask
+// reads (k8s-18): an array of releases, in whatever order the caller supplies
+// — tests deliberately do not sort it, because production may not either.
+func releaseListJSON(t *testing.T, releases []listedRelease) []byte {
+	t.Helper()
+
+	type entry struct {
+		TagName    string `json:"tag_name"`
+		Prerelease bool   `json:"prerelease"`
+	}
+	entries := make([]entry, 0, len(releases))
+	for _, r := range releases {
+		entries = append(entries, entry{TagName: r.Tag, Prerelease: r.Prerelease})
+	}
+	raw, err := json.Marshal(entries)
+	if err != nil {
+		t.Fatalf("marshal the release list: %v", err)
+	}
+	return raw
+}
+
+// stampRunningVersion sets buildinfo.Version for the duration of one test and
+// restores it once that test — and everything it started — has finished.
+//
+// **Must not be called from a test that also calls t.Parallel().** Go resumes
+// parallel tests only once every sequential test in the package has completed
+// (internal/httpapi's version_test.go documents and relies on the identical
+// guarantee), so a non-parallel caller here is guaranteed to run to
+// completion, restore included, before any parallel test's body can observe
+// this package-level variable.
+func stampRunningVersion(t *testing.T, version string) {
+	t.Helper()
+
+	previous := buildinfo.Version
+	t.Cleanup(func() { buildinfo.Version = previous })
+	buildinfo.Version = version
 }
 
 // recorder counts what a server was asked for, so a test can assert about a
@@ -164,7 +211,9 @@ func assetURL(scheme, host, name string) string { return scheme + "://" + host +
 // every later check in this package — it is a real release asset, correctly
 // signed, for something other than what the operator asked to run.
 func TestAssetMatchedByExactName(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion) so
+	// Release(testVersion) below is asking about its own major.
+	stampRunningVersion(t, testVersion)
 
 	want := AssetName(testVersion, "amd64")
 	names := []string{
@@ -261,7 +310,9 @@ func TestAssetMatchedByExactName(t *testing.T) {
 // merely fail differently, it succeeds, and the daemon ends up holding bytes
 // from somewhere no release comes from.
 func TestCrossHostRedirectRefused(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion) so
+	// Release(testVersion) below is asking about its own major.
+	stampRunningVersion(t, testVersion)
 
 	var elsewhereSeen recorder
 	elsewhere := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -327,7 +378,9 @@ func TestCrossHostRedirectRefused(t *testing.T) {
 // redirect chosen by whoever answered it; a client that checks the scheme only
 // on the URL it built itself checks the one URL nobody could have chosen.
 func TestInsecureTransportRefused(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion) so
+	// Release(testVersion) below is asking about its own major.
+	stampRunningVersion(t, testVersion)
 
 	var plainSeen recorder
 	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -445,14 +498,16 @@ func TestOversizedResponseRefused(t *testing.T) {
 // escapes the path addresses a different endpoint, and one that reaches the
 // network at all has already been trusted.
 func TestVersionNamesOneEndpoint(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion).
+	// v0.43 below shares testVersion's major, so both asks resolve cleanly.
+	stampRunningVersion(t, testVersion)
 
 	var asked recorder
 	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		asked.record(r.URL.Path)
 		switch r.URL.Path {
-		case "/repos/" + testRepo + "/releases/latest":
-			answer(t, w, releaseBody(t, "v0.43", nil))
+		case "/repos/" + testRepo + "/releases":
+			answer(t, w, releaseListJSON(t, []listedRelease{{Tag: "v0.43"}}))
 		case tagPath(testVersion):
 			answer(t, w, releaseBody(t, testVersion, nil))
 		default:
@@ -466,7 +521,7 @@ func TestVersionNamesOneEndpoint(t *testing.T) {
 		t.Fatalf(`Release(""): %v`, err)
 	}
 	if rel.Version != "v0.43" {
-		t.Errorf(`Release("") resolved to %q, want the tag the latest pointer holds`, rel.Version)
+		t.Errorf(`Release("") resolved to %q, want the newest non-prerelease release sharing this build's major, read off the release list rather than the latest pointer (k8s-18)`, rel.Version)
 	}
 
 	rel, err = f.Release(context.Background(), testVersion)
@@ -496,6 +551,137 @@ func TestVersionNamesOneEndpoint(t *testing.T) {
 
 	if after := asked.paths(); len(after) != before {
 		t.Errorf("a malformed version reached the network: %v.\nIt has to be refused before a request is built, not by whatever answers", after[before:])
+	}
+}
+
+// TestBlankAskResolvesNewestSameMajorNeverLatest is k8s-18's core claim: a
+// blank ask must install the newest release sharing this build's own major,
+// never whatever GitHub's `latest` pointer resolves to.
+//
+// The fake feed here answers both endpoints. /releases/latest — the endpoint
+// the pre-fix Release() asked — names v2.0.0, a different major than the
+// running build; the release list carries v2.0.0 alongside three v0.x
+// releases, one of them a prerelease that is newer than the one this test
+// wants. Against the pre-fix code this test fails: a blank ask would resolve
+// to v2.0.0, not v0.118.
+//
+// **Must fail when** a blank ask trusts `latest`, or resolves to any release
+// outside the running build's major, or picks the prerelease v0.119 over the
+// stable v0.118 beneath it.
+func TestBlankAskResolvesNewestSameMajorNeverLatest(t *testing.T) {
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion).
+	const running = "v0.100"
+	stampRunningVersion(t, running)
+
+	var asked recorder
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.record(r.URL.Path)
+		switch r.URL.Path {
+		// The vulnerable endpoint. It is served on purpose: this is what makes
+		// the test fail against the code k8s-18 replaces, rather than merely
+		// 404ing on a path old code no longer reaches.
+		case "/repos/" + testRepo + "/releases/latest":
+			answer(t, w, releaseBody(t, "v2.0.0", nil))
+		case "/repos/" + testRepo + "/releases":
+			answer(t, w, releaseListJSON(t, []listedRelease{
+				{Tag: "v2.0.0"},                   // newest overall; a different major
+				{Tag: "v0.119", Prerelease: true}, // newest of the right major, but a prerelease
+				{Tag: "v0.118"},                   // what a blank ask must resolve to
+				{Tag: "v0.100"},                   // older, same major
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+
+	f := fetcherFor(t, srv)
+	rel, err := f.Release(context.Background(), "")
+	if err != nil {
+		t.Fatalf(`Release(""): %v`, err)
+	}
+	if rel.Version != "v0.118" {
+		t.Fatalf(`Release("") resolved to %q, want %q — the newest non-prerelease release sharing this build's major (%s), never GitHub's latest pointer`,
+			rel.Version, "v0.118", running)
+	}
+	if paths := asked.paths(); slices.Contains(paths, "/repos/"+testRepo+"/releases/latest") {
+		t.Errorf("a blank ask reached %s.\nk8s-18 is exactly this: latest answers with whatever is newest across every major, and a v2 release marked latest would install over a v0 production daemon the moment it published",
+			"/repos/"+testRepo+"/releases/latest")
+	}
+}
+
+// TestNamedVersionAcrossMajorRefused is k8s-18's other half: naming a release
+// makes a rollback an ordinary update (FR-022), but it must not make crossing
+// a major an ordinary update too.
+//
+// The fake server would answer v2.0.0 perfectly well — nothing about the
+// release itself is wrong. Against the pre-fix code, which checks only
+// versionShape, this call succeeds; this test requires it to fail.
+//
+// **Must fail when** only the version's shape is checked and not its major, or
+// when the refusal's message does not name both majors.
+func TestNamedVersionAcrossMajorRefused(t *testing.T) {
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion).
+	const running = "v0.50"
+	stampRunningVersion(t, running)
+
+	var asked recorder
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.record(r.URL.Path)
+		answer(t, w, releaseBody(t, "v2.0.0", nil))
+	}))
+
+	f := fetcherFor(t, srv)
+	_, err := f.Release(context.Background(), "v2.0.0")
+	if !errors.Is(err, ErrMajorMismatch) {
+		t.Fatalf("Release(%q) while running %s = %v; want ErrMajorMismatch", "v2.0.0", running, err)
+	}
+	for _, want := range []string{"v2.0.0", running} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not name %q; an operator refused a cross-major update needs both majors in the one place they are looking",
+				err.Error(), want)
+		}
+	}
+	if paths := asked.paths(); len(paths) != 0 {
+		t.Errorf("a cross-major named version reached the network at %v.\nThe major is in the string itself; comparing it costs nothing and does not need GitHub's answer", paths)
+	}
+}
+
+// TestUnknownRunningVersionRefusesUpdate is k8s-18's "also cover": a build
+// whose own version cannot be read — the unstamped "dev" build most of all —
+// has no major to protect, so it must refuse rather than guess, for a blank
+// ask and a named one alike.
+//
+// **Must fail when** an unparseable running version is treated as "no
+// constraint" and an update proceeds anyway.
+func TestUnknownRunningVersionRefusesUpdate(t *testing.T) {
+	// Not t.Parallel(): stamps buildinfo.Version (see stampRunningVersion).
+	// "dev" is also unstamped Go's own default, but this is set explicitly
+	// rather than relied on, so the test still means what it says regardless
+	// of what ran before it.
+	stampRunningVersion(t, "dev")
+
+	var asked recorder
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked.record(r.URL.Path)
+		switch r.URL.Path {
+		case "/repos/" + testRepo + "/releases":
+			answer(t, w, releaseListJSON(t, []listedRelease{{Tag: "v0.1"}}))
+		case tagPath(testVersion):
+			answer(t, w, releaseBody(t, testVersion, nil))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	f := fetcherFor(t, srv)
+
+	if _, err := f.Release(context.Background(), ""); !errors.Is(err, ErrRunningVersionUnknown) {
+		t.Errorf(`Release("") on an unstamped build = %v; want ErrRunningVersionUnknown`, err)
+	}
+	if _, err := f.Release(context.Background(), testVersion); !errors.Is(err, ErrRunningVersionUnknown) {
+		t.Errorf("Release(%q) on an unstamped build = %v; want ErrRunningVersionUnknown", testVersion, err)
+	}
+	if paths := asked.paths(); len(paths) != 0 {
+		t.Errorf("an unstamped build's update reached the network at %v.\nThere is no major to protect without a parseable running version, so this refuses before asking GitHub anything", paths)
 	}
 }
 
