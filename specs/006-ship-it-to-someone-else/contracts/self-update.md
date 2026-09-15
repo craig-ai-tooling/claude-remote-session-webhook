@@ -57,6 +57,17 @@ they cannot be re-implemented *differently* here.
   differs from the expected one (FR-026).
 - **No asset by pattern.** The asset is named exactly; "ends in `_arm64.tar.gz`"
   is a looser check than FR-027 asks for.
+- **No major crossed, ever, blank or named** (k8s-18). An empty `version`
+  resolves to the newest non-prerelease release sharing this build's own major
+  (`internal/buildinfo.Version`) — never GitHub's `latest` pointer. `latest` is
+  whatever is newest across every major, so the day a v2 release is marked
+  latest, a blank ask would otherwise install it over a v0 production daemon
+  with nothing about the request suggesting a refusal (Craig, 9/14/26: "what I
+  don't want to do is accidentally update crswd"). A named version is held to
+  the identical boundary: one whose major does not match the running build's
+  is refused, naming both majors, before anything is asked of GitHub. A build
+  that cannot read its own version — an unstamped `dev` build most of all —
+  refuses either kind of ask outright rather than guess which major is safe.
 - **The signing key never appears** in a log, an audit record, or a page. The
   daemon holds only the public half, and even that is never rendered.
 - **A staged file never survives a restart.** The staging directory is swept at
@@ -86,6 +97,30 @@ Same request, one byte of the tarball corrupted:
 
 Rollback is the same route with `version=v0.41`.
 
+Daemon on `v0.100`, a `v2.0.0` release published and marked `latest`, `v0.118`
+also published (k8s-18):
+
+```
+POST /dashboard/update
+confirm=yes
+→ resolves the blank ask against the release list, not `latest`
+→ v2.0.0 is a different major and is skipped; v0.118 is the newest release
+  sharing this build's major
+→ stages crswd.v0.118, same as any other update
+```
+
+Same daemon, `version=v2.0.0` named explicitly:
+
+```
+POST /dashboard/update
+confirm=yes
+version=v2.0.0
+→ refused before GitHub is asked anything: "v2.0.0 is major 2; this build
+  (v0.100) is major 0"
+→ nothing staged, nothing renamed, daemon still on v0.100
+→ audit dashboard.update deny
+```
+
 ## Contract tests
 
 | Test | Asserts | **Must fail when** |
@@ -105,6 +140,9 @@ Rollback is the same route with `version=v0.41`.
 | `TestUpdateCrossSiteBothHalves` | Missing `Sec-Fetch-Site` and a bad page token each refuse independently | A test disables either half instead of satisfying it (AR-005) |
 | `TestUpdateEmitsExactlyOneAuditRecord` | One record, action `dashboard.update` | Each stage emits its own |
 | `TestNoKeyMaterialInAnyOutput` | No response, log or record contains the key | A diagnostic prints what it verified against |
+| `TestBlankAskResolvesNewestSameMajorNeverLatest` (k8s-18) | A blank ask installs the newest non-prerelease release sharing this build's major, with a `latest`-marked release of a different major present | `latest` is trusted, or any release outside the running major outranks one sharing it |
+| `TestNamedVersionAcrossMajorRefused` (k8s-18) | A named version whose major differs from the running build's is refused, naming both majors, before the network is touched | Only the version's shape is checked and not its major |
+| `TestUnknownRunningVersionRefusesUpdate` (k8s-18) | A build whose own version cannot be read (`dev`) refuses any update, blank or named | An unparseable running version is treated as "no constraint" |
 
 ## The five tasks
 
