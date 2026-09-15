@@ -247,25 +247,54 @@ ProtectSystem=full
 #
 # And one question this block answers by refusing, which is worth knowing before
 # you go looking for the bug: **sudo does not work inside a session, and that is
-# these three lines rather than anything Claude Code does.**
+# these five lines rather than anything Claude Code does.**
 #
-#   NoNewPrivileges=true   a one-way kernel latch. It is inherited across fork,
-#                          preserved across execve, and cannot be cleared — so it
-#                          is already set on the tmux server before any session
-#                          starts, and nothing a session spawns can shed it.
-#                          /usr/bin/sudo keeps its setuid bit; the kernel ignores
-#                          it. A visible side effect: user-manager sandboxing
-#                          needs an unprivileged userns, so root is unmapped and
-#                          reports as `nobody` — which is why sudo complains that
-#                          sudo.conf is owned by uid 65534 rather than saying it
-#                          is not permitted.
-#   RestrictSUIDSGID=true  blocks setuid independently. Clearing only the line
-#                          above changes nothing, which is the trap.
-#   ProtectSystem=full     /usr is read-only, so apt and writes to /usr/local
-#                          fail even as root.
+# The measure that matters is `sudo -n true` inside a session, or `cat
+# /proc/self/uid_map` (root mapped: `0 0 4294967295`; not mapped: your own uid
+# and a range of `1`). NoNewPrivs dropping to 0 is a DIFFERENT fact — see below.
 #
-# To allow it, comment out the first two and set `ProtectSystem=false`. All
-# three: any one left standing keeps it blocked.
+#   NoNewPrivileges=true       a one-way kernel latch. It is inherited across
+#                              fork, preserved across execve, and cannot be
+#                              cleared — so it is already set on the tmux
+#                              server before any session starts, and nothing a
+#                              session spawns can shed it. /usr/bin/sudo keeps
+#                              its setuid bit; the kernel ignores it.
+#   RestrictSUIDSGID=true      a second, independent directive that ALSO
+#                              implies NoNewPrivileges (measured) — clearing
+#                              the line above and leaving this one standing
+#                              still leaves NoNewPrivs at 1.
+#   ProtectKernelTunables=true ALSO implies NoNewPrivileges, and systemd
+#                              treats an implied value as a floor: an explicit
+#                              `no` on NoNewPrivileges in the merged unit does
+#                              not lower it back. This is the one that makes
+#                              "clear just the obvious setting" produce a file
+#                              that changes nothing.
+#   ProtectControlGroups=true  a DIFFERENT mechanism, and the one that stayed
+#                              hardened here through every earlier fix and
+#                              test of this repo's own — because NoNewPrivs
+#                              already read 0 with the three above relaxed,
+#                              and that looked fixed. A user MANAGER's service
+#                              is put in a private, unprivileged user
+#                              namespace the moment ANY ONE mount-namespacing
+#                              directive is left standing — this one,
+#                              ProtectKernelTunables above, or ProtectSystem
+#                              below, each sufficient alone. That namespace
+#                              maps only your own uid, so root inside it is
+#                              unmapped and shows up as uid 65534 (nobody) —
+#                              which is why sudo complains that IT, and
+#                              /etc/sudo.conf, are owned by uid 65534, rather
+#                              than saying it is not permitted.
+#   ProtectSystem=full         a mount-namespacing directive by the same
+#                              mechanism as ProtectControlGroups, sufficient
+#                              alone to trigger it; and separately, /usr is
+#                              read-only, so apt and writes to /usr/local fail
+#                              even as root.
+#
+# To allow it, comment out the first three and set `ProtectControlGroups=false`
+# and `ProtectSystem=false`. All five: any one left standing keeps it blocked,
+# for one of the two separate reasons above. See
+# deploy/crswd.service.d/10-relax.conf.example for the drop-in that carries
+# this without editing the line below, and its measured table.
 #
 # What that costs, once, plainly: these protect the host from the daemon, and a
 # session already runs as you. Today somebody through the door owns your user

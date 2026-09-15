@@ -10,9 +10,10 @@ package updater
 // not that. It is what systemd executes, with which environment, and under which
 // hardening — and an operator who edited one edited it to make something work
 // that did not work before. The operator this milestone is for relaxed
-// NoNewPrivileges, RestrictSUIDSGID and ProtectSystem so that `sudo` works
-// inside a session. An update that replaced units would undo that on every
-// release, and they would rediscover it every time.
+// NoNewPrivileges, RestrictSUIDSGID, ProtectKernelTunables,
+// ProtectControlGroups and ProtectSystem so that `sudo` works inside a
+// session. An update that replaced units would undo that on every release,
+// and they would rediscover it every time.
 //
 // **So an edited unit is never overwritten.** That rule already exists in
 // install.sh and it is right. What is missing is everything after it: this

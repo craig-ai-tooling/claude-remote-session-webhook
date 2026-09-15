@@ -39,27 +39,70 @@
 [Service]
 
 # ---------------------------------------------------------------------------
-# ProtectKernelTunables is the line that actually does the work
+# The measure of success is `sudo -n true`, not NoNewPrivs
 # ---------------------------------------------------------------------------
 #
-# Setting NoNewPrivileges=false ALONE does nothing. Measured on a real host:
+# Every earlier version of this file, and the tests and docs that shipped with
+# it, checked only whether NoNewPrivs dropped to 0. It does — with three of the
+# five lines below in place — while sudo keeps failing on the fourth, because
+# NoNewPrivs and "is root mapped in this namespace" are two different facts.
+# Check `sudo -n true` from inside a session, or `cat /proc/self/uid_map`:
+# `0 0 4294967295` means root is mapped and sudo can work; your own uid with a
+# range of `1` (e.g. `1000 1000 1`) means it is not, whatever NoNewPrivs says.
 #
-#   ProtectKernelTunables=true                              -> NoNewPrivs: 1
-#   ProtectKernelTunables=true + NoNewPrivileges=false      -> NoNewPrivs: 1
-#   ProtectKernelTunables overridden to false               -> NoNewPrivs: 0
+# Measured on a real host, systemd 255, user manager, each setting ALONE via
+# `systemd-run --user -p <setting> ...`:
 #
-# ProtectKernelTunables=true IMPLIES NoNewPrivileges, and systemd treats that as
-# a floor rather than a value: an explicit `no` in the merged unit does not lower
-# it back. Only overriding the implying option removes the implication.
+# | setting alone                | uid_map          | NoNewPrivs | sudo -n id -u |
+# |-------------------------------|------------------|------------|----------------|
+# | NoNewPrivileges=true          | 0 0 4294967295   | 1          | "no new privileges flag is set" |
+# | RestrictSUIDSGID=true         | 0 0 4294967295   | 1 (implied)| same |
+# | ProtectKernelTunables=true    | 1000 1000 1      | 1          | uid-65534 error |
+# | ProtectSystem=full            | 1000 1000 1      | 0          | uid-65534 error |
+# | ProtectControlGroups=true     | 1000 1000 1      | 0          | uid-65534 error |
+# | all four above relaxed, ProtectControlGroups=true left standing | 1000 1000 1 | 0 | uid-65534 error |
+# | all five below relaxed        | 0 0 4294967295   | 0          | prints `0` |
 #
-# So an override missing the third line below produces a service where sudo still
-# fails, with nothing in either file that looks like the cause. That is a genuinely
-# hard thing to debug, and it is the reason this comment is longer than the
-# settings it explains.
+# ---------------------------------------------------------------------------
+# The trap: a user MANAGER's service loses root to a private namespace the
+# moment any ONE mount-namespacing directive is left standing
+# ---------------------------------------------------------------------------
+#
+# In a user manager (this unit, always — a system unit would not have this
+# problem), ProtectKernelTunables=true implies NoNewPrivileges (and so, in
+# fact, does RestrictSUIDSGID=true — both IMPLIES relationships, measured),
+# and systemd treats an implied value as a floor: an explicit `no` in the
+# merged unit does not lower it back. That is real and
+# worth knowing, but it is not the whole trap — ProtectControlGroups and
+# ProtectSystem=full|strict are SEPARATE mount-namespacing directives that
+# imply nothing about NoNewPrivs and still break sudo on their own. Any one of
+# the five left standing puts the service in a private, unprivileged user
+# namespace that maps only your own uid; root inside it is unmapped and shows
+# up as uid 65534 (nobody), which is why sudo complains that IT, and
+# /etc/sudo.conf, are owned by uid 65534, rather than saying it is not
+# permitted. `PrivateUsers=false` does NOT prevent this either (measured) — the
+# sandboxing directive is what triggers the namespace, not PrivateUsers.
+#
+# So an override missing ANY line below is not a weaker override, it is one
+# where sudo does not work and nothing in either file looks like the cause.
 NoNewPrivileges=false
 RestrictSUIDSGID=false
 ProtectKernelTunables=false
+ProtectControlGroups=false
 
 # /usr read-only would otherwise stop `apt`, and writes under /usr/local, from
-# inside a session that has just become root.
+# inside a session that has just become root. Also a mount-namespacing
+# directive by the mechanism above, and sufficient alone to trigger it.
 ProtectSystem=false
+
+# ---------------------------------------------------------------------------
+# This reaches only sessions started after the tmux server they run on exits
+# ---------------------------------------------------------------------------
+#
+# Sessions are shells forked from a long-lived tmux server this daemon starts
+# once and keeps running across restarts on purpose (KillMode=process — see
+# deploy/crswd.example.service). That server keeps the sandbox it started
+# under for as long as it lives, so `daemon-reload` and `restart crswd` change
+# what a NEW server would start under, not an existing one. A session already
+# open keeps the old sandbox until the tmux server itself exits — `tmux
+# kill-server`, or a full logout.

@@ -301,10 +301,11 @@ question the same way:
 | Anything else | **Leaves it exactly where it is**, and writes the release's unit beside it as `crswd.service.new` |
 
 **The last row is a rule, not a fallback.** An edited unit carries a decision:
-relaxing `NoNewPrivileges`, `RestrictSUIDSGID` and `ProtectSystem` so that `sudo`
-works inside a session is something an operator works out once, and an update that
-replaced units would undo it silently on every release and make them work it out
-again each time.
+relaxing `NoNewPrivileges`, `RestrictSUIDSGID`, `ProtectKernelTunables`,
+`ProtectControlGroups` and `ProtectSystem` so that `sudo` works inside a session
+is something an operator works out once, and an update that replaced units
+would undo it silently on every release and make them work it out again each
+time.
 
 **A unit this installer never wrote is never replaced, and is offered a `.new` by
 every release that ships a different one.** There is no record beside a

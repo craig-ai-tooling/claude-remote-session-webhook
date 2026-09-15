@@ -399,15 +399,29 @@ write_dropin() {
 # Delete this file, then `systemctl --user daemon-reload && systemctl --user
 # restart crswd`, to give that privilege back.
 #
-# ProtectKernelTunables is the line that does the work. Setting
-# NoNewPrivileges=false alone has NO effect: ProtectKernelTunables=true implies
-# NoNewPrivileges, and systemd treats that as a floor rather than a value, so an
-# explicit `no` does not lower it back. Only overriding the implying option
-# removes the implication.
+# The measure of success is `sudo -n true` inside a session (or `cat
+# /proc/self/uid_map`, which reads "0 0 4294967295" once root is mapped) — NOT
+# NoNewPrivs. NoNewPrivs can already read 0 while sudo still fails: a *user*
+# manager service loses root the moment ANY ONE mount-namespacing directive is
+# left standing, because systemd traps it in a private user namespace that maps
+# only your own uid — root inside it is unmapped and shows up as uid 65534,
+# which is why sudo complains sudo.conf is owned by uid 65534 rather than
+# saying it is not permitted. ProtectKernelTunables=true also IMPLIES
+# NoNewPrivileges, and systemd treats that as a floor an explicit `no` cannot
+# lower, so clearing NoNewPrivileges alone is doubly inert. All five lines
+# below are what it actually takes; see
+# deploy/crswd.service.d/10-relax.conf.example for the measured table.
+#
+# This reaches only sessions started after the tmux server they run on
+# restarts. That server is long-lived and outlives a `daemon-reload` and a
+# `restart crswd` (KillMode=process keeps it running across one on purpose) —
+# an already-open session keeps the sandbox it started under until the server
+# itself exits.
 [Service]
 NoNewPrivileges=false
 RestrictSUIDSGID=false
 ProtectKernelTunables=false
+ProtectControlGroups=false
 ProtectSystem=false
 DROPIN
     die "could not write ~/$DROPIN"
