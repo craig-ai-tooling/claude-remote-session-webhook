@@ -507,6 +507,16 @@ func (s *Server) createFromBrowser(w http.ResponseWriter, r *http.Request) {
 	// The token is discarded here, in the assignment: not stored, not logged, not
 	// passed on, not given a name that a later edit could reach for. It is the
 	// strongest form FR-013 has in this language.
+	// The same gate the API door spends, through the same cache, so the two doors
+	// cannot disagree about whether this host can run a session. It sits where the
+	// mode and lifetime refusals do: ahead of the manager, so nothing is resolved
+	// and no tmux command runs for a create that is not going to happen.
+	if s.createRefusedWhileSignedOut(r.Context()) {
+		AuditFrom(r.Context()).Deny(errCreateSignedOut.Error())
+		s.redirectOutcome(w, r, outcomeSignedOut)
+		return
+	}
+
 	created, _, err := s.sessions.Create(r.Context(), session.CreateRequest{
 		Owner:   operator.Owner,
 		Name:    r.PostForm.Get(fieldName),

@@ -25,6 +25,10 @@ import (
 var spelledOutcomes = []outcome{
 	"created", "destroyed", "renamed", "compacted", "mode-changed", "updated",
 	"bad-name", "bad-work-dir", "bad-start-command", "bad-mode", "bad-lifetime", "bad-resume", "bad-version", "limited", "unconfirmed",
+	// The create refused because this host is signed out of Claude. Not a
+	// bad-* code: nothing was wrong with the form, and the fix is the sign-in
+	// rather than another value in the field.
+	"signed-out",
 	"mode-unconfirmed", "update-unconfirmed",
 	"teardown-unverified",
 	"create-failed", "destroy-failed", "rename-failed", "compact-failed", "mode-failed",
