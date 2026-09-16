@@ -11,6 +11,11 @@
 # request to the daemon. The edge deciding you may knock never substitutes for
 # the daemon deciding you may come in — drop the signature and you still get 401.
 #
+# A 401 is retried once under a fresh timestamp. The signature has one-second
+# resolution, so two callers making the same request in the same second are
+# byte-identical and the daemon refuses the second as a replay — see the note
+# above the retry at the foot of this file.
+#
 # Portability notes, each of which was a real hazard:
 #   - The request path is `reqpath`, never `path`. In zsh `path` is tied to PATH,
 #     so `local path=/sessions` silently sets PATH=/sessions and every external
@@ -55,19 +60,46 @@ vault="${CRSWD_OP_ITEM:-op://Lobster/crswd}"
 sec=$(op read "$vault/shared-secret") || { echo "crswd-api: could not read $vault/shared-secret" >&2; exit 1; }
 cid=$(op read "$vault/access-client-id")
 csec=$(op read "$vault/access-client-secret")
-ts=$(date +%s)
+# Sign and send once. METHOD \n PATH \n timestamp . body — the request line is
+# signed, so one signed read is not a valid destroy at the same instant. Leaves
+# the response body in $out and the HTTP status in $status.
+send() {
+  ts=$(date +%s)
+  sig=$(printf '%s\n%s\n%s.%s' "$method" "$reqpath" "$ts" "$body" \
+        | openssl dgst -sha256 -hmac "$sec" | awk '{print $NF}')
 
-# METHOD \n PATH \n timestamp . body — the request line is signed, so one signed
-# read is not a valid destroy at the same instant.
-sig=$(printf '%s\n%s\n%s.%s' "$method" "$reqpath" "$ts" "$body" \
-      | openssl dgst -sha256 -hmac "$sec" | awk '{print $NF}')
+  set -- -sS -w '\n%{http_code}' -X "$method" "$host$reqpath" \
+    -H "CF-Access-Client-Id: $cid" \
+    -H "CF-Access-Client-Secret: $csec" \
+    -H "X-CRSW-Timestamp: $ts" \
+    -H "X-CRSW-Signature: sha256=$sig"
+  [ -n "$bearer" ] && set -- "$@" -H "Authorization: Bearer $bearer"
+  [ -n "$body" ] && set -- "$@" -H "Content-Type: application/json" -d "$body"
 
-set -- -sS -X "$method" "$host$reqpath" \
-  -H "CF-Access-Client-Id: $cid" \
-  -H "CF-Access-Client-Secret: $csec" \
-  -H "X-CRSW-Timestamp: $ts" \
-  -H "X-CRSW-Signature: sha256=$sig"
-[ -n "$bearer" ] && set -- "$@" -H "Authorization: Bearer $bearer"
-[ -n "$body" ] && set -- "$@" -H "Content-Type: application/json" -d "$body"
-curl "$@"
-echo
+  reply=$(curl "$@")
+  status=${reply##*$'\n'}
+  out=${reply%$'\n'*}
+}
+
+send
+
+# The timestamp has one-second resolution and nothing else in the payload
+# varies, so two callers making the same request in the same second send
+# byte-identical signatures and the daemon's replay cache refuses the second
+# one. It is right to refuse: it cannot tell an accidental collision from a
+# captured request being replayed. The caller can — it has just issued this
+# request for the first time — so it re-signs under a later timestamp and asks
+# once more.
+#
+# Measured on the host that runs a dozen of these: 128 refusals in 14 days, 9 a
+# day, every one of them a single loser in that second and never two, so one
+# retry clears every observed case. The wait is randomised anyway, so two
+# callers that both lost to a third do not line up again. Re-sending is safe
+# whatever the method: the signature is checked before the handler runs, so a
+# 401 executed nothing.
+if [ "$status" = "401" ]; then
+  sleep $((1 + RANDOM % 2))
+  send
+fi
+
+printf '%s\n' "$out"
