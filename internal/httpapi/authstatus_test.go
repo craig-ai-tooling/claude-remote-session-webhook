@@ -360,3 +360,198 @@ func TestTheThreeSignInPostsInvalidateTheAuthCache(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------- the create gate (#209)
+
+// Craig, 9/16/26: "Sending sessions to crswd if login is expired ends in janky
+// sessions that are tough to recover."
+//
+// These drive both create doors rather than createRefusedWhileSignedOut itself.
+// The claim is not that a predicate returns false — it is that no session is
+// created and no tmux command runs, which is the only form of the claim that
+// could not go on passing with the gate wired to nothing.
+
+// TestSignedOutRefusesTheCreateOnTheAPIDoor is the contract's new 503.
+//
+// **Must fail when** the gate is absent: without it this create answers 201 and
+// the host gets a tmux window sitting on the sign-in screen.
+func TestSignedOutRefusesTheCreateOnTheAPIDoor(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	s.signin = &fakeRelay{signedIn: false}
+
+	before := len(s.fixture.tmux.Calls())
+	got := postSessions(t, s, createBody(s.fixture))
+
+	if got.answer.Code != http.StatusServiceUnavailable {
+		t.Fatalf("create on a signed-out host = %d (%q); want %d",
+			got.answer.Code, got.answer.Body, http.StatusServiceUnavailable)
+	}
+	if body := got.answer.Body.String(); body != string(bodySignedOut) {
+		t.Errorf("body = %q; want %q", body, bodySignedOut)
+	}
+	if ct := got.answer.Header().Get(headerContentType); ct != contentTypeJSON {
+		t.Errorf("Content-Type = %q; want %q — every response on this door is JSON", ct, contentTypeJSON)
+	}
+	if extra := s.fixture.tmux.Calls()[before:]; len(extra) != 0 {
+		t.Errorf("the refused create ran %v; a session refused for a dead login must cost no tmux command", extra)
+	}
+	if n := s.fixture.store.Len(); n != 0 {
+		t.Errorf("the store holds %d session(s); a refused create must leave no record", n)
+	}
+}
+
+// TestSignedOutRefusalNeverCarriesTheAccount is docs/security.md's rule at the
+// one place a refusal is tempted to be helpful. What `claude auth status` prints
+// is an account of this host's credential; the rule that keeps it out of a log
+// keeps it out of a response.
+//
+// **Must fail when** the body grows a field carrying what the CLI said.
+func TestSignedOutRefusalNeverCarriesTheAccount(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	s.signin = &fakeRelay{signedIn: false}
+
+	body := postSessions(t, s, createBody(s.fixture)).answer.Body.String()
+	for _, leak := range []string{"@", "claude auth", "loggedIn", "oauth", "subscription"} {
+		if strings.Contains(strings.ToLower(body), strings.ToLower(leak)) {
+			t.Errorf("the refusal body %q carries %q, which is an account of this host's credential", body, leak)
+		}
+	}
+}
+
+// TestSignedInStillCreates is the other half, and the one that would catch a
+// gate that refuses everything.
+//
+// **Must fail when** the gate turns on something other than a definitive no.
+func TestSignedInStillCreates(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	s.signin = &fakeRelay{signedIn: true}
+
+	if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
+		t.Fatalf("create on a signed-in host = %d (%q); want %d",
+			got.answer.Code, got.answer.Body, http.StatusCreated)
+	}
+}
+
+// TestOnlyADefinitiveNoRefusesTheCreate is the decision in authstatus.go stated
+// as behaviour: authUnknown does not gate.
+//
+// Both cases below answer authUnknown and they are different daemons. One has no
+// relay at all, which is the ordinary state of an install whose start command
+// names nothing runnable — gating it would mean an upgrade into this change
+// stopped it creating the one session an operator would use to fix it. The other
+// has a relay that could not be asked, which this daemon cannot tell apart from
+// the first and which authstatus.go already refuses to call "signed out":
+// telling an operator to sign in when the real problem is a missing binary sends
+// them to fix the wrong thing, and refusing the create says exactly that.
+//
+// The backstop for both is the one they already had — claudeauth.DetectPrompt
+// marks the session needs-auth once it is up.
+//
+// **Must fail when** the gate is widened to authUnknown, which would brick every
+// daemon that cannot answer the question.
+func TestOnlyADefinitiveNoRefusesTheCreate(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]signInRelay{
+		"no relay at all": nil,
+		"could not ask": &fakeRelay{
+			err: errors.New("exec: \"crswd-no-such-binary-for-tests\": executable file not found in $PATH"),
+		},
+	}
+
+	for name, relay := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newAuditedServer(t)
+			s.signin = relay
+
+			if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
+				t.Fatalf("create = %d (%q); want %d — only a definitive signed-out refuses",
+					got.answer.Code, got.answer.Body, http.StatusCreated)
+			}
+		})
+	}
+}
+
+// TestSignedOutRefusesTheCreateOnTheBrowserDoor is the same refusal at the door
+// Craig actually presses from a phone, in that door's own language: a redirect
+// carrying a code from the closed vocabulary, never a status a form can read.
+//
+// **Must fail when** only the API door is gated — which was the state this
+// change was asked to fix, and the one an operator would meet first.
+func TestSignedOutRefusesTheCreateOnTheBrowserDoor(t *testing.T) {
+	t.Parallel()
+
+	c := newCreator(t)
+	c.signin = &fakeRelay{signedIn: false}
+
+	before := len(c.fixture.tmux.Calls())
+	w := c.post(t, c.wellFormed(t))
+
+	if got := outcomeOf(t, w); got != string(outcomeSignedOut) {
+		t.Fatalf("outcome = %q; want %q", got, outcomeSignedOut)
+	}
+	if extra := c.fixture.tmux.Calls()[before:]; len(extra) != 0 {
+		t.Errorf("the refused create ran %v; nothing may be started for a dead login", extra)
+	}
+	if n := c.fixture.store.Len(); n != 0 {
+		t.Errorf("the store holds %d session(s); a refused create must leave no record", n)
+	}
+}
+
+// TestTheSignedOutBannerSendsTheOperatorToTheSignIn is why this outcome has a
+// sentence of its own. Every other refusal in the vocabulary is answered by
+// changing a field on the same page; this one is answered somewhere else, and an
+// operator told only that nothing started would press the button again.
+//
+// **Must fail when** the sentence is reworded into a generic failure.
+func TestTheSignedOutBannerSendsTheOperatorToTheSignIn(t *testing.T) {
+	t.Parallel()
+
+	view := bannerFor(string(outcomeSignedOut))
+	if view == nil {
+		t.Fatalf("%q renders no banner at all", outcomeSignedOut)
+	}
+	if !strings.Contains(strings.ToLower(view.Message), "sign in") {
+		t.Errorf("the banner %q never says to sign in, so it names no way out", view.Message)
+	}
+	if !strings.Contains(strings.ToLower(view.Message), "no session was started") {
+		t.Errorf("the banner %q does not say nothing started", view.Message)
+	}
+}
+
+// TestBothDoorsShareOneAnswerAboutThisHost is FR-037a's shape for the gate: the
+// two doors resolve to one owner, and they must resolve to one verdict about the
+// host too. A second reading would be a second thing free to disagree — and the
+// disagreement that matters is the one where a create refused on one door
+// succeeds on the other with the same host in the same state.
+//
+// The count is the evidence: one exec answers both creates, because both go
+// through authStateCached's window.
+//
+// **Must fail when** a door grows its own ask.
+func TestBothDoorsShareOneAnswerAboutThisHost(t *testing.T) {
+	t.Parallel()
+
+	c := newCreator(t)
+	relay := &fakeRelay{signedIn: false}
+	c.signin = relay
+
+	if got := outcomeOf(t, c.post(t, c.wellFormed(t))); got != string(outcomeSignedOut) {
+		t.Fatalf("browser create = %q; want %q", got, outcomeSignedOut)
+	}
+	if got := postSessions(t, c.testServer, createBody(c.fixture)); got.answer.Code != http.StatusServiceUnavailable {
+		t.Fatalf("API create = %d; want %d — the same host, the same answer",
+			got.answer.Code, http.StatusServiceUnavailable)
+	}
+	if n := relay.callCount(); n != 1 {
+		t.Errorf("SignedIn ran %d times for two creates; want 1 — both doors share one window", n)
+	}
+}

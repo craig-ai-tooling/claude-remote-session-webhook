@@ -19,6 +19,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -185,4 +186,81 @@ func (s *Server) askAuthState(ctx context.Context) authState {
 // the request that asked for it.
 func (s *Server) dashboardAuth(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context())})
+}
+
+// ---------------------------------------------------------------- create gate
+
+// Craig, 9/16/26: "Sending sessions to crswd if login is expired ends in janky
+// sessions that are tough to recover."
+//
+// Until this, nothing on the create path asked. createSession and
+// createFromBrowser both went straight to Manager.Create, which runs `tmux
+// new-session` and types the start command into it. On a host whose login is
+// gone that is not a session: `claude` starts as a form rather than a shell, and
+// the window sits on the sign-in screen holding a slot against the cap with
+// nobody watching it. claudeauth.DetectPrompt notices afterwards and the card
+// reads needs-auth, which is a good report of a session that should never have
+// been started.
+//
+// The check is the same one the header pill already spends, through the same
+// 60-second cache: one exec per window, shared by both doors. A create is rare
+// next to that poll, so in practice this costs a map read.
+
+// bodySignedOut is the API door's answer, in the shape every other refusal on
+// that door has. It names the host's state rather than the operator's
+// credential, and carries nothing about which account, which binary, or what
+// the CLI said.
+var bodySignedOut = []byte(`{"error":"host signed out"}`)
+
+// errCreateSignedOut is what the trail carries. Like errCreateCapReached it
+// records a refusal that says nothing was wrong with the request — an operator
+// reading it repeatedly is looking at a host that keeps losing its login, which
+// is the thing to go and fix.
+var errCreateSignedOut = errors.New("this host is signed out of Claude, so the session was refused")
+
+// createRefusedWhileSignedOut reports whether a create must be turned away right
+// now because a session started here would come up on the sign-in screen.
+//
+// # Only authBad refuses, and that is deliberate
+//
+// authUnknown covers two facts this daemon cannot tell apart: no relay at all —
+// the configured start command names nothing runnable, which is the ordinary
+// state of a daemon that was never set up for sign-in — and a relay that could
+// not be asked. Refusing on either would mean a daemon that cannot answer the
+// question can no longer create the one session an operator would use to fix it,
+// and every install that upgraded into this change with no runnable `claude` on
+// its start command would stop working on the spot.
+//
+// That is the same reading authStateCached's own comment already commits this
+// package to: "Neither is 'signed out' — telling an operator to sign in when the
+// real problem is a missing binary sends them to fix the wrong thing." A gate
+// that treated unknown as signed out would say exactly that, and say it by
+// refusing.
+//
+// So the gate turns on the one answer that is evidence: `claude auth status` ran
+// and said no. That is also the failure this exists for — the login here is lost
+// to a revoked token family, not to a missing binary — and it is the only state
+// where a refusal is certainly right. A host that cannot be asked keeps the
+// backstop it already had, which is the needs-auth card.
+func (s *Server) createRefusedWhileSignedOut(ctx context.Context) bool {
+	return s.authStateCached(ctx) == authBad
+}
+
+// failSignedOut writes the API door's 503 and records why.
+//
+// 503 rather than a new meaning for one of the codes already in the table: this
+// is the daemon reporting that it cannot do the thing right now and that trying
+// later may work, which is what the status is for, and it is the only answer on
+// this route a client can tell apart from the 429 cap without reading a body.
+// The client that matters is the one this repo already has — lawnmower-route
+// treats any refusal as "leave the item queued" — and a distinguishable status
+// is what lets it say which refusal it hit.
+func (s *Server) failSignedOut(w http.ResponseWriter, r *http.Request) {
+	AuditFrom(r.Context()).Deny(errCreateSignedOut.Error())
+
+	w.Header().Set(headerContentType, contentTypeJSON)
+	w.WriteHeader(http.StatusServiceUnavailable)
+	if _, err := w.Write(bodySignedOut); err != nil {
+		s.report(fmt.Errorf("write the signed-out response: %w", err))
+	}
 }

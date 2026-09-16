@@ -137,6 +137,12 @@ const (
 	// names would send them to the wrong form.
 	outcomeBadVersion outcome = "bad-version"
 
+	// outcomeSignedOut is the create refused because this host's Claude login is
+	// gone. It is not a bad request and not a limit: the form was fine and the
+	// host is not in a state to act on it, which is why it is its own word rather
+	// than a second meaning for one of the two above.
+	outcomeSignedOut outcome = "signed-out"
+
 	outcomeLimited     outcome = "limited"
 	outcomeUnconfirmed outcome = "unconfirmed"
 
@@ -424,6 +430,17 @@ var banners = map[outcome]outcomeView{
 	},
 	outcomeLimited: {
 		Message: "No session was started: this host is at its limit for now. Destroy one, or try again shortly.",
+	},
+	outcomeSignedOut: {
+		// Says what to do and where, because unlike every other refusal in this
+		// vocabulary the fix is not on this page and not in this form — it is the
+		// sign-in this daemon already runs. An operator told only that nothing
+		// started would press the button again.
+		//
+		// It names no account and quotes nothing the CLI said: what `claude auth
+		// status` prints is an account of this host's credential, and the rule
+		// that keeps it out of a log keeps it off the page too.
+		Message: "No session was started: this host is signed out of Claude, so a session would have opened on the sign-in screen instead of working. Sign in from the header, then start it again.",
 	},
 	outcomeUnconfirmed: {
 		Message: "This destroy was not confirmed, so nothing was torn down.",

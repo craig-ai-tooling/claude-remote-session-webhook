@@ -121,6 +121,7 @@ Content-Type: application/json
 | `409` | Teardown could not be verified — the session may still be alive |
 | `429` | Concurrent-session cap reached, or create rate limit exceeded |
 | `500` | Internal failure; body carries no detail |
+| `503` | This host is signed out of Claude, so a created session would open on the sign-in screen rather than work |
 
 ---
 
@@ -162,7 +163,20 @@ the session's absolute deadline and the token's — they are the same instant by
 construction (FR-015).
 
 **Failures**: `400` invalid name / path outside an approved root / unknown field ·
-`429` cap or rate limit · `500` tmux failed to start the session.
+`429` cap or rate limit · `503` this host is signed out of Claude ·
+`500` tmux failed to start the session.
+
+The `503` is the one refusal here that is about the host rather than the request. A
+session started on a host whose Claude login is gone comes up on the sign-in screen and
+holds a slot against the cap without ever doing the work, so the create is refused before
+any tmux command runs. The body is `{"error":"host signed out"}` and carries nothing
+about the account, the binary, or what the CLI said.
+
+It fires only on a **definitive** signed-out answer. A daemon that cannot ask — no relay
+configured, or the ask itself failed — creates the session as it always did: those two
+are indistinguishable here, and refusing on them would stop a daemon creating the one
+session an operator would use to fix it. Such a session is still reported as `needs-auth`
+once it is up.
 
 ---
 

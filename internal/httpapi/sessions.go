@@ -426,6 +426,15 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Behind the body checks so a malformed request still gets the 400 that names
+	// what was wrong with it, and ahead of the manager so a refused create costs
+	// no path resolution and no tmux command — where the cap and the rate limit
+	// already sit, for the same reason.
+	if s.createRefusedWhileSignedOut(r.Context()) {
+		s.failSignedOut(w, r)
+		return
+	}
+
 	created, token, err := s.sessions.Create(r.Context(), session.CreateRequest{
 		Owner:        caller.ID,
 		Name:         req.Name,
