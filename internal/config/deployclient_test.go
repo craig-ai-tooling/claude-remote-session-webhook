@@ -57,13 +57,21 @@ type seenRequest struct {
 // stubDaemon answers like the real one: each reply is decided by respond, which
 // is handed the number of requests already served.
 type stubDaemon struct {
-	mu      sync.Mutex
-	seen    []seenRequest
-	respond func(n int, w http.ResponseWriter)
+	mu   sync.Mutex
+	seen []seenRequest
+	// errs is what the stub itself could not do. A handler cannot fail its
+	// test from another goroutine, and a dropped error here would make a
+	// half-delivered reply look like the client's doing.
+	errs    []error
+	respond func(n int, w http.ResponseWriter) error
 }
 
 func (d *stubDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	raw, _ := io.ReadAll(r.Body)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		d.fail(fmt.Errorf("read the request body: %w", err))
+		return
+	}
 
 	d.mu.Lock()
 	n := len(d.seen)
@@ -77,7 +85,26 @@ func (d *stubDaemon) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 	d.mu.Unlock()
 
-	d.respond(n, w)
+	if err := d.respond(n, w); err != nil {
+		d.fail(err)
+	}
+}
+
+// fail records a failure of the stub, not of the client under test.
+func (d *stubDaemon) fail(err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.errs = append(d.errs, err)
+}
+
+// check fails the test with anything the stub could not do.
+func (d *stubDaemon) check(t *testing.T) {
+	t.Helper()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, err := range d.errs {
+		t.Errorf("the stub daemon: %v", err)
+	}
 }
 
 func (d *stubDaemon) requests() []seenRequest {
@@ -90,9 +117,10 @@ func (d *stubDaemon) requests() []seenRequest {
 
 // unauthorized is the daemon's uniform denial, byte for byte what
 // internal/httpapi writes for every layer-2 failure (FR-011).
-func unauthorized(w http.ResponseWriter) {
+func unauthorized(w http.ResponseWriter) error {
 	w.WriteHeader(http.StatusUnauthorized)
-	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
+	_, err := w.Write([]byte(`{"error":"unauthorized"}`))
+	return err
 }
 
 // stubOp writes an `op` that answers the three reads the client makes. Without
@@ -113,6 +141,8 @@ esac
 `, testSecret)
 
 	path := filepath.Join(dir, "op")
+	//nolint:gosec // G306: the client execs this stub, so it has to carry the
+	// execute bit. It is written into t.TempDir(), which is this process's own.
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatalf("write stub op: %v", err)
 	}
@@ -130,6 +160,8 @@ func runClient(t *testing.T, srv *httptest.Server, args ...string) (string, int)
 		}
 	}
 
+	//nolint:gosec // G204: clientPath is a constant naming a file this repository
+	// ships, and the arguments are this test's own literals.
 	cmd := exec.Command("bash", append([]string{clientPath}, args...)...)
 	// The stub op goes FIRST: the client only ever appends to PATH, so
 	// whatever leads here keeps the lead inside it.
@@ -152,17 +184,22 @@ func runClient(t *testing.T, srv *httptest.Server, args ...string) (string, int)
 
 // expectedSignature recomputes the payload the daemon verifies, so this test
 // fails if the client ever signs something else.
-func expectedSignature(method, path, timestamp, body string) string {
+func expectedSignature(t *testing.T, method, path, timestamp, body string) string {
+	t.Helper()
+
 	mac := hmac.New(sha256.New, []byte(testSecret))
-	fmt.Fprintf(mac, "%s\n%s\n%s.%s", method, path, timestamp, body)
+	if _, err := fmt.Fprintf(mac, "%s\n%s\n%s.%s", method, path, timestamp, body); err != nil {
+		t.Fatalf("hash the signed payload: %v", err)
+	}
 	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
 }
 
 // TestClientSignsThePayloadTheDaemonVerifies pins the wire format: the headers
 // that must be present, and the exact bytes under the HMAC.
 func TestClientSignsThePayloadTheDaemonVerifies(t *testing.T) {
-	daemon := &stubDaemon{respond: func(_ int, w http.ResponseWriter) {
-		_, _ = w.Write([]byte(`{"ok":true}`))
+	daemon := &stubDaemon{respond: func(_ int, w http.ResponseWriter) error {
+		_, err := w.Write([]byte(`{"ok":true}`))
+		return err
 	}}
 	srv := httptest.NewServer(daemon)
 	defer srv.Close()
@@ -175,6 +212,8 @@ func TestClientSignsThePayloadTheDaemonVerifies(t *testing.T) {
 	if got := strings.TrimSpace(out); got != `{"ok":true}` {
 		t.Fatalf("stdout %q, want the response body", got)
 	}
+
+	daemon.check(t)
 
 	seen := daemon.requests()
 	if len(seen) != 1 {
@@ -191,7 +230,7 @@ func TestClientSignsThePayloadTheDaemonVerifies(t *testing.T) {
 	if got.bearer != "Bearer session-bearer" {
 		t.Errorf("Authorization %q, want the bearer passed as the 4th argument", got.bearer)
 	}
-	if want := expectedSignature("POST", "/sessions/abc/prompt", got.timestamp, body); got.signature != want {
+	if want := expectedSignature(t, "POST", "/sessions/abc/prompt", got.timestamp, body); got.signature != want {
 		t.Errorf("signature %q, want %q — the signed payload is METHOD\\nPATH\\ntimestamp.body", got.signature, want)
 	}
 
@@ -209,12 +248,12 @@ func TestClientSignsThePayloadTheDaemonVerifies(t *testing.T) {
 // caller's identical one, and the client must come back with a signature that
 // is not the same bytes.
 func TestClientRetriesAReplayedSignature(t *testing.T) {
-	daemon := &stubDaemon{respond: func(n int, w http.ResponseWriter) {
+	daemon := &stubDaemon{respond: func(n int, w http.ResponseWriter) error {
 		if n == 0 {
-			unauthorized(w)
-			return
+			return unauthorized(w)
 		}
-		_, _ = w.Write([]byte(`{"sessions":[]}`))
+		_, err := w.Write([]byte(`{"sessions":[]}`))
+		return err
 	}}
 	srv := httptest.NewServer(daemon)
 	defer srv.Close()
@@ -227,6 +266,8 @@ func TestClientRetriesAReplayedSignature(t *testing.T) {
 		t.Fatalf("stdout %q, want the retry's body — a caller that reads this cannot see the 401", got)
 	}
 
+	daemon.check(t)
+
 	seen := daemon.requests()
 	if len(seen) != 2 {
 		t.Fatalf("%d request(s), want 2: one refused, one retried", len(seen))
@@ -237,7 +278,7 @@ func TestClientRetriesAReplayedSignature(t *testing.T) {
 	if seen[0].timestamp == seen[1].timestamp {
 		t.Errorf("both requests carried timestamp %q; the retry must be signed under a later one", seen[0].timestamp)
 	}
-	if want := expectedSignature("GET", "/sessions", seen[1].timestamp, ""); seen[1].signature != want {
+	if want := expectedSignature(t, "GET", "/sessions", seen[1].timestamp, ""); seen[1].signature != want {
 		t.Errorf("retry signature %q, want %q — the retry must be a real signature, not a reused one", seen[1].signature, want)
 	}
 }
@@ -246,7 +287,7 @@ func TestClientRetriesAReplayedSignature(t *testing.T) {
 // that is genuinely wrong is refused every time, and the client must hand that
 // answer back rather than hammer the daemon.
 func TestClientRetriesOnceAndReportsTheDenial(t *testing.T) {
-	daemon := &stubDaemon{respond: func(_ int, w http.ResponseWriter) { unauthorized(w) }}
+	daemon := &stubDaemon{respond: func(_ int, w http.ResponseWriter) error { return unauthorized(w) }}
 	srv := httptest.NewServer(daemon)
 	defer srv.Close()
 
@@ -254,6 +295,7 @@ func TestClientRetriesOnceAndReportsTheDenial(t *testing.T) {
 	if got := strings.TrimSpace(out); got != `{"error":"unauthorized"}` {
 		t.Fatalf("stdout %q, want the daemon's denial passed through", got)
 	}
+	daemon.check(t)
 	if n := len(daemon.requests()); n != 2 {
 		t.Fatalf("%d request(s), want 2: the retry happens once, not in a loop", n)
 	}
