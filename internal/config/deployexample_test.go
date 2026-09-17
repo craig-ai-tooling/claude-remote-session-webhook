@@ -69,6 +69,42 @@ func unitSettings(t *testing.T) map[string][]string {
 	return settings
 }
 
+// unitSectionSettings returns the Key=Value directives inside one bracketed
+// section of the unit file — `[Unit]`, `[Service]` or `[Install]` — keyed
+// separately from unitSettings' flat, whole-file map. A check for "does
+// [Unit] carry X" cannot be satisfied by a same-named key that actually lives
+// under a different section, and OnFailure= only means anything in [Unit].
+func unitSectionSettings(t *testing.T, section string) map[string][]string {
+	t.Helper()
+
+	raw, err := os.ReadFile(unitPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", unitPath, err)
+	}
+
+	settings := make(map[string][]string)
+	current := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			current = trimmed
+			continue
+		}
+		if current != section {
+			continue
+		}
+		key, value, found := strings.Cut(trimmed, "=")
+		if !found {
+			t.Fatalf("%s: %q is neither a comment, a section header, nor a Key=Value directive", unitPath, trimmed)
+		}
+		settings[key] = append(settings[key], value)
+	}
+	return settings
+}
+
 // unitEnvironment returns the CRSW_ variables the unit sets inline, by name.
 //
 // It is expected to be empty, and TestUnitNeverShadowsTheConfigFile is why: an
@@ -338,6 +374,22 @@ func TestUnitExecStartPassesNoFlags(t *testing.T) {
 		if _, args, found := strings.Cut(strings.TrimSpace(cmd), " "); found && strings.TrimSpace(args) != "" {
 			t.Errorf("%s runs %q; the daemon defines no flags and flag.Parse exits non-zero on one it does not know", unitPath, cmd)
 		}
+	}
+}
+
+// TestUnitAlertsOnFailure holds crswd.service to the same OnFailure= sweep
+// every unit ai-lawnmower owns already carries (lawnmower-alert@%n.service,
+// PRs #200/#204). This is the one unit that repo cannot wire itself — it is
+// only referenced there (lawnmower-keep-busy.service, lawnmower-dayclose.service)
+// and defined here — so the fix has to land in this file, and it failed
+// silently for a week: measured 16 failures in 7 days, all "unauthorized",
+// none of them reaching anyone.
+func TestUnitAlertsOnFailure(t *testing.T) {
+	t.Parallel()
+
+	got := unitSectionSettings(t, "[Unit]")["OnFailure"]
+	if len(got) != 1 || strings.TrimSpace(got[0]) == "" {
+		t.Fatalf("%s [Unit] section has no OnFailure=; a crswd failure reaches nobody", unitPath)
 	}
 }
 

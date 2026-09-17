@@ -17,6 +17,14 @@ Documentation=https://github.com/craig-ai-tooling/claude-remote-session-webhook
 After=network-online.target
 Wants=network-online.target
 
+# The alerter unit is provided by ai-lawnmower (loop/systemd/lawnmower-alert@.service),
+# not by this repo, so it is not guaranteed to be installed on every host that runs
+# this daemon. That is fine: measured on a live host, an OnFailure= target systemd
+# cannot find logs one line — "Failed to enqueue OnFailure= job, ignoring: Unit ...
+# not found." — on the failing unit's own state, restart behaviour and startup are
+# unaffected. This line is inert wherever the alerter is absent.
+OnFailure=lawnmower-alert@%n.service
+
 [Service]
 Type=simple
 
