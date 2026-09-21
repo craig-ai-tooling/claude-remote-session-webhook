@@ -18,9 +18,62 @@ MAX_ITERATIONS="${1:-20}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-PROMPT_FILE="ralph/PROMPT.md"
-PLAN_FILE="ralph/IMPLEMENTATION_PLAN.md"
-PROGRESS_FILE="ralph/PROGRESS.md"
+# ── which task's notebook? ──────────────────────────────────────────────
+# One notebook per task, at ralph/plans/<id>/ (lm-guard-allowlist-single-file-
+# conflicts, 9/16/26) -- 193 of 200 merged PRs used to rewrite the one shared
+# ralph/IMPLEMENTATION_PLAN.md purely to declare their own allowlist, so every
+# merge conflicted every other open PR against that same file.
+#
+# Resolution order: $RALPH_PLAN_DIR verbatim if set; else ralph/plans/$RALPH_PLAN
+# if that is set; else, if the current branch is literally named plan/<id>
+# (the shape loop/ralph-prepare.sh cuts and a human running this by hand on
+# that branch would also be on), derive <id> from it. A pod running the loop
+# is normally on ralph/<runid>, not plan/<id> -- job.yaml sets RALPH_PLAN on
+# the ralph container for exactly that reason (ralph-runner/ralph-launch.sh).
+if [[ -z "${RALPH_PLAN_DIR:-}" ]]; then
+  PLAN_ID="${RALPH_PLAN:-}"
+  if [[ -z "$PLAN_ID" ]]; then
+    CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")"
+    if [[ "$CUR_BRANCH" =~ ^plan/([A-Za-z0-9._-]+)$ ]]; then
+      PLAN_ID="${BASH_REMATCH[1]}"
+    fi
+  fi
+  if [[ -z "$PLAN_ID" ]]; then
+    echo "FATAL: cannot resolve which task's notebook to run." >&2
+    echo "       Set RALPH_PLAN_DIR=ralph/plans/<id>, or RALPH_PLAN=<id>, or" >&2
+    echo "       run this on a branch literally named plan/<id>." >&2
+    exit 2
+  fi
+  # loop/plan-gate.sh and loop/verify-run.sh both refuse this same shape for
+  # --plan; this path resolved it unchecked (RALPH_PLAN='../../elsewhere' read
+  # a notebook entirely outside ralph/plans/, past the FATAL below, until this
+  # guard was added -- review finding, 9/16/26). The branch-derived PLAN_ID
+  # above is regex-constrained but that class still permits '..', so check
+  # every source the same way.
+  case "$PLAN_ID" in
+    *..*|.*|*/*)
+      echo "FATAL: invalid RALPH_PLAN '$PLAN_ID' (no '..', no leading '.', no '/')" >&2
+      exit 2 ;;
+  esac
+  RALPH_PLAN_DIR="ralph/plans/${PLAN_ID}"
+else
+  # An explicit RALPH_PLAN_DIR is taken verbatim by design (it names the
+  # notebook directly), but it must still resolve inside ralph/plans/ -- same
+  # traversal guard as the PLAN_ID branch above.
+  case "$RALPH_PLAN_DIR" in
+    ralph/plans/*..*)
+      echo "FATAL: invalid RALPH_PLAN_DIR '$RALPH_PLAN_DIR' (no '..')" >&2
+      exit 2 ;;
+    ralph/plans/*) ;;
+    *)
+      echo "FATAL: invalid RALPH_PLAN_DIR '$RALPH_PLAN_DIR' (must start with ralph/plans/)" >&2
+      exit 2 ;;
+  esac
+fi
+
+PROMPT_FILE="${RALPH_PLAN_DIR}/PROMPT.md"
+PLAN_FILE="${RALPH_PLAN_DIR}/IMPLEMENTATION_PLAN.md"
+PROGRESS_FILE="${RALPH_PLAN_DIR}/PROGRESS.md"
 DONE_SIGNAL="RALPH_COMPLETE"
 
 for f in "$PROMPT_FILE" "$PLAN_FILE" "$PROGRESS_FILE"; do
