@@ -11,10 +11,10 @@
 # request to the daemon. The edge deciding you may knock never substitutes for
 # the daemon deciding you may come in — drop the signature and you still get 401.
 #
-# A 401 is retried once under a fresh timestamp. The signature has one-second
-# resolution, so two callers making the same request in the same second are
-# byte-identical and the daemon refuses the second as a replay — see the note
-# above the retry at the foot of this file.
+# A 401 is retried up to three times, each under a fresh timestamp. The
+# signature has one-second resolution, so two callers making the same request in
+# the same second are byte-identical and the daemon refuses the second as a
+# replay — see the note above the retry at the foot of this file.
 #
 # Portability notes, each of which was a real hazard:
 #   - The request path is `reqpath`, never `path`. In zsh `path` is tied to PATH,
@@ -89,17 +89,27 @@ send
 # one. It is right to refuse: it cannot tell an accidental collision from a
 # captured request being replayed. The caller can — it has just issued this
 # request for the first time — so it re-signs under a later timestamp and asks
-# once more.
+# again.
 #
-# Measured on the host that runs a dozen of these: 128 refusals in 14 days, 9 a
-# day, every one of them a single loser in that second and never two, so one
-# retry clears every observed case. The wait is randomised anyway, so two
-# callers that both lost to a third do not line up again. Re-sending is safe
-# whatever the method: the signature is checked before the handler runs, so a
-# 401 executed nothing.
-if [ "$status" = "401" ]; then
+# Measured on the host that runs a dozen of these: 128 refusals in the 14 days
+# before 9/16/26, 9 a day. One retry was enough until 9/21/26 23:46Z, when it
+# was not: the timers for deliver, repo-drift and retire-sessions fire in the
+# same second, sessions were listed at :04 and again at :06, and
+# retire-sessions lost its first attempt at :04 and its one retry at :06. It
+# exited 2 and closed nothing. Three retries: a caller that keeps losing to a
+# busy second gets more seconds to try in. A genuinely wrong secret still ends
+# in the daemon's denial, after four requests over at most six seconds.
+#
+# The wait is randomised, so two callers that both lost to a third do not line
+# up again. It is at least one second, so every retry is signed under a later
+# timestamp than the attempt it replaces. Re-sending is safe whatever the
+# method: the signature is checked before the handler runs, so a 401 executed
+# nothing.
+retries=0
+while [ "$status" = "401" ] && [ "$retries" -lt 3 ]; do
+  retries=$((retries + 1))
   sleep $((1 + RANDOM % 2))
   send
-fi
+done
 
 printf '%s\n' "$out"

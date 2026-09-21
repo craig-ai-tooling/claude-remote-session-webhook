@@ -17,7 +17,9 @@ package config_test
 // refused the second. The loser exited non-zero and closed no finished session.
 // The daemon is right to refuse — it cannot distinguish that from a captured
 // request being replayed — so the client is what has to know it has just issued
-// the request for the first time, and ask again under a later timestamp.
+// the request for the first time, and ask again under a later timestamp. On
+// 2026-09-21 the one retry that allowed lost as well, so it now asks up to three
+// more times.
 
 import (
 	"crypto/hmac"
@@ -283,10 +285,48 @@ func TestClientRetriesAReplayedSignature(t *testing.T) {
 	}
 }
 
-// TestClientRetriesOnceAndReportsTheDenial guards the other direction: a secret
-// that is genuinely wrong is refused every time, and the client must hand that
-// answer back rather than hammer the daemon.
-func TestClientRetriesOnceAndReportsTheDenial(t *testing.T) {
+// TestClientSurvivesLosingTheRetryToo is the 2026-09-21 failure. One retry
+// was not enough: sessions were listed at 23:46:04Z and again at :06Z, and
+// retire-sessions lost the first attempt and the retry both. The daemon here
+// refuses twice, and the client must still come back with the third answer,
+// every attempt under its own timestamp.
+func TestClientSurvivesLosingTheRetryToo(t *testing.T) {
+	daemon := &stubDaemon{respond: func(n int, w http.ResponseWriter) error {
+		if n < 2 {
+			return unauthorized(w)
+		}
+		_, err := w.Write([]byte(`{"sessions":[]}`))
+		return err
+	}}
+	srv := httptest.NewServer(daemon)
+	defer srv.Close()
+
+	out, code := runClient(t, srv, "GET", "/sessions")
+	if code != 0 {
+		t.Fatalf("exit %d, want 0; stdout %q", code, out)
+	}
+	if got := strings.TrimSpace(out); got != `{"sessions":[]}` {
+		t.Fatalf("stdout %q, want the third attempt's body — two lost seconds in a row must not reach the caller", got)
+	}
+
+	daemon.check(t)
+
+	seen := daemon.requests()
+	if len(seen) != 3 {
+		t.Fatalf("%d request(s), want 3: two refused, one answered", len(seen))
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i].timestamp == seen[i-1].timestamp {
+			t.Errorf("attempts %d and %d both carried timestamp %q; each retry must be signed under a later one",
+				i, i+1, seen[i].timestamp)
+		}
+	}
+}
+
+// TestClientRetriesABoundedNumberOfTimesAndReportsTheDenial guards the other
+// direction: a secret that is genuinely wrong is refused every time, and the
+// client must hand that answer back rather than hammer the daemon.
+func TestClientRetriesABoundedNumberOfTimesAndReportsTheDenial(t *testing.T) {
 	daemon := &stubDaemon{respond: func(_ int, w http.ResponseWriter) error { return unauthorized(w) }}
 	srv := httptest.NewServer(daemon)
 	defer srv.Close()
@@ -296,7 +336,7 @@ func TestClientRetriesOnceAndReportsTheDenial(t *testing.T) {
 		t.Fatalf("stdout %q, want the daemon's denial passed through", got)
 	}
 	daemon.check(t)
-	if n := len(daemon.requests()); n != 2 {
-		t.Fatalf("%d request(s), want 2: the retry happens once, not in a loop", n)
+	if n := len(daemon.requests()); n != 4 {
+		t.Fatalf("%d request(s), want 4: three retries and then the denial, not a loop", n)
 	}
 }
