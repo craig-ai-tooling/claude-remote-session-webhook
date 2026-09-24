@@ -47,22 +47,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # An app installation token, not GITHUB_TOKEN, and this is the whole
+      # reason the hand-off works.
+      #
+      # GitHub does not let an event caused by GITHUB_TOKEN trigger another
+      # workflow — it is loop prevention, and it is deliberate. So the label
+      # this step applies landed on the issue and woke nothing: the queue
+      # ran, the worker never did, and the backlog looked handled while
+      # standing still.
+      #
+      # An app token does trigger it. The craig-ai-queue app holds Issues:
+      # write and nothing else, and the token is minted per run for this
+      # repository only, then revoked when the job ends. It replaced a
+      # fine-grained PAT, which the org stopped accepting once its lifetime
+      # passed 366 days; an app key does not expire.
+      - name: Mint the hand-off token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.QUEUE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.QUEUE_APP_KEY }}
+          permission-issues: write
+
       - name: Pick the next issue and hand it over
         env:
-          # QUEUE_TOKEN, not GITHUB_TOKEN, and this is the whole reason the
-          # hand-off works.
-          #
-          # GitHub does not let an event caused by GITHUB_TOKEN trigger another
-          # workflow — it is loop prevention, and it is deliberate. So the label
-          # this step applies landed on the issue and woke nothing: the queue
-          # ran, the worker never did, and the backlog looked handled while
-          # standing still.
-          #
-          # A fine-grained token does trigger it. This one is scoped to this
-          # repository with Issues: write and nothing else — verified: it cannot
-          # see private repositories and cannot read this repository's secrets.
-          # If it ever leaks, the worst it can do is label an issue.
-          GH_TOKEN: ${{ secrets.QUEUE_TOKEN }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           REPO: ${{ github.repository }}
           REQUESTED: ${{ inputs.issue }}
         run: |
