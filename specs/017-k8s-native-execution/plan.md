@@ -2,86 +2,104 @@
 
 **Branch**: `spec/017-k8s-native-execution` | **Date**: 2026-09-25 | **Spec**: [spec.md](spec.md)
 
-This plan is written for option A, the recommendation. If the operator chooses B, this
-plan is replaced, not amended. No code is written until he decides.
+This plan was written for option A and replaced on 9/25/26 when the operator chose B, as the
+first version of it said it would be. The A design is in git history (`a2f8037`). No code is
+written until the credential gate (FR-017) has a result.
 
 ## Summary
 
-v2 adds a `pod` execution mode to the same binary. Under it, crswd runs in one
-StatefulSet pod beside a `tmux-host` container that owns every pane, with one PVC for
-`CLAUDE_CONFIG_DIR`, the session journal and the working directories. A daemon container
-restart is handled by `Adopt`, as on the VM. A pod restart is handled by `ReplayJournal`
-and `--resume`, which v0 already ships (spec 012) and which the kill test showed is the
-only path that can work. The `host` mode, v0 today, stays the default.
+v2 adds a `kubernetes` execution mode to the same binary. Under it, crswd is the front door
+(the authenticated dashboard and API) and a reconciler. A session is a `ClaudeSession` object;
+the reconciler keeps one pod per object, and that pod runs `claude` under tmux with the
+`creds-link` sidecar. Deleting a pod costs one session a `--resume`. Restarting or upgrading
+crswd costs no session anything. The `host` mode, v0 today, stays the default and stays the
+only mode that runs `tmuxctl.Exec` on the daemon's own host.
 
 ## Technical Context
 
-**Language**: Go, standard library. **New**: a Helm chart under `deploy/chart/`, a
-configuration key, one journal field. **Storage**: one PVC, `linstor-replicated`
-(`Retain`), or an existing claim. **Target**: rpi-inference, node lm-amd64-1, namespace
-`crswd-next`, hostname `crswd-next.craigcloud.io` behind Cloudflare Access.
-**Testing**: table-driven unit tests for the mode switch and the journal field. The
-`tmux` suite, unchanged, covers `tmuxctl` in both modes because it is the same code.
-A kill test in `crswd-next` repeats D1 with the real daemon and a keeper login before
-k8s-15.
+**Language**: Go, standard library plus `client-go` for the API. **New**: CRD types, a
+reconciler, a second `tmuxctl.Controller`, a session-pod image, a Helm chart with the CRD, a
+configuration key, one journal field. **Storage**: FR-010, undecided. **Target**: rpi-inference,
+node lm-amd64-1, namespace `crswd-next`, hostname `crswd-next.craigcloud.io` behind Cloudflare
+Access. **Testing**: table-driven unit tests for the reconciler against a fake client, the
+`tmux` suite unchanged for `tmuxctl`, and a kill test in `crswd-next` before k8s-15.
 
 ## Constitution Check
 
 | Principle | Assessment | Pass |
 |---|---|---|
-| **I — Security** | FR-021 unchanged: no token or hash persisted, every restart re-mints. The daemon never holds a refresh token in pod mode. Its own HMAC secret and Access app. | ✅ |
-| **II — Unknowns surfaced** | A versus B is the operator's; FR-010 and FR-014 are marked `NEEDS CLARIFICATION`; research D6 lists what was not measured. | ✅ |
-| **III — Verifiable** | SC-001 is a kill test with times; SC-002 and SC-003 are tests. | ✅ |
-| **IV — Smallest change** | A reuses `session` and `tmuxctl` whole. The only v0 behaviour change is the journal name (FR-012), which fixes a measured failure. | ✅ |
-| **V — Standards** | CI runs the same Install, Lint, Typecheck, Test and Build; the chart adds `helm lint` and `helm template` to CI. | ✅ |
-| **VI — Blast radius** | Pod mode turns off the self-updater and the login relay. A session in a pod runs as uid 10001 with no host mounts; the pod is the boundary the systemd hardening is on the VM. | ✅ |
-| **VII — Design system** | No UI change. The dashboard names the mode in the existing settings page. | ✅ |
+| **I. Security** | FR-014: no token or hash persisted, in the journal or in an object. The reconciler has no verb on Secrets (FR-013, SC-005). The daemon keeps its own HMAC secret and Access app. The pane path needs its own authentication if it is an agent (FR-011). | ✅ with FR-011 open |
+| **II. Unknowns surfaced** | Seven `NEEDS CLARIFICATION` in the spec: API group, reconciler placement, storage, pane path, per-pod agent or tmux-in-pod, namespace and state, keeper in a second namespace. The credential gate blocks the build. | ✅ |
+| **III. Verifiable** | SC-001 is a kill test with times. SC-005 fails on a Secret verb, an unallowlisted directory or a cap breach. SC-006 requires the gate's result on record. | ✅ |
+| **IV. Smallest change** | Second implementation of one existing interface, so `session` and `httpapi` do not fork. The only v0 change is the journal name (FR-012). | ✅ |
+| **V. Standards** | CI runs Install, Lint, Typecheck, Test and Build, plus `helm lint` and `helm template` with the CRD. | ✅ |
+| **VI. Blast radius** | A second creation path exists, so the reconciler re-checks allowlist, cap and lifetime on every object (FR-007, US4), and sets `activeDeadlineSeconds` so the lifetime holds with the reconciler down. One shell per pod is a stronger boundary than one tmux server for all. What becomes reachable: a ServiceAccount that can create pods, bounded to one namespace (FR-013). | ✅ with FR-009 open |
+| **VII. Design system** | No UI change. The dashboard names the mode in the existing settings page. | ✅ |
 
 ## Design
 
-**Two containers, one socket.** `tmux-host` runs the Claude Code image, starts the tmux
-server on `/run/crswd/tmux.sock` (emptyDir), and waits. `crswd` runs the daemon with
-`tmuxctl` pointed at that socket. Panes are children of the tmux server, so they live in
-`tmux-host`, and a `crswd` container restart leaves them running (7.3 s, measured).
+**Object.** `ClaudeSession` carries name, owner, working directory, start options and lifetime
+in `spec`, and phase (`Pending`, `Running`, `Rejected`, `Reviving`, `Failed`) and conversation
+identifier in `status`. Nothing in it is a secret.
 
-**Startup.** Unchanged: `ReplayJournal`, `Adopt`, supervisor. The journal and
-`CLAUDE_CONFIG_DIR` are on the PVC, so a pod restart reaches `ReplayJournal` with the
-conversation identifiers intact.
+**Reconcile.** List objects, list pods by owner reference, and converge: create a missing pod,
+recreate a deleted one with `--resume <conversation>`, delete the pod of a deleted object and
+confirm it is gone, reject an object that fails FR-007. One reconciler by Lease. Where it runs is
+FR-009.
 
-**Journal.** `journalRecord` gains `name`. `createRecord` writes it; `ReplayJournal`
-restores it into `Session.Name`. Old records without it replay as today.
+**Session pod.** tmux as the entrypoint's child, `claude` started by the same start command
+`tmuxctl` sends today, `creds-link` as a native sidecar, `CLAUDE_CONFIG_DIR` and the working
+directory on the storage FR-010 picks, uid 10001, no host mounts. The image is the Claude Code
+image k8s-12 measured (~570 MiB a session), plus tmux.
 
-**Credentials.** The keeper contract: Secret `claude-credentials` in `crswd-next` mounted
-as a directory at `/var/run/claude-credentials`, `CLAUDE_CONFIG_DIR/.credentials.json` a
-symlink to it, `creds-link` as a native sidecar. In pod mode `internal/loginrelay` is off,
-and `internal/claudeauth` reports a session stuck on sign-in as `needs-auth` as it does
-today, pointing at the keeper instead of the relay.
+**Pane path.** The second `tmuxctl.Controller` sends what the first would, to the pod. Two
+candidates, undecided until D8 is measured: an authenticated in-pod agent over the pod network,
+or the exec API. The exec path costs one API call per watched session per second.
 
-**Upgrades.** The chart and the image come from k8s-20 (ghcr, Flux `HelmRelease` pinned to
-2.x). The self-updater is off in pod mode. Whether an upgrade rolls the pod or patches the
-`crswd` container in place is FR-010.
+**Tokens.** Unchanged from spec 001 FR-021. The daemon mints a hash per session in memory. A
+crswd restart or a pod restart makes every affected session `CredentialPending` again.
 
-**Lawnmower state.** `persistence.existingClaim: lawnmower-home`. The lawnmower chart owns
-that claim and pins the console and the group-A CronJobs to the same node.
+**Credentials.** The keeper contract, per pod: `claude-credentials` mounted as a directory,
+`.credentials.json` a symlink into it, `creds-link` re-linking every 60 s. The reconciler puts
+the Secret's name in the pod spec and never reads it. `crswd-next` gets its own keeper login
+(FR-016). Whether that login works for `--remote-control` and `--resume` is the gate (FR-017).
+
+**Upgrades.** The chart and images come from k8s-20 (ghcr, Flux `HelmRelease` pinned to 2.x). A
+crswd upgrade touches no session pod. A session pod keeps the image in its object until the
+session ends, which is proposed and not decided.
+
+**Lawnmower state.** FR-019, undecided. It fixes which node the session pods run on.
 
 ## Project Structure
 
 ```text
-internal/config/            MOD  execution.mode (host|pod), socket path
+api/v1alpha1/               NEW  ClaudeSession types, CRD manifest generation
+internal/config/            MOD  execution.mode (host|kubernetes)
 internal/session/journal.go MOD  journalRecord.Name
 internal/session/manager.go MOD  createRecord and ReplayJournal carry Name
-internal/updater/           MOD  refuses to run in pod mode
-internal/loginrelay/        MOD  refuses to run in pod mode
-cmd/crswd/                  MOD  unit subcommands refuse in pod mode
-deploy/chart/               NEW  StatefulSet, Service, PVC or existingClaim, keeper consumer wiring
-.github/workflows/ci.yml    MOD  helm lint, helm template
-docs/k8s-mode.md            NEW  operating the pod mode
+internal/podctl/            NEW  second tmuxctl.Controller, backed by objects and pods
+internal/reconcile/         NEW  the loop, the FR-007 checks, the Lease
+internal/updater/           MOD  refuses to run in kubernetes mode
+internal/loginrelay/        MOD  refuses to run in kubernetes mode
+cmd/crswd/                  MOD  unit subcommands refuse in kubernetes mode
+deploy/chart/               NEW  CRD, RBAC (FR-013), Deployment, Service, session pod template
+deploy/session-image/       NEW  Claude Code plus tmux
+.github/workflows/ci.yml    MOD  helm lint, helm template, CRD generation drift check
+docs/k8s-mode.md            NEW  operating the kubernetes mode
 ```
 
 ## Sequence
 
-1. FR-012 alone, to v0: the journal name. It fixes the 9/22/26 failure on the VM too.
-2. The mode switch and its refusals, behind a default of `host`.
-3. The chart, installed in `crswd-next` with its own keeper login and HMAC secret.
-4. The kill test again, with crswd and a real `claude --resume`, including FR-010.
-5. k8s-15: cutover in a weekend window. v0 on the VM stays as the rollback.
+1. **The credential gate (FR-017)**, alone, with no crswd code: a pod on a keeper login runs
+   `claude --remote-control` and `claude --resume` across a pod restart. Record versions.
+   Needs the operator's browser once, for the `crswd-next` login (FR-016).
+2. FR-012 alone, to v0: the journal name. It fixes the 9/22/26 failure on the VM too.
+3. Measure the two open costs (research D8): the pane path, and per-session storage with a
+   `subPath` on a shared claim. Decide FR-009, FR-010, FR-011 from the numbers.
+4. The mode switch and its refusals, behind a default of `host`.
+5. CRD, reconciler and the second controller, against a fake client, then in `crswd-next`.
+6. The chart with the CRD and RBAC, installed in `crswd-next` with its own keeper login and
+   HMAC secret. This is k8s-20's delivery half.
+7. The kill test with the real daemon: restart crswd, delete a session pod, delete a node's
+   worth, with times against SC-001.
+8. k8s-15: cutover in a weekend window. v0 on the VM stays as the rollback.
