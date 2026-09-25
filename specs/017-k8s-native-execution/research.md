@@ -87,6 +87,9 @@ and can ship to v0 on its own.
 | FR-021 on a daemon restart | re-mint through `Adopt` | re-mint for every session unless token hashes persist in the CR, which changes FR-021 | code |
 | Lawnmower state beside it | same RWO volume, same node | cannot share a per-session PVC | kill test |
 
+**Superseded as a decision, not as evidence (9/25/26).** The operator chose B. The numbers
+below stand and are what B has to manage; D8 and D9 list what choosing it leaves unmeasured.
+
 B's benefit is real only at an upgrade cadence the k8s mode will not have: k8s-20 pins v2
 to a Flux-managed 2.x, and the operator asked that nothing update itself. At 29 releases a
 month rolled by hand in windows, A's cost is a 44 s resume per rollout. If FR-010's
@@ -147,3 +150,31 @@ them would change); an S3 feed (a copy up to an hour old, with writes landing no
 sessions see); state inside each session PVC under B (not shareable).
 
 **Cost**: everything on one node, as everything is on one VM today.
+
+---
+
+## D8 — What choosing B leaves unmeasured
+
+Written 9/25/26 when the operator chose B. Nothing here was run for this amendment; each line
+is a measurement to make before the requirement it feeds is decided.
+
+| Unmeasured | Feeds | How to measure |
+|---|---|---|
+| `claude --remote-control` and `claude --resume` on the keeper's access-token-only credentials, in a pod, across a pod restart | FR-017, the gate | A pod in the namespace that owns the Secret, mounting it as a directory and never copying it out (D1 refused a copy). Record the `claude` version. |
+| Cost of the pane path per watched session: exec API against an in-pod agent | FR-011 | `streamInterval` is 1 s (`internal/httpapi/stream.go`), one `CapturePane` per watched session per interval. Run ten sessions' worth against the control plane on the Pis and read the API server's CPU and the call latency. |
+| A `subPath` per session on one shared RWO claim | FR-010 | Start six pods at once, each on its own `subPath`, and time them against D4's 93 to 98 s for three PVCs. D7 measured whole-claim mounts only. |
+| A session pod's `claude` under tmux, resuming after a forced delete with two writers briefly alive | FR-010, edge case | `kubectl delete pod --grace-period=0 --force` (D1's third row) with `claude` instead of the stand-in. |
+| The keeper chart in a second namespace with its own login | FR-016 | Install `claudeKeeper` into `crswd-next`, bootstrap once with the operator's browser. |
+| Whether the CNI enforces NetworkPolicy | FR-011 | The nodes report Flannel, which does not enforce it by itself. Create a deny policy and probe. |
+| The CRD under Flux: `install.crds` and `upgrade.crds` behaviour on a chart upgrade | k8s-20 | Helm never upgrades a chart's `crds/` directory, and a CRD is cluster-scoped. |
+
+---
+
+## D9 — The spec found a defect in its own state design
+
+`persistence.existingClaim: lawnmower-home` in the `crswd-next` chart (FR-016 as first written,
+now FR-019) names a claim the lawnmower chart owns in namespace `lawnmower`. A pod mounts only
+claims in its own namespace, so that setting cannot work while the two are in different
+namespaces. D7's measurement put the second pod in the same namespace as the claim and did not
+test this. It is not specific to B, and under B it also decides which node every session pod
+runs on. FR-019 lists the options and leaves the choice open.
