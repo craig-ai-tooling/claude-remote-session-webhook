@@ -177,7 +177,7 @@ FR-017 now says pass. One run, one pod, one restart; what it did not cover is li
 
 **Versions.** Pod image `docker.io/nctiggy/ralph-runner:2.1.246-ci10` (index digest
 `sha256:5986748b2442efdee9e23a96ce4351b317f8953676d7b750a290d03efdb47ad7`), `claude --version`
-in the pod: 2.1.246. The keeper's own image, `2.1.246-ci8`, carries the same version. The VM
+in the pod: 2.1.246. The keeper's own image is tagged `2.1.246-ci8`. The VM
 runs 2.1.283 today; that version was not run against the keeper login.
 
 **The pod.** `k8s-20a-probe` in namespace `lawnmower`, the Secret's own namespace, so nothing was
