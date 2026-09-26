@@ -453,7 +453,7 @@ transcript grew from 232,064 to 238,494 bytes and now had two `bridge_status` en
 start) and still one `bridgeSessionId`.
 
 **What the operator's prompts showed.** At 05:42 to 05:49 five prompts arrived from claude.ai, sent
-by the operator to what he took to be another session. That is the "prompt sent from claude.ai"
+by the operator, not as part of the probe. That is the "prompt sent from claude.ai"
 D8a did not cover, delivered to a pod about 45 minutes before the rotation. With permissions
 skipped, the session ran `claude auth login` under a throwaway `CLAUDE_CONFIG_DIR` (25 s timeout,
 no code submitted), tried the ports on 10.64.93.252 and 172.19.0.45, and was refused by ssh
