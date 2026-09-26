@@ -29,7 +29,7 @@ Access. **Testing**: table-driven unit tests for the reconciler against a fake c
 | Principle | Assessment | Pass |
 |---|---|---|
 | **I. Security** | FR-014: no token or hash persisted, in the journal or in an object. The reconciler has no verb on Secrets (FR-013, SC-005). The daemon keeps its own HMAC secret and Access app. The pane path is the exec API, gated by RBAC, so no agent port needs its own authentication (FR-011). | ✅ |
-| **II. Unknowns surfaced** | Two `NEEDS CLARIFICATION` remain in the spec: namespace and state, keeper in a second namespace. The API group is decided: `crswd.dev` (FR-005, 9/26/26). Reconciler placement, storage, the pane path and tmux-in-pod are decided (D8b). The credential gate blocks the build. | ✅ |
+| **II. Unknowns surfaced** | Two `NEEDS CLARIFICATION` remain in the spec: namespace and state, keeper in a second namespace. The API group is decided: `crswd.craigcloud.io` (FR-005, 9/26/26). Reconciler placement, storage, the pane path and tmux-in-pod are decided (D8b). The credential gate blocks the build. | ✅ |
 | **III. Verifiable** | SC-001 is a kill test with times. SC-005 fails on a Secret verb, an unallowlisted directory or a cap breach. SC-006 requires the gate's result on record. | ✅ |
 | **IV. Smallest change** | Second implementation of one existing interface, so `session` and `httpapi` do not fork. The only v0 change is the journal name (FR-012). | ✅ |
 | **V. Standards** | CI runs Install, Lint, Typecheck, Test and Build, plus `helm lint` and `helm template` with the CRD. | ✅ |

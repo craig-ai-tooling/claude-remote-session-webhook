@@ -141,9 +141,10 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
 - **FR-005**: A namespaced `ClaudeSession` custom resource is the record of one session. Its
   spec carries the session name, owner, working directory, start options and lifetime. Its
   status carries the phase and the conversation identifier. It MUST NOT carry a token or a
-  token hash (FR-014). The API group is `crswd.dev` (decided 9/26/26): crswd is meant for
-  other operators too, so the group is the project's and not a domain only this operator
-  owns. The resource is `claudesessions.crswd.dev`, version `v1alpha1`.
+  token hash (FR-014). The API group is `crswd.craigcloud.io` (decided 9/26/26, Craig's own
+  domain, so nothing to buy). It shows that domain in the RBAC rules and objects of any other
+  operator's cluster, and changing a group later means migrating every object. The resource is
+  `claudesessions.crswd.craigcloud.io`, version `v1alpha1`.
 - **FR-006**: The reconciler owns exactly one pod per `ClaudeSession`, through an owner
   reference. A deleted pod is recreated and revives its session with `--resume`. A deleted
   object deletes its pod, and teardown is confirmed by observing the pod gone, not assumed.
