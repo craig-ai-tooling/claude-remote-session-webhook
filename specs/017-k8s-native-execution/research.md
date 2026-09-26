@@ -238,14 +238,15 @@ Measured 9/26/26, 03:42Z to 04:42Z, on rpi-inference in namespace `k8s-20b-scrat
 namespace is deleted (`kubectl get ns` lists nothing of it, and no PV has a claim in it), and
 the node taints were read empty after each storage run. This settles D8's rows for the pane path,
 `subPath` storage, the forced delete and NetworkPolicy. It does not touch D8a's credential gate.
-Decisions are in FR-009, FR-010 and FR-011. Scripts and raw output were kept outside the repo.
+Decisions are in FR-009, FR-010 and FR-011. The scripts and raw output were in a session
+scratchpad that is not preserved, so the figures in this section are what remains.
 
 ### 1. The pane path (FR-011)
 
 **Method.** Ten target pods on `lm-amd64-1`, each a tmux session with a 120x40 screen that
-repaints every second (a capture is about 3.1 KB, the size of a `claude` screen). One generator
+repaints every second (a capture is about 3.1 KB; `stream.go` puts an 80x24 pane at about 2 KiB). One generator
 pod on the same node, a Go program on client-go v0.32.8 (server is v1.32.8) using an in-cluster
-ServiceAccount whose Role holds `pods` get and list and `pods/exec` create and nothing else, the
+ServiceAccount whose Role holds `pods` get and list and `pods/exec` create and get and nothing else, the
 FR-013 shape. Each of the ten workers reads its pane once a second at a random phase, as
 `streamInterval` does. Calls run from inside the cluster, because the kubeconfig on the VM goes
 through Palette's console proxy and would time that tunnel. API-server CPU is the cumulative
@@ -270,8 +271,9 @@ between frames, because the pod loop sleeps one second; they show the stream did
 - **Per call, the API servers rise by about 160 m at ten calls a second**, about 16 m per call a
   second. The mean of the two per-call runs is 553 m and the mean of the three windows with no
   exec load (the two baselines and the agent run) is 392 m. Against the spread of those quiet
-  windows the gain is between 82 m and 210 m. The quiet windows themselves span 327 to 461 m,
-  so any single window is uncertain by about 100 m.
+  windows the gain is between 82 m and 210 m. The three quiet windows span 354 to 461 m, so any
+  single window is uncertain by about 100 m. The held-stream window, at 327 m, is no higher than
+  any of them.
 - **Per call, `lm-amd64-1` rises by about 250 m** (388 and 364 against 132 and 123 with no
   load), and its kubelet from 22 and 25 m to 65 and 66 m. A `runc exec` per read is the cost.
   The agent and the held stream cost that node about 20 to 30 m.
@@ -287,11 +289,22 @@ between frames, because the pod loop sleeps one second; they show the stream did
   one `arc-runners` pod Pending, which had gone by its end. The agent window ended at 04:29:19Z and
   the keeper and token-refresh CronJobs of the 04:30 tick appeared in the count taken just after
   it. The windows ran 04:16:14 to 04:21:15Z (SPDY), 04:22:54 to 04:25:25Z (WebSocket), 04:26:48
-  to 04:29:19Z (agent) and 04:35:06 to 04:37:36Z (held). The cluster also carries ambient load
-  (metrics-server, vmagent, the Palette agents), which is in every row.
+  to 04:29:19Z (agent) and 04:35:06 to 04:37:36Z (held). That count does not show a Running pod
+  doing real work, and the cluster was not idle. The `arc-runners` namespace (GitHub Actions
+  arm64 runners running jobs I did not start) used 12.1 cores in the first no-load window, 9.5 in the SPDY
+  window, 4.0 in WebSocket, 7.6 in the agent window, 6.7 in the second no-load window and 6.2 in
+  the held window, by the pod CPU series in VictoriaMetrics. The control-plane nodes are
+  untainted, and by the cadvisor root cgroup node1 and node3 read between 3.0 and 3.8 cores in
+  some windows and 0.3 to 1.1 in others. Runner CPU does not track API-server CPU across the
+  windows: WebSocket had the least runner load and the second-highest API-server figure, and the
+  agent window had 7.6 cores of runners and 361 m. The direction of the exec result holds, and
+  its size is uncertain by more than the quiet windows alone suggest. Metrics-server, vmagent and
+  the Palette agents are in every row.
 - **Scope.** The targets ran `tmux` and a repaint loop, not `claude`, so a real session's
-  exec would be a little slower. Each per-call read opened its own connection. One held stream
-  ran 150 s without a drop; an API-server restart, a VIP failover and a kubelet restart were not
+  exec would be a little slower. Each per-call read opened its own connection. The held stream's
+  command was `sh -c "while :; do tmux capture-pane -p -t s; printf '\036'; sleep 1; done"`, a
+  pod-side loop and not `tmuxctl`'s one-shot capture, so it is new code that only reads. One held
+  stream ran 150 s without a drop; an API-server restart, a VIP failover and a kubelet restart were not
   tried, and neither was what an orphaned capture loop does after its stream is cut.
 
 ### 2. Per-session storage (FR-010)
@@ -382,7 +395,7 @@ isolate session pods from each other or from the rest of the cluster.
 - Subpath without `fsGroup`, and `linstor-replicated` itself.
 - Held exec streams across an API-server restart or a kubelet restart, and orphaned loops.
 - Disk-full on the shared claim: one session filling it and what the others see.
-- The idle memory of a second Deployment for FR-009.
+- A reconciler's idle memory for FR-009. The 15.5 MiB in FR-009 is the v0 daemon's.
 
 ---
 
