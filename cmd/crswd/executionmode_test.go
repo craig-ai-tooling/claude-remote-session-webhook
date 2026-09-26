@@ -235,18 +235,17 @@ func TestKubernetesModeSkipsTheHostStartupQuestions(t *testing.T) {
 		t.Fatalf("parse main.go: %v", err)
 	}
 
-	var run *ast.FuncDecl
+	v := &guardVisitor{fset: fset, found: map[string]int{}}
+	walked := false
 	for _, decl := range file.Decls {
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Name.Name == "run" {
-			run = fn
+			ast.Walk(v, fn.Body)
+			walked = true
 		}
 	}
-	if run == nil {
+	if !walked {
 		t.Fatal("main.go has no run()")
 	}
-
-	v := &guardVisitor{fset: fset, found: map[string]int{}}
-	ast.Walk(v, run.Body)
 
 	for _, name := range []string{"Sweep", "sayWhatBecameOfTheUnit"} {
 		if v.found[name] == 0 {

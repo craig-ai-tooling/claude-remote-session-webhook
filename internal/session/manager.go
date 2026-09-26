@@ -240,16 +240,6 @@ func (m *Manager) SetStartCommands(cmds config.StartCommands) { m.startCommands 
 // gets, and what most unit tests want.
 func (m *Manager) SetJournal(j *Journal) { m.journal = j }
 
-// JournalPath is where this manager's journal writes, or "" when it keeps
-// nothing.
-//
-// It exists so the wiring can be asserted from outside the package. Whether a
-// mode gave the manager a journal at all is decided in internal/httpapi, and
-// the field it sets is not readable from there: a journal left off by mistake
-// looks exactly like a journal that was never asked for, until a restart
-// revives nothing.
-func (m *Manager) JournalPath() string { return m.journal.Path() }
-
 // SetRemoteControlCommand names which configured command means remote (#58).
 //
 // A setter for the reason SetStartCommands is one, and it takes the name

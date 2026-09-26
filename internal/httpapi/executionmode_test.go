@@ -8,7 +8,10 @@ package httpapi
 // must not move.
 
 import (
+	"context"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +19,9 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 )
 
 // modeConfig is testConfig in the mode under test, with the one default start
@@ -75,42 +80,62 @@ func TestKubernetesModeWiresNoRelayAndNoReleaseFeed(t *testing.T) {
 	})
 }
 
-// TestKubernetesModeHasNoJournal is the journal half of FR-003's sibling rule,
-// which the plan states as one sentence: the object is the record, so
-// ReplayJournal and Adopt can never both revive one session.
+// TestKubernetesModeHasNoJournal is the journal half of the rule the plan states
+// as one sentence: the object is the record, so ReplayJournal and Adopt can never
+// both revive one session.
 //
-// It reads where the manager's journal writes. A journal with no path keeps
-// nothing and replays nothing, which is what "off" means to the manager; the
-// host-mode half proves that the same call site does give a manager a path, so
-// an empty answer is the mode's doing.
+// It creates a session through the manager NewWith built and looks for the file
+// the journal would have written. Kubernetes mode goes first and must leave no
+// file at the path; host mode then writes to that same path, which is what makes
+// the absence the mode's doing and not a path that could never be written.
 //
 // Not parallel: the journal's path is derived from the process environment, and
-// this pins CRSW_CONFIG_FILE so that host mode has somewhere to name.
+// this pins CRSW_CONFIG_FILE so that both modes name the same place.
 //
-// **Must fail when** kubernetes mode gives the manager a journal.
+// **Must fail when** kubernetes mode gives the manager a journal, or host mode
+// stops.
 func TestKubernetesModeHasNoJournal(t *testing.T) {
 	t.Setenv("CRSW_CONFIG_FILE", filepath.Join(t.TempDir(), "config"))
 
-	build := func(mode config.ExecutionMode) *Server {
+	createOne := func(mode config.ExecutionMode) string {
 		t.Helper()
 
-		fixture := newSessionFixture(t)
-		srv, err := NewWith(modeConfig(mode), fixture.tmux, audit.NewTo(io.Discard, func() time.Time { return testTime }))
+		root, err := filepath.EvalSymlinks(t.TempDir())
+		if err != nil {
+			t.Fatalf("resolve the fixture root: %v", err)
+		}
+		repo := filepath.Join(root, "repo")
+		if err := os.Mkdir(repo, 0o750); err != nil {
+			t.Fatalf("create the working directory: %v", err)
+		}
+		cfg := modeConfig(mode)
+		cfg.Roots = []config.ApprovedRoot{{Path: root}}
+
+		srv, err := NewWith(cfg, newSessionFixture(t).tmux, audit.NewTo(io.Discard, func() time.Time { return testTime }))
 		if err != nil {
 			t.Fatalf("NewWith(%q) = _, %v; want a server", mode, err)
 		}
-		return srv
+		if _, _, err := srv.sessions.Create(context.Background(), session.CreateRequest{
+			Owner: auth.CallerOperator, Name: "journal-" + string(mode), WorkDir: repo,
+		}); err != nil {
+			t.Fatalf("Create in %s mode = _, _, %v; want a session", mode, err)
+		}
+		return config.JournalPath(os.Getenv, cfg.Listen)
 	}
 
-	if got := build(config.ExecutionModeKubernetes).sessions.JournalPath(); got != "" {
-		t.Errorf("kubernetes mode journals to %q; want no journal, so the object is the only record", got)
+	path := createOne(config.ExecutionModeKubernetes)
+	if path == "" {
+		t.Fatal("the journal path is empty, so this test would pass on any build")
 	}
-	got := build(config.ExecutionModeHost).sessions.JournalPath()
-	if got == "" {
-		t.Error("host mode has no journal; the mode switch has taken away the host's own memory")
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("a create in kubernetes mode left a journal at %s (stat: %v); the object is the only record there", path, err)
 	}
-	if want := os.Getenv("CRSW_CONFIG_FILE"); got != "" && filepath.Dir(got) != filepath.Dir(want) {
-		t.Errorf("host mode journals to %q, which is not beside the configuration file %q as it always was", got, want)
+
+	if got := createOne(config.ExecutionModeHost); got != path {
+		t.Fatalf("host mode names the journal %q and kubernetes mode %q", got, path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("a create in host mode wrote no journal at %s: %v", path, err)
 	}
 }
 
