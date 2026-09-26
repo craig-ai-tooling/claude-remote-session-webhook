@@ -203,6 +203,22 @@ const (
 	// started plain sessions instead would be worse than no switch.
 	EnvRemoteControlCommand = "CRSW_REMOTE_CONTROL_COMMAND"
 
+	// EnvExecutionMode says where a session runs: on this host under tmux, which
+	// is what every daemon before this variable was, or in a pod (spec 017).
+	//
+	// Unset means host, and host is that daemon byte for byte. Anything but the
+	// two words ParseExecutionMode knows is a startup failure rather than a
+	// silent host, for the reason every loader here refuses rather than defaults:
+	// an operator who wrote `k8s` meant a cluster, and a daemon that read it as
+	// the host would run their sessions unsandboxed on the machine they thought
+	// they had left.
+	//
+	// `kubernetes` is accepted by the loader and refused by the binary until the
+	// cluster build exists (cmd/crswd/main.go). Accepting it here is what lets
+	// the mode's own rules be written and tested first: the updater, the sign-in
+	// relay, the `unit` commands, the tmux probe and the journal all key off it.
+	EnvExecutionMode = "CRSW_EXECUTION_MODE"
+
 	envHome = "HOME"
 
 	// rootListSeparator is fixed at ":" rather than os.PathListSeparator: the
@@ -361,6 +377,66 @@ const (
 	// not a line to be copied.
 	StartCommandNamePlaceholder = "{name}"
 )
+
+// ExecutionMode is where a session runs.
+//
+// The zero value is the host, so a Config built by hand — every test fixture —
+// is the daemon it always was. Only the loader ever says otherwise, and only
+// for a value the operator wrote.
+type ExecutionMode string
+
+const (
+	// ExecutionModeHost is tmux on this machine, driven by this process.
+	ExecutionModeHost ExecutionMode = "host"
+
+	// ExecutionModeKubernetes is a session pod per session, and the object that
+	// describes it is the record. What that turns off is listed at
+	// EnvExecutionMode's users, not here, so the list has one home.
+	ExecutionModeKubernetes ExecutionMode = "kubernetes"
+)
+
+// ParseExecutionMode reads the word an operator wrote.
+//
+// Empty is the host, because that is what "unset" means. The comparison is
+// exact after trimming space: `Kubernetes` and `k8s` are refused rather than
+// read as what they probably meant, since the cost of a wrong guess is sessions
+// running somewhere the operator did not choose.
+//
+// The value is quoted back because it is the operator's own word and nothing
+// about it is secret.
+func ParseExecutionMode(v string) (ExecutionMode, error) {
+	switch strings.TrimSpace(v) {
+	case "", string(ExecutionModeHost):
+		return ExecutionModeHost, nil
+	case string(ExecutionModeKubernetes):
+		return ExecutionModeKubernetes, nil
+	default:
+		return "", fmt.Errorf("%s %q is not host or kubernetes", EnvExecutionMode, v)
+	}
+}
+
+// Kubernetes reports whether sessions run in pods. It is the one question every
+// mode-dependent branch asks, and it is false for the zero value, so a branch
+// that forgets the mode is a branch that behaves as the host.
+func (m ExecutionMode) Kubernetes() bool { return m == ExecutionModeKubernetes }
+
+// String is the word the settings page shows, which for the zero value is the
+// effective mode and not an empty cell.
+func (m ExecutionMode) String() string {
+	if m == "" {
+		return string(ExecutionModeHost)
+	}
+	return string(m)
+}
+
+// loadExecutionMode reads EnvExecutionMode through the layered seam.
+func loadExecutionMode(getenv func(string) string) (ExecutionMode, error) {
+	mode, err := ParseExecutionMode(getenv(EnvExecutionMode))
+	if err != nil {
+		return "", fmt.Errorf("%w; refusing to start", err)
+	}
+	return mode, nil
+}
 
 // ApprovedRoot is a directory a session may run in, resolved once at startup so
 // that a root which is itself a symlink cannot be swapped between the check and
@@ -549,6 +625,11 @@ type Config struct {
 	// remote-control command, and the dashboard renders no switch — an operator
 	// is never offered a control whose only outcome is a refusal.
 	RemoteControlCommand string
+
+	// ExecutionMode is where a session runs. The zero value is the host, and every
+	// branch that reads it asks ExecutionMode.Kubernetes, so a Config that never
+	// set it is the daemon it has always been.
+	ExecutionMode ExecutionMode
 
 	// Sources is which layer supplied each value, keyed by environment-variable
 	// name — the record that answers "why did my edit do nothing?" (FR-018).
@@ -851,6 +932,13 @@ func loadWith(getenv func(string) string, file *File, warn io.Writer, o loadOpti
 	if err != nil {
 		return nil, err
 	}
+	// Last, so a configuration with a second defect still reports that defect
+	// first: a daemon that has not yet said `kubernetes` cannot have been broken
+	// by it.
+	executionMode, err := loadExecutionMode(getenv)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
 		SharedSecret:        secret,
@@ -875,6 +963,7 @@ func loadWith(getenv func(string) string, file *File, warn io.Writer, o loadOpti
 		StartCommands:       startCommands,
 
 		RemoteControlCommand: remoteControl,
+		ExecutionMode:        executionMode,
 		Sources:              sources,
 
 		// The file this load actually read, taken from the *File that was

@@ -61,6 +61,18 @@ const shutdownBudget = 30 * time.Second
 // drift without that test going red.
 const unreleased = "dev"
 
+// errKubernetesModeUnbuilt is why a daemon configured for a cluster does not
+// start. It is one sentence naming the mode, what is missing, and what the
+// refusal saves the operator from: a daemon that read `kubernetes` and then ran
+// sessions on this machine would be doing the opposite of what was asked, with
+// --dangerously-skip-permissions.
+//
+// It is the last thing between this binary and the cluster build (spec 017, the
+// wiring slice). Everything the mode switches off is already written and
+// asserted, so that slice removes this refusal and adds the controller; it does
+// not also have to invent the rules.
+var errKubernetesModeUnbuilt = errors.New(`execution mode "kubernetes" is not built into this binary yet, so it refuses to start rather than run sessions on this host when the configuration asked for a cluster`)
+
 func main() {
 	// The only flag on this command, and it starts nothing. A host that cannot
 	// run the daemon at all — no secret, no tmux, a binary that was just swapped
@@ -176,6 +188,13 @@ func run(ctx context.Context) error {
 		return err
 	}
 
+	// First thing after the configuration, and before anything touches this
+	// host: the mode said `kubernetes`, and nothing below is written for it yet.
+	// See errKubernetesModeUnbuilt for what removes this line.
+	if cfg.ExecutionMode.Kubernetes() {
+		return errKubernetesModeUnbuilt
+	}
+
 	// After the configuration because the probe reads it — the start commands it
 	// checks are the ones this operator configured, never a fixed name (FR-015)
 	// — and before anything else because a host with no tmux cannot manage a
@@ -189,49 +208,56 @@ func run(ctx context.Context) error {
 		return err
 	}
 
-	// Before anything can serve a route that stages a new one, and before the
-	// listener binds. Whatever is in there was vouched for by a process that did
-	// not live to say so, and this directory's contents become this daemon's own
-	// binary — so a candidate is never trusted across a restart, however far
-	// through verification the last run got with it.
-	//
-	// Fatal, like every other refusal in this sequence. A sweep that could not
-	// finish leaves a file nobody has vouched for in the directory the update
-	// path renames out of, and a daemon that started anyway would be one that
-	// found that and said nothing.
-	if err := updater.NewStager(os.Getenv).Sweep(); err != nil {
-		return err
-	}
-
-	// Beside the sweep because it is the same question asked of the other file an
-	// update carries: what is on this host, and is it what a release would have
-	// left here? (M15/T005.) It reads two files and no release, so it costs
-	// nothing and cannot fail the start over somebody else's API.
-	//
-	// os.Stderr for the reason the dependency probe's banner is: this is a
-	// diagnostic, and stdout carries records only. See "The two streams", above.
-	// The read's own error is passed on rather than returned from here: a host
-	// whose unit cannot be read is a host that says so in the journal, not one
-	// that refuses to start over a file systemd has already finished with.
-	unit := updater.NewUnit(os.Getenv)
-	unitReport, unitErr := unit.Report()
-	// Whether the operator could take the waiting unit, asked only where there is
-	// one waiting. It plans an adoption, which reads several files and the
-	// configuration — cheap once at startup, and the only way to offer a command
-	// that will not go on to refuse (FR-018).
-	//
-	// A planning failure is swallowed deliberately, and it is the one place in
-	// this file that is right: the banner's job is to report the unit, and a host
-	// whose adoption could not be *planned* still has the same unit and the same
-	// waiting file to be told about. The cost of the swallow is one missing
-	// sentence about a command, and `crswd unit check` reports the reason in full.
-	if unitErr == nil && unitReport.Offer != "" {
-		if plan, err := unit.PlanAdoption(configResolver()); err == nil && plan.Adoptable {
-			unitReport.AdoptCommand = adoptCommandLine
+	// The two host-only questions, skipped in kubernetes mode (FR-003): what the
+	// last process left in the update staging directory, and what became of the
+	// systemd unit an update may have replaced. Neither the updater nor a unit
+	// exists there. Written as a block rather than a helper, and with the calls
+	// where they were, because the tests that hold this sequence read run().
+	if !cfg.ExecutionMode.Kubernetes() {
+		// Before anything can serve a route that stages a new one, and before the
+		// listener binds. Whatever is in there was vouched for by a process that did
+		// not live to say so, and this directory's contents become this daemon's own
+		// binary — so a candidate is never trusted across a restart, however far
+		// through verification the last run got with it.
+		//
+		// Fatal, like every other refusal in this sequence. A sweep that could not
+		// finish leaves a file nobody has vouched for in the directory the update
+		// path renames out of, and a daemon that started anyway would be one that
+		// found that and said nothing.
+		if err := updater.NewStager(os.Getenv).Sweep(); err != nil {
+			return err
 		}
-	}
-	if err := sayWhatBecameOfTheUnit(os.Stderr, unitReport, unitErr); err != nil {
-		return err
+
+		// Beside the sweep because it is the same question asked of the other file an
+		// update carries: what is on this host, and is it what a release would have
+		// left here? (M15/T005.) It reads two files and no release, so it costs
+		// nothing and cannot fail the start over somebody else's API.
+		//
+		// os.Stderr for the reason the dependency probe's banner is: this is a
+		// diagnostic, and stdout carries records only. See "The two streams", above.
+		// The read's own error is passed on rather than returned from here: a host
+		// whose unit cannot be read is a host that says so in the journal, not one
+		// that refuses to start over a file systemd has already finished with.
+		unit := updater.NewUnit(os.Getenv)
+		unitReport, unitErr := unit.Report()
+		// Whether the operator could take the waiting unit, asked only where there is
+		// one waiting. It plans an adoption, which reads several files and the
+		// configuration — cheap once at startup, and the only way to offer a command
+		// that will not go on to refuse (FR-018).
+		//
+		// A planning failure is swallowed deliberately, and it is the one place in
+		// this file that is right: the banner's job is to report the unit, and a host
+		// whose adoption could not be *planned* still has the same unit and the same
+		// waiting file to be told about. The cost of the swallow is one missing
+		// sentence about a command, and `crswd unit check` reports the reason in full.
+		if unitErr == nil && unitReport.Offer != "" {
+			if plan, err := unit.PlanAdoption(configResolver()); err == nil && plan.Adoptable {
+				unitReport.AdoptCommand = adoptCommandLine
+			}
+		}
+		if err := sayWhatBecameOfTheUnit(os.Stderr, unitReport, unitErr); err != nil {
+			return err
+		}
 	}
 
 	srv, err := newDaemon(cfg)

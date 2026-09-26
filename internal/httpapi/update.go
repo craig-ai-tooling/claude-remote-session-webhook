@@ -216,6 +216,16 @@ var (
 	// branch on this door is one: fail-closed is only a property if it holds on
 	// the paths that do not happen.
 	errUpdateUnwired = errors.New("the update route was reached on a daemon with no update path behind it")
+
+	// errUpdateDisabledInKubernetes is the route reached in kubernetes mode
+	// (FR-003). It is its own sentinel rather than errUpdateUnwired because the
+	// two mean different things to whoever reads the trail: an unwired route is a
+	// daemon assembled wrong, and this one is a daemon working as configured
+	// whose binary is an image, so there is nothing here to replace.
+	//
+	// It carries no outcome code of its own. The redirect uses outcomeUpdateRefused
+	// like every other refusal ahead of step 1, and the reason is on the record.
+	errUpdateDisabledInKubernetes = errors.New("the update route is disabled in kubernetes mode")
 )
 
 // updateFromBrowser is POST /dashboard/update (US4, contracts/self-update.md).
@@ -238,6 +248,15 @@ func (s *Server) updateFromBrowser(w http.ResponseWriter, r *http.Request) {
 		// context, so a false here is a route wired without one.
 		AuditFrom(r.Context()).Deny(errDashboardNoOperator.Error())
 		s.refuseBrowser(w)
+		return
+	}
+
+	// Before the confirming step, because there is nothing to confirm: a
+	// kubernetes-mode daemon has no update to install, and an operator who ticked
+	// the box should be told that rather than that they forgot to.
+	if s.cfg.ExecutionMode.Kubernetes() {
+		AuditFrom(r.Context()).Deny(errUpdateDisabledInKubernetes.Error())
+		s.redirectOutcome(w, r, outcomeUpdateRefused)
 		return
 	}
 

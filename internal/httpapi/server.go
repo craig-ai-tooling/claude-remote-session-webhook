@@ -343,6 +343,17 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Neither of the two collaborators below is wired in kubernetes mode (FR-003).
+	// The relay drives `claude auth login` in a tmux window on this host, and the
+	// feed exists to offer this binary a newer copy of itself. In a pod the
+	// binary is an image and the sign-in is the cluster's, so both would be a
+	// door to something that is not there. Left nil, the panels say what they say
+	// on any daemon built without them: the sign-in is unavailable and the
+	// release feed could not be reached.
+	if cfg.ExecutionMode.Kubernetes() {
+		return srv, nil
+	}
+
 	// The sign-in relay, wired here and nowhere else, for the reason releaseFeed
 	// is: it needs the composed session environment, which exists at this point
 	// and not inside NewWith. A test that wants one sets the field.
@@ -487,7 +498,15 @@ func newWithLayer1(
 	// Named after the listen address, exactly as this daemon's tmux server is:
 	// two daemons on one host must not replay each other's sessions any more than
 	// they may see each other's shells.
-	sessions.SetJournal(session.NewJournal(config.JournalPath(os.Getenv, cfg.Listen)))
+	//
+	// Not in kubernetes mode, where the object that describes a session is the
+	// record. Two memories of one session is how ReplayJournal and Adopt would
+	// each revive it, and the pod would be created twice or forked onto two
+	// conversations. A manager with no journal is a working one, which is what
+	// this line's absence has always meant.
+	if !cfg.ExecutionMode.Kubernetes() {
+		sessions.SetJournal(session.NewJournal(config.JournalPath(os.Getenv, cfg.Listen)))
+	}
 	// The named start-command set reaches the manager here, and nowhere else
 	// (#38). Without this line the whole of internal/config's start-command
 	// handling is configuration nothing reads — which is the failure this repo
@@ -536,7 +555,15 @@ func newWithLayer1(
 	// server built through newServer has none, and its update route refuses;
 	// every server a daemon runs has this one, which is what
 	// TestTheShippingBuildWiresTheRealUpdatePath pins from the other side.
-	srv.updates = liveSelfUpdate(cfg.FilePath)
+	//
+	// Not in kubernetes mode (FR-003). There the binary is an image, so a route
+	// that downloads a release and renames it over ExecStart has nothing to
+	// replace. The routes are refused by name (errUpdateDisabledInKubernetes)
+	// and the collaborators are absent as well, so the refusal does not rest on
+	// the check alone.
+	if !cfg.ExecutionMode.Kubernetes() {
+		srv.updates = liveSelfUpdate(cfg.FilePath)
+	}
 	return srv, nil
 }
 

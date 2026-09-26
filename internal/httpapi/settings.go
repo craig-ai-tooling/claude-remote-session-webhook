@@ -545,6 +545,10 @@ func settingValue(cfg *config.Config, name string) (value string, known bool) {
 		return startCommandSet(cfg.StartCommands), true
 	case config.EnvRemoteControlCommand:
 		return cfg.RemoteControlCommand, true
+	case config.EnvExecutionMode:
+		// String, not the field: a Config nobody set the mode on is the host, and
+		// an empty cell would claim the page has no idea where sessions run.
+		return cfg.ExecutionMode.String(), true
 	default:
 		return "", false
 	}
@@ -719,7 +723,7 @@ func settingSectionOf(key string) string {
 		"start_command", "start_commands", "remote_control_command", "session_environment",
 		"session_lifetime", "session_lifetime_max",
 		"max_sessions", "max_streams", "create_rate_per_min", "max_body_bytes", "pane_bound",
-		"destroy_on_shutdown":
+		"destroy_on_shutdown", "execution_mode":
 		return sectionGeneral
 	default:
 		return sectionUnclassified

@@ -174,6 +174,12 @@ EnvironmentFile=-%h/.config/crswd/env
 # the other side instead of one Claude invented.
 # Environment=CRSW_REMOTE_CONTROL_COMMAND=
 
+# Where a session runs: `host` (tmux on this machine) or `kubernetes` (a pod per
+# session). Empty means host, which is this daemon as it has always been. This
+# build has no cluster support yet, so `kubernetes` makes it refuse to start; see
+# `.env.example`.
+# Environment=CRSW_EXECUTION_MODE=
+
 # The session lifetime (#37). Empty means the daemon's own default of 24h. The
 # MAX ceiling bounds what a per-session override may ask for and defaults to the
 # value above — so an override buys nothing until the ceiling is raised on

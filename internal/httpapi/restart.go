@@ -61,6 +61,13 @@ var (
 	// branch on this door is one: fail-closed is only a property if it holds on
 	// the paths that do not happen.
 	errRestartUnwired = errors.New("the restart route was reached on a daemon with no way to end this process")
+
+	// errRestartDisabledInKubernetes is the route reached in kubernetes mode
+	// (FR-003). The restart belongs to the update path: it ends the process and
+	// leans on a service manager to start it again, and in a pod the thing that
+	// restarts a container is the cluster, acting on the object rather than on a
+	// button. Its own sentinel for the reason errUpdateDisabledInKubernetes is.
+	errRestartDisabledInKubernetes = errors.New("the restart route is disabled in kubernetes mode")
 )
 
 // restartFromBrowser is POST /dashboard/restart.
@@ -83,6 +90,14 @@ func (s *Server) restartFromBrowser(w http.ResponseWriter, r *http.Request) {
 		// context, so a false here is a route wired without one.
 		AuditFrom(r.Context()).Deny(errDashboardNoOperator.Error())
 		s.refuseBrowser(w)
+		return
+	}
+
+	// Before the confirming step, for the update route's reason: there is nothing
+	// here to confirm.
+	if s.cfg.ExecutionMode.Kubernetes() {
+		AuditFrom(r.Context()).Deny(errRestartDisabledInKubernetes.Error())
+		s.redirectOutcome(w, r, outcomeRestartRefused)
 		return
 	}
 

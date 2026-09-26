@@ -52,6 +52,46 @@ const unitUsage = `usage: crswd unit check    report whether this host's systemd
 // a mistyped `crswd unit adpot` on a live host would bind a second listener and
 // reconcile the first daemon's sessions onto itself.
 func runUnitCommand(out, errOut io.Writer, args []string) int {
+	mode, err := executionMode()
+	if err != nil {
+		say(errOut, "crswd: %v\n", err)
+		return 1
+	}
+	return runUnitCommandIn(mode, out, errOut, args)
+}
+
+// executionMode is the mode this host's configuration names, read the way the
+// daemon reads it (the environment, then the file) but without loading the
+// rest.
+//
+// A full load demands a shared secret and a resolvable root, which an
+// operator's shell on a host that is not serving has neither of, and `unit`
+// exists to be run there. The file is read through configResolver, so an
+// unreadable or unparsable file resolves nothing and the answer is the host:
+// the command's behaviour on such a host is what it always was.
+//
+// A value that is set and is neither word is an error here as it is at start.
+func executionMode() (config.ExecutionMode, error) {
+	value := os.Getenv(config.EnvExecutionMode)
+	if value == "" {
+		value, _ = configResolver().Resolve(config.EnvExecutionMode)
+	}
+	return config.ParseExecutionMode(value)
+}
+
+// runUnitCommandIn is runUnitCommand with the mode chosen by the caller, so the
+// refusal can be asserted without touching the process environment.
+//
+// The refusal comes before the usage checks, so every spelling of `unit` says
+// the same thing in kubernetes mode: there is no systemd unit to check or adopt
+// there, and the way a daemon in a pod is replaced is a new image. It exits 1,
+// the failure code, and writes nothing to stdout.
+func runUnitCommandIn(mode config.ExecutionMode, out, errOut io.Writer, args []string) int {
+	if mode.Kubernetes() {
+		say(errOut, "crswd: `unit` is disabled in kubernetes mode: there is no systemd unit to check or adopt when sessions run in pods\n")
+		return 1
+	}
+
 	if len(args) < 2 {
 		say(errOut, "crswd: unit needs a subcommand\n%s", unitUsage)
 		return 2
