@@ -232,6 +232,160 @@ credential.
 
 ---
 
+## D8b — The three costs, measured (k8s-20b)
+
+Measured 9/26/26, 03:42Z to 04:42Z, on rpi-inference in namespace `k8s-20b-scratch`. The
+namespace is deleted (`kubectl get ns` lists nothing of it, and no PV has a claim in it), and
+the node taints were read empty after each storage run. This settles D8's rows for the pane path,
+`subPath` storage, the forced delete and NetworkPolicy. It does not touch D8a's credential gate.
+Decisions are in FR-009, FR-010 and FR-011. Scripts and raw output were kept outside the repo.
+
+### 1. The pane path (FR-011)
+
+**Method.** Ten target pods on `lm-amd64-1`, each a tmux session with a 120x40 screen that
+repaints every second (a capture is about 3.1 KB, the size of a `claude` screen). One generator
+pod on the same node, a Go program on client-go v0.32.8 (server is v1.32.8) using an in-cluster
+ServiceAccount whose Role holds `pods` get and list and `pods/exec` create and nothing else, the
+FR-013 shape. Each of the ten workers reads its pane once a second at a random phase, as
+`streamInterval` does. Calls run from inside the cluster, because the kubeconfig on the VM goes
+through Palette's console proxy and would time that tunnel. API-server CPU is the cumulative
+`container_cpu_usage_seconds_total` of the three `kube-apiserver` static pods, read from each
+node's cadvisor every 20 s and interpolated over the generator's own start and end. Every window
+carries the same sampling traffic. Latency is measured in the generator, per call, from dial to
+last byte.
+
+| Path, ten sessions, one read a second each | Calls | Failed | Median | p95 | p99 | Max | 3 API servers | lm-amd64-1 |
+|---|---|---|---|---|---|---|---|---|
+| No load, 146 s | | | | | | | 461 m | 132 m |
+| No load, 169 s (after the runs) | | | | | | | 354 m | 123 m |
+| Exec per call, SPDY, 300 s | 3000 | 0 | 52.6 ms | 84.5 ms | 113.3 ms | 260.4 ms | 564 m | 388 m |
+| Exec per call, WebSocket, 150 s | 1500 | 0 | 46.6 ms | 66.9 ms | 82.2 ms | 274.9 ms | 543 m | 364 m |
+| In-pod agent over HTTP on the pod IP, 150 s | 1500 | 0 | 2.5 ms | 3.9 ms | 5.4 ms | 11.6 ms | 361 m | 155 m |
+| One held exec stream per session, 150 s | 1500 frames from 10 execs | 0 | 1002.5 ms | 1004.5 ms | 1008.0 ms | 1017.4 ms | 327 m | 151 m |
+
+CPU is millicores summed over the three API servers, and the whole `lm-amd64-1` root cgroup,
+which includes the generator process. On the held-stream row the latency columns are the gaps
+between frames, because the pod loop sleeps one second; they show the stream did not stall.
+
+- **Per call, the API servers rise by about 160 m at ten calls a second**, about 16 m per call a
+  second. The mean of the two per-call runs is 553 m and the mean of the three windows with no
+  exec load (the two baselines and the agent run) is 392 m. Against the spread of those quiet
+  windows the gain is between 82 m and 210 m. The quiet windows themselves span 327 to 461 m,
+  so any single window is uncertain by about 100 m.
+- **Per call, `lm-amd64-1` rises by about 250 m** (388 and 364 against 132 and 123 with no
+  load), and its kubelet from 22 and 25 m to 65 and 66 m. A `runc exec` per read is the cost.
+  The agent and the held stream cost that node about 20 to 30 m.
+- **The exec API answers a call in 53 ms at the median (47 ms over WebSocket) and 275 ms at
+  the worst**, against a 1 s interval, so latency is not the objection to it. Two of 3000 SPDY
+  captures came back at 40 bytes with exit status 0: the stand-in screen was caught between its
+  `clear` and its repaint. That is a race in the stand-in and the API answered correctly.
+- **No latency drift** over the 300 s run: the five one-minute medians were 50.7, 53.4, 56.3,
+  51.5 and 53.5 ms.
+- **What else ran.** Before and after each window I counted pods outside the scratch namespace
+  that were not Running and Ready, and Jobs with `active` above zero. The SPDY, WebSocket, held
+  and second no-load windows began and ended at zero of each. The first no-load window began with
+  one `arc-runners` pod Pending, which had gone by its end. The agent window ended at 04:29:19Z and
+  the keeper and token-refresh CronJobs of the 04:30 tick appeared in the count taken just after
+  it. The windows ran 04:16:14 to 04:21:15Z (SPDY), 04:22:54 to 04:25:25Z (WebSocket), 04:26:48
+  to 04:29:19Z (agent) and 04:35:06 to 04:37:36Z (held). The cluster also carries ambient load
+  (metrics-server, vmagent, the Palette agents), which is in every row.
+- **Scope.** The targets ran `tmux` and a repaint loop, not `claude`, so a real session's
+  exec would be a little slower. Each per-call read opened its own connection. One held stream
+  ran 150 s without a drop; an API-server restart, a VIP failover and a kubelet restart were not
+  tried, and neither was what an orphaned capture loop does after its stream is cut.
+
+### 2. Per-session storage (FR-010)
+
+**Method.** Pods on `lm-amd64-1` by `nodeSelector` (not `nodeName`, which would bypass the
+scheduler and leave a `WaitForFirstConsumer` claim Pending), image `ralph-runner:2.1.246-ci8`,
+uid and fsGroup 10001, 1Gi claims on `linstor-fs-storage-enc`. That class is D4's, and its
+reclaim policy is `Delete`, so nothing survives the namespace. `linstor-replicated`, which the
+design would use, has the same layer stack (DRBD, LUKS, `placementCount` 2, pool `fs1`) and
+reclaim `Retain`; it also sets `allowRemoteVolumeAccess`, which was not exercised. A pod is Ready
+when it has written its marker file, so Ready means writable. The clock runs from the start of
+`kubectl apply` to the last pod Ready. About 5 s of each figure is `kubectl` creating the objects
+through the console proxy. The kill-test record that D4's clock came from is not on disk, so the
+per-PVC rows were re-run under this clock.
+
+| Case | Time to all Ready | Notes |
+|---|---|---|
+| One shared claim, six pods at once, claim not yet bound | 49.1 s and 52.0 s | includes the one provision |
+| One shared claim, six pods at once, claim already bound | 33.5 s and 30.7 s | volume re-attached, six mounts |
+| One shared claim, first pod alone, claim not yet bound | 45.0 s | |
+| One shared claim, a pod added while others run | 5.6 s, 5.2 s and 6.7 s | the everyday start |
+| One PVC per pod, one pod | 58.2 s | D4 measured 24 s |
+| One PVC per pod, three at once | 82.2 s | D4 measured 93 to 98 s; `DeadlineExceeded` on at least two claims |
+| One PVC per pod, six at once | 153.3 s | 10 `ProvisioningFailed` events |
+| One PVC per pod, six at once, `linstor-thin` (LUKS, one replica, no DRBD) | 118.1 s | 16 `ProvisioningFailed` events |
+
+The wait is the provisioner. An unreplicated class was no faster, so DRBD is not the cause. On the
+shared claim the pods came Ready about 3 s apart, which is the kubelet mounting them one after
+another.
+
+**Writable.** Under `fsGroup: 10001` the kubelet made each `subPath` directory `root:ralph`
+mode 2775, and uid 10001 wrote its marker in all six pods. Without `fsGroup` was not tried.
+
+**Forced delete, with `claude`.** The image is reachable and has `claude` 2.1.246 and tmux 3.5a.
+There is no login in this run: the keeper's Secret was not touched. `claude` ran as its
+interactive terminal UI inside tmux, as `--dangerously-skip-permissions --model sonnet`, with
+`ANTHROPIC_BASE_URL` pointed at a small server in the same pod that answers `/v1/messages`
+with a fixed reply. So the binary, its terminal UI, its transcript and config writes and its
+`--resume` are real, and the model is not. The pod wrote a heartbeat line every 100 ms and sent
+the session a prompt every 2 s. `CLAUDE_CONFIG_DIR` and the working directory sat on one
+`subPath` of the shared claim.
+
+- **Force delete then recreate at once, three times** (`kubectl delete pod --grace-period=0
+  --force`, then `kubectl apply` of the same pod). The old pod's last heartbeat and the new pod's
+  first were 5.3, 4.3 and 3.7 s apart. No overlap in any of the three. Each new pod found the
+  transcript and ran `claude --resume` on it. After the first, the transcript held 200 lines with
+  0 invalid JSON lines, 0 duplicate message ids and no fork, the old pod's 27 turns and the new
+  pod's 10 on one chain, and `.claude.json` parsed. The second and third forced deletes ran after
+  the two-writer step below, and again showed 0 invalid lines and 0 duplicate ids and added no
+  fork of their own.
+- **Two live writers on purpose**, a second pod on the same `subPath` for 45 s, each `claude`
+  taking a prompt every 1 to 2 s. Nothing was corrupted: 585 lines, 0 invalid, 0 duplicate ids,
+  config still valid JSON. The conversation forked. 37 of the 119 turns written were not on the
+  chain reachable from the file's last entry, which is what a later `--resume` replays. So two
+  writers lose turns without any error.
+- **A `ReadWriteOncePod` claim** binds on this CSI driver. A second pod on it, same node, stayed
+  Pending (`node has pod using PersistentVolumeClaim with the same name and ReadWriteOncePod access
+  mode`) while the first ran. After a forced delete of the first it was Ready 6 s later, 4.5 s
+  after the old heartbeat stopped. It would give the one-writer rule from the scheduler, at the
+  per-PVC start times above. It does not close a forced delete, since that removes the pod
+  object the scheduler looks at.
+
+### 3. Does Flannel enforce NetworkPolicy (FR-011)
+
+**Not enforced.** The cluster runs flannel v0.27.0 and kube-proxy and no policy engine.
+A `busybox:1.36` server on `lm-amd64-1` answered `wget` from a client on the same node and from a
+client on `node4`, by pod IP. Then a default-deny ingress policy went on the server's pod, and the
+probe was repeated after 35 s and 65 s. Then a default-deny egress policy went on both clients,
+and it was repeated again.
+
+```
+                            client on the server's node          client on node4
+before any policy           NP-PROBE-OK rc=0                     NP-PROBE-OK rc=0
+ingress deny, after 35 s    NP-PROBE-OK rc=0                     NP-PROBE-OK rc=0
+ingress deny, after 65 s    NP-PROBE-OK rc=0                     NP-PROBE-OK rc=0
+egress deny added, +30 s    NP-PROBE-OK rc=0                     NP-PROBE-OK rc=0
+control, closed port 9999   wget: can't connect to remote host (10.64.2.153): Connection refused rc=1
+```
+
+`NP-PROBE-OK` is the server's page. The control shows the probe reports a failure when there is
+one, and the policies that should have stopped it did not. On this CNI NetworkPolicy cannot
+isolate session pods from each other or from the rest of the cluster.
+
+### What this leaves unmeasured
+
+- `claude` against a real model under two writers, and the terminal UI's behaviour with
+  `--remote-control` in these pods. D8a covers Remote Control on the keeper login.
+- Subpath without `fsGroup`, and `linstor-replicated` itself.
+- Held exec streams across an API-server restart or a kubelet restart, and orphaned loops.
+- Disk-full on the shared claim: one session filling it and what the others see.
+- The idle memory of a second Deployment for FR-009.
+
+---
+
 ## D9 — The spec found a defect in its own state design
 
 `persistence.existingClaim: lawnmower-home` in the `crswd-next` chart (FR-016 as first written,
