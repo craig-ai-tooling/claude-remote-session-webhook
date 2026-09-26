@@ -126,10 +126,10 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
 - **FR-002**: Both modes MUST drive sessions through `tmuxctl.Controller`. `host` keeps
   `tmuxctl.Exec`. `kubernetes` supplies a second implementation of the same interface, backed
   by `ClaudeSession` objects and session pods, so `internal/session` and `internal/httpapi` do
-  not fork. `NEEDS CLARIFICATION`: the table above priced a per-pod agent that replaces
-  `tmuxctl`. A cheaper shape is to run tmux inside each session pod and keep `tmuxctl`'s argv
-  builders (`Paste`, `SendKeys`, `CapturePane`), so no byte that reaches a pane is built by new
-  code. Which one is settled by FR-011's measurement, and by whether the pane path can carry it.
+  not fork. The table above priced a per-pod agent that replaces `tmuxctl`, and research D8b
+  removes it: tmux runs inside each session pod and `tmuxctl`'s argv builders (`Paste`,
+  `SendKeys`, `CapturePane`) are kept, so no byte that reaches a pane is built by new code. The
+  second implementation sends them through the Kubernetes exec API (FR-011).
 - **FR-003**: `kubernetes` mode MUST disable `internal/updater` and `internal/loginrelay` and
   refuse the `unit` subcommands, each with a message naming the mode.
 - **FR-004**: v0 code paths and `release.yml` MUST NOT change for v2 beyond FR-001's default
@@ -152,32 +152,53 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
   on the pod (`activeDeadlineSeconds`) so it holds if the reconciler is down.
 - **FR-008**: Session pods request the idle CPU (~50m per session, k8s-12) and the k8s-12
   memory (~570 MiB), and set no CPU limit. The default node is `lm-amd64-1`, by values.
-- **FR-009**: Where the reconciler runs is `NEEDS CLARIFICATION`: inside the crswd daemon
-  process (one image, one Deployment, and a daemon restart pauses reconciling but no pod), or
-  as its own Deployment (the pod-creating credential is then not in the internet-facing process, and a second
-  thing to run). The daemon's HTTP surface is the more exposed of the two, so this weighs on
-  Principle VI.
-- **FR-010**: Per-session storage is `NEEDS CLARIFICATION`, with numbers. One PVC per session
-  is the shape in the table and takes 24 s alone and 93 to 98 s when three start at once
-  (D4). One shared claim with a `subPath` per session removes the provisioning wait, and the
-  claim admits every pod on one node (D7, measured for a whole-claim mount, not for a
-  `subPath`). Whichever is chosen, `CLAUDE_CONFIG_DIR/projects` and the working directory MUST
-  survive a pod deletion, or `--resume` has nothing to resume, and the retain policy MUST be
-  `Retain`.
-- **FR-011**: How the daemon reaches a session's pane is `NEEDS CLARIFICATION`: an in-pod agent
-  on the pod network, or the Kubernetes exec API. Not measured (D8). The stream handler takes
-  one `CapturePane` per watched session per second (`streamInterval`, `internal/httpapi/
-  stream.go`), so ten watched sessions is ten exec calls a second against a Raspberry Pi
-  control plane on the exec path. The agent path needs its own authentication, because the
-  nodes report Flannel, which does not enforce NetworkPolicy on its own (not verified here).
+- **FR-009**: The reconciler runs as its own Deployment: the same image started as
+  `crswd reconcile`, with its own ServiceAccount, so the crswd daemon holds no pod-create
+  permission. Decided 9/26/26 (research D8b). This rests on RBAC and carries no measurement.
+  FR-015 mounts the keeper's Secret into every session pod in the namespace, so whoever can create
+  pods there can read it whatever FR-013 says about the `secrets` verb, and the daemon is the
+  internet-facing process. With FR-011 the daemon holds `pods/exec` and the `ClaudeSession`
+  objects, and the reconciler holds pod creation. A restart of either leaves the other running.
+  The cost is a second Deployment, whose idle memory is not measured.
+- **FR-010**: Per-session storage is one shared `ReadWriteOnce` claim with a `subPath` per
+  session, on a `Retain` class (`linstor-replicated`), and every session pod runs on the claim's
+  node (FR-008, FR-019). Decided 9/26/26 (research D8b), measured on `linstor-fs-storage-enc`,
+  which has the same layers. A session added while others run is Ready in 5.2 to 6.7 s, and six
+  started together on a bound claim in 30.7 and 33.5 s. One PVC per session took 58.2 s alone,
+  82.2 s for three (D4: 93 to 98 s) and 153.3 s for six, with CSI `DeadlineExceeded` errors, and
+  an unreplicated class took 118.1 s for six, so the wait is the provisioner.
+  `CLAUDE_CONFIG_DIR/projects` and the working directory MUST live on the session's `subPath`
+  and survive a pod deletion, or `--resume` has nothing to resume, and pods MUST set `fsGroup` so
+  the runner's uid can write it (measured with 10001). Three forced deletes each resumed the same
+  conversation with `claude --resume`, with no overlap between the old and new pod (gaps of 3.7 to
+  5.3 s). Two live writers on one `subPath` corrupted no file but forked the conversation and left
+  37 of 119 turns off what `--resume` replays, so the reconciler MUST NOT start a replacement pod
+  until the old pod object is gone and MUST NOT force-delete a session pod. The cost accepted is
+  that one claim is one disk: a full disk stops every session, so the claim is sized for their
+  sum. The retain policy MUST be `Retain`.
+- **FR-011**: The daemon reaches a session's pane through the Kubernetes exec API, with one
+  held exec stream per watched session, and there is no in-pod agent. Decided 9/26/26 (research
+  D8b). The stream handler takes one `CapturePane` per watched session per second
+  (`streamInterval`, `internal/httpapi/stream.go`). At ten sessions read once a second, one exec
+  per read costs the three API servers about 160 millicores more (about 16 m per call a second)
+  and `lm-amd64-1` about 250 m, at a 53 ms median, 275 ms worst and no API error in 4500 calls.
+  One held stream per session left the API servers inside their no-load range (327 m against 354
+  to 461 m) and cost `lm-amd64-1` 20 to 30 m, from 10 exec opens for 1500 frames. An in-pod agent
+  answers in 2.5 ms and costs the API servers nothing, but Flannel does not enforce NetworkPolicy
+  (measured: an ingress deny left the server reachable from both nodes), so an agent's port would
+  be open to every pod in the cluster and would need its own authentication. The exec path is
+  gated by RBAC instead. `pods/exec` goes to the daemon's ServiceAccount, in the session
+  namespace only (FR-013).
 - **FR-012**: The record of a session MUST carry its name, and a revival MUST render the start
   command with it. This fixes v0 as well: revival failed 8 of 8 sessions after the VM reboot of
   9/22/26. Under B the name is in the `ClaudeSession` spec; v0's journal record gains a `name`
   field.
-- **FR-013**: Pod-creating permission is bounded. The reconciler's ServiceAccount may create,
-  list, watch and delete pods, PVCs and `ClaudeSession` objects in its own namespace and nothing
-  else. It MUST NOT have any verb on `secrets`. `pods/exec` is granted only if FR-011 chooses
-  the exec path, and only in that namespace.
+- **FR-013**: Pod-creating permission is bounded and stays out of the daemon (FR-009). The
+  reconciler's ServiceAccount may create, list, watch and delete pods, and read and update
+  `ClaudeSession` objects, in its own namespace and nothing else. It needs no verb on PVCs,
+  because the claim belongs to the chart (FR-010). The daemon's ServiceAccount may manage
+  `ClaudeSession` objects, read pods and create `pods/exec` in that namespace only, and MUST NOT
+  create pods. Neither has any verb on `secrets`.
 
 ### Tokens across a restart (FR-021 of spec 001)
 
@@ -238,7 +259,8 @@ the loop that keeps pods matching objects. **Journal record**: v0's `journalReco
   `go test -tags tmux ./...` pass with no test edited.
 - **SC-004**: No test fixture or manifest in v2 names the `lawnmower` namespace's Secrets
   or the VM's `~/.claude`.
-- **SC-005**: A test fails if the reconciler's Role grants any verb on `secrets`, and a test
+- **SC-005**: A test fails if the reconciler's Role grants any verb on `secrets`, a test fails
+  if the daemon's Role can create pods or has any verb on `secrets`, and a test
   fails if an object with a working directory outside the allowlist, or past the cap, produces
   a pod.
 - **SC-006**: The credential gate (FR-017) has a recorded result, with the versions, before the
