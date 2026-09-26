@@ -220,3 +220,45 @@ jobs:
       - name: Build
         if: steps.stack.outputs.present == 'true'
         run: go build ./...
+
+      # The cluster build (docs/security.md §5, k8s-20c) is a second module in k8s/.
+      # Every `./...` above stops at a nested go.mod, so without these steps a change
+      # there would merge green with its tests never run. They belong to THIS job
+      # because it is the required check; a job of their own would not block a merge.
+      # Guarded on the file, like the stack detection above, so the job is green
+      # before the module exists.
+      - name: Detect cluster module
+        id: k8s
+        run: |
+          if [ -f k8s/go.mod ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "k8s/go.mod found - running the cluster module's install/lint/vet/test/build."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No k8s/go.mod yet - the cluster module's steps are skipped."
+          fi
+
+      - name: Install (k8s)
+        if: steps.k8s.outputs.present == 'true'
+        run: go -C k8s mod download
+
+      - name: Lint (k8s)
+        if: steps.k8s.outputs.present == 'true'
+        # Same pinned action and version as Lint above; the config is found by walking
+        # up from k8s/ to the root .golangci.yml, so the two modules share one rule set.
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.12.2
+          working-directory: k8s
+
+      - name: Typecheck (k8s)
+        if: steps.k8s.outputs.present == 'true'
+        run: go -C k8s vet ./...
+
+      - name: Test (k8s)
+        if: steps.k8s.outputs.present == 'true'
+        run: go -C k8s test ./...
+
+      - name: Build (k8s)
+        if: steps.k8s.outputs.present == 'true'
+        run: go -C k8s build ./...
