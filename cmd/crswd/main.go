@@ -61,18 +61,6 @@ const shutdownBudget = 30 * time.Second
 // drift without that test going red.
 const unreleased = "dev"
 
-// errKubernetesModeUnbuilt is why a daemon configured for a cluster does not
-// start. It is one sentence naming the mode, what is missing, and what the
-// refusal saves the operator from: a daemon that read `kubernetes` and then ran
-// sessions on this machine would be doing the opposite of what was asked, with
-// --dangerously-skip-permissions.
-//
-// It is the last thing between this binary and the cluster build (spec 017, the
-// wiring slice). Everything the mode switches off is already written and
-// asserted, so that slice removes this refusal and adds the controller; it does
-// not also have to invent the rules.
-var errKubernetesModeUnbuilt = errors.New(`execution mode "kubernetes" is not built into this binary yet, so it refuses to start rather than run sessions on this host when the configuration asked for a cluster`)
-
 func main() {
 	// The only flag on this command, and it starts nothing. A host that cannot
 	// run the daemon at all — no secret, no tmux, a binary that was just swapped
@@ -190,9 +178,10 @@ func run(ctx context.Context) error {
 
 	// First thing after the configuration, and before anything touches this
 	// host: the mode said `kubernetes`, and nothing below is written for it yet.
-	// See errKubernetesModeUnbuilt for what removes this line.
-	if cfg.ExecutionMode.Kubernetes() {
-		return errKubernetesModeUnbuilt
+	// The refusal and the sentence are internal/config's, so the settings page
+	// refuses to save the same thing (config.kubernetesModeBuilt is the switch).
+	if err := cfg.ExecutionMode.Runnable(); err != nil {
+		return err
 	}
 
 	// After the configuration because the probe reads it — the start commands it

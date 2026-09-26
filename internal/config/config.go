@@ -429,6 +429,33 @@ func (m ExecutionMode) String() string {
 	return string(m)
 }
 
+// ErrKubernetesModeUnbuilt is why a daemon configured for a cluster does not
+// start. It is one sentence naming the mode, what is missing, and what the
+// refusal saves the operator from: a daemon that read `kubernetes` and then ran
+// sessions on this machine would be doing the opposite of what was asked, with
+// --dangerously-skip-permissions.
+var ErrKubernetesModeUnbuilt = errors.New(`execution mode "kubernetes" is not built into this binary yet, so it refuses to start rather than run sessions on this host when the configuration asked for a cluster`)
+
+// kubernetesModeBuilt is whether this binary can run sessions in pods. It is
+// false until the cluster wiring lands (spec 017, the last slice of k8s-20c),
+// and that slice's whole change here is this line.
+//
+// It is a constant in this package, and the answer is asked through Runnable,
+// because two places have to agree on it: the start, which refuses, and the
+// settings page's edit, which must not write a file the start would refuse. A
+// mode an operator can save from a browser and then cannot restart out of is a
+// dashboard that took itself down.
+const kubernetesModeBuilt = false
+
+// Runnable is nil when this binary can run sessions in the mode, and otherwise
+// the sentence saying why it cannot. The host is always runnable.
+func (m ExecutionMode) Runnable() error {
+	if m.Kubernetes() && !kubernetesModeBuilt {
+		return ErrKubernetesModeUnbuilt
+	}
+	return nil
+}
+
 // loadExecutionMode reads EnvExecutionMode through the layered seam.
 func loadExecutionMode(getenv func(string) string) (ExecutionMode, error) {
 	mode, err := ParseExecutionMode(getenv(EnvExecutionMode))

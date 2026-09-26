@@ -6,6 +6,7 @@ package config_test
 // said anything is the host daemon it always was.
 
 import (
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -224,4 +225,55 @@ func TestKubernetesModeSkipsTheDependencyProbe(t *testing.T) {
 			t.Errorf("a host-mode daemon with no tmux started or was refused for another reason: %v", err)
 		}
 	})
+}
+
+// TestRunnable is the one place that says which modes this binary can run: the
+// host, and not yet kubernetes. Both the start and the settings page's edit ask
+// it, so that they cannot disagree about a file.
+func TestRunnable(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []config.ExecutionMode{"", config.ExecutionModeHost} {
+		if err := mode.Runnable(); err != nil {
+			t.Errorf("%q.Runnable() = %v; want the host runnable", mode, err)
+		}
+	}
+	if err := config.ExecutionModeKubernetes.Runnable(); !errors.Is(err, config.ErrKubernetesModeUnbuilt) {
+		t.Errorf("kubernetes Runnable() = %v; want %v", err, config.ErrKubernetesModeUnbuilt)
+	}
+}
+
+// TestValidateRefusesWhatTheStartWouldRefuse holds Validate to its own
+// contract, "would this daemon still start on these bytes?", for the one file
+// the loader accepts and the start does not. The settings page saves nothing
+// that fails here, so a browser cannot put the daemon into a mode it then
+// refuses to restart out of.
+//
+// The loader itself still accepts `kubernetes`, and that is asserted beside it:
+// the mode's rules are written and tested against a Config that has it.
+//
+// **Must fail when** Validate answers nil for a file that sets kubernetes while
+// the binary cannot run it, or refuses a host file.
+func TestValidateRefusesWhatTheStartWouldRefuse(t *testing.T) {
+	t.Parallel()
+
+	candidate := func(t *testing.T, extra string) []byte {
+		t.Helper()
+		return []byte(strings.Join([]string{
+			"shared_secret = " + strings.Repeat("k", config.MinSecretBytes),
+			"allowed_roots = " + t.TempDir(),
+			"dashboard_password = " + strings.Repeat("p", config.MinDashboardPasswordLen),
+			extra,
+			"",
+		}, "\n"))
+	}
+
+	if err := config.Validate(candidate(t, "execution_mode = kubernetes"), env(nil)); !errors.Is(err, config.ErrKubernetesModeUnbuilt) {
+		t.Errorf("Validate(kubernetes) = %v; want %v", err, config.ErrKubernetesModeUnbuilt)
+	}
+	for _, extra := range []string{"execution_mode = host", ""} {
+		if err := config.Validate(candidate(t, extra), env(nil)); err != nil {
+			t.Errorf("Validate(%q) = %v; want a host file valid", extra, err)
+		}
+	}
 }

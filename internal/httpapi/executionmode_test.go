@@ -241,3 +241,37 @@ func TestEveryKubernetesRefusalNamesTheMode(t *testing.T) {
 		}
 	}
 }
+
+// TestEditRefusesToSaveKubernetesModeWhileTheBinaryCannotRunIt closes the path a
+// row on the settings page opens: execution_mode is an ordinary non-secret key,
+// so the page offers it, and a save of `kubernetes` followed by the restart
+// button would leave a daemon that refuses to start and a dashboard that went
+// with it. The FR-010 backup does not help, since the refusal comes after a load
+// that succeeded.
+//
+// The edit is refused the way any value the daemon would not start on is, with
+// the file left exactly as it was. The host value is the control: it saves.
+//
+// **Must fail when** the candidate is written because the loader accepts it.
+func TestEditRefusesToSaveKubernetesModeWhileTheBinaryCannotRunIt(t *testing.T) {
+	f := editable(t)
+	before := readConfigFile(t, f.cfg.FilePath)
+
+	w := editPost(t, f, editForm(t, f, "execution_mode", "kubernetes"))
+
+	wantOutcome(t, w, outcome("setting-refused"))
+	if after := readConfigFile(t, f.cfg.FilePath); after != before {
+		t.Errorf("a mode the binary cannot run was saved anyway:\n%s", after)
+	}
+
+	// The control. The page renders what the running daemon is on, so a save of
+	// `host` is a change only when the daemon is not already there; a fixture
+	// that is would answer "unchanged" and prove nothing about the write.
+	f.cfg.ExecutionMode = config.ExecutionModeKubernetes
+	w = editPost(t, f, editForm(t, f, "execution_mode", "host"))
+
+	wantOutcome(t, w, outcome("setting-written"))
+	if after := readConfigFile(t, f.cfg.FilePath); !strings.Contains(after, "execution_mode = host") {
+		t.Errorf("the host mode was not saved:\n%s", after)
+	}
+}

@@ -758,7 +758,7 @@ stands in for the permission prompt that is gone.
 | `CRSW_START_COMMAND` | no | `claude --dangerously-skip-permissions` | The command line bound to the name `default`. Empty, or carrying a `;` or a control character, refuses |
 | `CRSW_START_COMMANDS` | no | empty — only `default` | The named set a create may choose from, `name=command` pairs separated by commas. An entry that is empty, is not `name=command`, repeats a name, names one outside `[a-z0-9-]`, re-defines `default` alongside `CRSW_START_COMMAND`, or carries a command the rule above refuses, refuses |
 | `CRSW_REMOTE_CONTROL_COMMAND` | no | `rc`, when a command by that name exists | Which entry of that set the dashboard's remote-control switch means. A name the set does not have refuses |
-| `CRSW_EXECUTION_MODE` | no | `host` | Where a session runs. `host` is tmux on this machine, as it has always been. `kubernetes` means a pod per session, and turns off the updater, the sign-in relay, the `crswd unit` commands, the tmux probe and the session journal. This build has no cluster support yet, so `kubernetes` is read and then refuses to start. Anything but those two words refuses |
+| `CRSW_EXECUTION_MODE` | no | `host` | Where a session runs. `host` is tmux on this machine, as it has always been. `kubernetes` means a pod per session, and turns off the updater, the sign-in relay, the `crswd unit` commands, the tmux probe and the session journal. This build has no cluster support yet, so `kubernetes` is read and then refuses to start, and the settings page will not save it. Anything but those two words refuses |
 
 The three Access variables are **all three or none of them**. None means a daemon
 that serves the API and admits nobody to the dashboard, which it says loudly at

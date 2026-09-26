@@ -187,8 +187,8 @@ func TestTheBinaryRefusesToStartInKubernetesMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("run returned nil in kubernetes mode; want a refusal")
 	}
-	if !errors.Is(err, errKubernetesModeUnbuilt) {
-		t.Fatalf("run = %v; want %v", err, errKubernetesModeUnbuilt)
+	if !errors.Is(err, config.ErrKubernetesModeUnbuilt) {
+		t.Fatalf("run = %v; want %v", err, config.ErrKubernetesModeUnbuilt)
 	}
 	sentence := err.Error()
 	for _, want := range []string{`"kubernetes"`, "not built into this binary", "refuses to start"} {
