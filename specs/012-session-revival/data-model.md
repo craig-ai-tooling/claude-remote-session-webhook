@@ -51,6 +51,7 @@ id wins.
 | `at` | RFC3339 | When the record was written. |
 | `id` | `string` | Session id, 32 lowercase hex. |
 | `event` | `string` | `created` \| `revived` \| `failed` \| `ended` |
+| `name` | `string` | The session's display label, omitted when empty. Added under `v` 1 (spec 017 FR-012): a revival cannot render a start command carrying `{name}` without it, and a record without it replays as it always did. `ValidateName` holds it to `^[a-zA-Z0-9-]{1,64}$`, so it is not free text. |
 | `owner` | `string` | Caller id, so a replayed session is re-owned rather than unowned. |
 | `conversation` | `string` | The UUID. |
 | `workdir` | `string` | Canonical, allowlist-checked at replay **again** — an allowlist that shrank must shrink what replays. |

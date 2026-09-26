@@ -284,6 +284,7 @@ func reviveRecord(s Session, event string) journalRecord {
 		At:           time.Now().UTC(),
 		ID:           s.ID,
 		Event:        event,
+		Name:         s.Name,
 		Owner:        string(s.Owner),
 		Conversation: s.ConversationID,
 		WorkDir:      s.WorkDir,

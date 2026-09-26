@@ -10,7 +10,7 @@ One JSON object per line. UTF-8. No trailing content. Written `O_APPEND`,
 `0600`, `fsync` after each record.
 
 ```json
-{"v":1,"at":"2026-08-22T16:32:10Z","id":"38dec2be02c48f3fb2d3d63a01c263c3","event":"created","owner":"operator","conversation":"7f3a…","workdir":"/home/x/code/y","start":"rc","lifetime":"0s","created":"2026-08-22T16:32:10Z","attempts":0}
+{"v":1,"at":"2026-08-22T16:32:10Z","id":"38dec2be02c48f3fb2d3d63a01c263c3","event":"created","name":"refactor-auth","owner":"operator","conversation":"7f3a…","workdir":"/home/x/code/y","start":"rc","lifetime":"0s","created":"2026-08-22T16:32:10Z","attempts":0}
 ```
 
 Fields are specified in [data-model.md](../data-model.md).
