@@ -110,6 +110,16 @@ func (c Config) CheckDependencies(warn io.Writer) error {
 // and the suite it ran alone in would be one os.Setenv away from probing the
 // real host instead of the described one.
 func (c Config) checkDependencies(lookPath func(string) (string, error), loginPATH func() (string, error), osRelease func() []byte, warn io.Writer) error {
+	// Both probes below are questions about this machine: is there a tmux on it,
+	// and does the login shell here find the start command's binary. In
+	// kubernetes mode neither runs here. The tmux and the shell are in the
+	// session pod, and a probe of the daemon's own host would either refuse a
+	// correct deployment (a daemon image has no tmux) or reassure about a
+	// binary no session will ever use.
+	if c.ExecutionMode.Kubernetes() {
+		return nil
+	}
+
 	if _, err := lookPath(tmuxDependency); err != nil {
 		// The error is not wrapped: exec.LookPath's carries the whole of PATH,
 		// which is the operator's environment rather than anything they asked to

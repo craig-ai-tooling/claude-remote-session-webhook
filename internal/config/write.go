@@ -291,7 +291,7 @@ func Validate(contents []byte, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	_, err = LoadFrom(func(name string) string {
+	cfg, err := LoadFrom(func(name string) string {
 		if v := getenv(name); v != "" {
 			return v
 		}
@@ -300,5 +300,12 @@ func Validate(contents []byte, getenv func(string) string) error {
 		}
 		return ""
 	}, io.Discard, WithoutConfigFile())
-	return err
+	if err != nil {
+		return err
+	}
+	// A candidate the loader accepts and the start refuses is still a daemon
+	// that would not come up. Kubernetes mode is the one such case today: it
+	// loads, so that its rules can be written and tested, and it is refused at
+	// start until the cluster build exists.
+	return cfg.ExecutionMode.Runnable()
 }

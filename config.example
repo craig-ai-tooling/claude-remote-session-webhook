@@ -300,3 +300,12 @@ version = 1
 # offered a control whose only outcome is a refusal. Default: rc, when a command
 # by that name exists.
 # remote_control_command = rc
+
+# Where a session runs: `host` is tmux on this machine, and `kubernetes` is a pod
+# per session. Anything else is a startup failure, and `k8s` is not read as
+# `kubernetes`: a daemon that guessed wrong would run your sessions on this
+# machine. `kubernetes` switches off the self-update path, the sign-in relay, the
+# `crswd unit` commands, the tmux probe and the session journal. This build has
+# no cluster support yet, so it is read and the daemon then refuses to start.
+# Default: host.
+# execution_mode = host
