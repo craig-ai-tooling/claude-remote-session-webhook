@@ -33,7 +33,7 @@ Access. **Testing**: table-driven unit tests for the reconciler against a fake c
 | **III. Verifiable** | SC-001 is a kill test with times. SC-005 fails on a Secret verb, an unallowlisted directory or a cap breach. SC-006 requires the gate's result on record. | ✅ |
 | **IV. Smallest change** | Second implementation of one existing interface, so `session` and `httpapi` do not fork. The only v0 change is the journal name (FR-012). | ✅ |
 | **V. Standards** | CI runs Install, Lint, Typecheck, Test and Build, plus `helm lint` and `helm template` with the CRD. | ✅ |
-| **VI. Blast radius** | A second creation path exists, so the reconciler re-checks allowlist, cap and lifetime on every object (FR-007, US4), and sets `activeDeadlineSeconds` so the lifetime holds with the reconciler down. One shell per pod is a stronger boundary than one tmux server for all. What becomes reachable: a ServiceAccount that can create pods, bounded to one namespace and held by the reconciler alone, not the daemon (FR-009, FR-013). | ✅ |
+| **VI. Blast radius** | A second creation path exists, so the reconciler re-checks allowlist, cap and lifetime on every object (FR-007, US4), and sets `activeDeadlineSeconds` so the lifetime holds with the reconciler down. One shell per pod is a stronger boundary than one tmux server for all. What becomes reachable: a ServiceAccount that can create pods, bounded to the session namespace and held by a reconciler that runs in another namespace, not by the daemon (FR-009, FR-013). | ✅ |
 | **VII. Design system** | No UI change. The dashboard names the mode in the existing settings page. | ✅ |
 
 ## Design
@@ -81,7 +81,7 @@ internal/reconcile/         NEW  the loop, the FR-007 checks, the Lease
 internal/updater/           MOD  refuses to run in kubernetes mode
 internal/loginrelay/        MOD  refuses to run in kubernetes mode
 cmd/crswd/                  MOD  unit subcommands refuse in kubernetes mode; a `reconcile` subcommand
-deploy/chart/               NEW  CRD, RBAC (FR-013), the daemon and reconciler Deployments, Service, session pod template
+deploy/chart/               NEW  CRD, RBAC (FR-013), the daemon and reconciler Deployments (two namespaces, FR-009), Service, session pod template
 deploy/session-image/       NEW  Claude Code plus tmux
 .github/workflows/ci.yml    MOD  helm lint, helm template, CRD generation drift check
 docs/k8s-mode.md            NEW  operating the kubernetes mode
