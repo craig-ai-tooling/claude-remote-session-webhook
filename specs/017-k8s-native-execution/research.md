@@ -170,6 +170,68 @@ is a measurement to make before the requirement it feeds is decided.
 
 ---
 
+## D8a — The credential gate (k8s-20a): PASS
+
+Measured 9/26/26, 03:35Z to 03:49Z. This answers D8's first row and D6's first bullet, and
+FR-017 now says pass. One run, one pod, one restart; what it did not cover is listed last.
+
+**Versions.** Pod image `docker.io/nctiggy/ralph-runner:2.1.246-ci10` (index digest
+`sha256:5986748b2442efdee9e23a96ce4351b317f8953676d7b750a290d03efdb47ad7`), `claude --version`
+in the pod: 2.1.246. The keeper's own image, `2.1.246-ci8`, carries the same version. The VM
+runs 2.1.283 today; that version was not run against the keeper login.
+
+**The pod.** `k8s-20a-probe` in namespace `lawnmower`, the Secret's own namespace, so nothing was
+copied out. Node `lm-amd64-1` (amd64 only), requests 50m CPU and 512Mi, limit 1Gi, uid and fsGroup
+10001. It followed the keeper's session contract, taken from `ralph-runner/job.yaml`:
+`claude-credentials` mounted read-only as a directory at `/var/run/claude-creds` (no `subPath`),
+`CLAUDE_CONFIG_DIR` an emptyDir holding `.credentials.json` as a symlink to it, the `creds-link`
+native sidecar at 60 s. Storage was one 1Gi PVC per session (D4's shape B, `linstor-fs-storage-enc`,
+reclaim policy Delete) mounted at `/data`, holding the working directory `/data/work` and the
+transcripts, with `CLAUDE_CONFIG_DIR/projects` a symlink to `/data/projects`. The config dir stayed
+an emptyDir, so `.claude.json` and `settings.json` were rebuilt from a seed step in the new pod.
+The seed sets `hasCompletedOnboarding`, folder trust and the bypass-permissions acceptance;
+no login screen or refresh prompt appeared at any point.
+
+| Step | Command | Result |
+|---|---|---|
+| Inference baseline | `claude -p "Reply with the single word ok."` | `ok`. `claude auth status`: `loggedIn: true`, `authMethod: claude.ai`, `subscriptionType: max`, with no account block in the seeded `.claude.json` |
+| Remote Control | in tmux: `claude --dangerously-skip-permissions --remote-control k8s-20a-probe` (crswd's `rc` command) | Pane after 15 s: `/remote-control is active · Continue here, on your phone, or at https://claude.ai/code/session_…`, status bar `/rc active` |
+| A turn | prompt with the codeword `pelican-4471` | answered; transcript `e9d27344-….jsonl` written under `/data/projects/-data-work/` |
+| Pod restart | `kubectl delete pod` (10 s grace, `claude` killed with the container), then `kubectl apply` of the same manifest | New pod UID, same PVC, Running 61 s after the delete began. Container restarts 0 in the new pod |
+| Resume | in the new pod, same cwd: `claude --dangerously-skip-permissions --remote-control k8s-20a-probe --resume e9d27344-…` | Pane replayed the earlier turn. `/remote-control is active` again, on the same session URL as before the restart |
+| Context after restart | "What codeword did I ask you to remember?" | `pelican-4471`. The same transcript file grew from 70,496 to 74,367 bytes |
+| End | `/exit` | `claude` and the tmux server gone. Pod and PVC deleted afterwards |
+
+**No refresh was needed or attempted.** `kubectl logs -c creds-link` was empty each time it was read (the first pod's
+before its deletion, the second pod's at the end), so Claude never replaced the credential file,
+and the symlink was intact at the end.
+`lawnmower/keeper-state` on the keeper Secret read `ok` before and after, `refreshed-at`
+unchanged at 00:30:13Z, `expires-at` 08:30:11Z, so 295 minutes left at the start and 281 at
+the end. No keeper pass was run by hand and no second refresher existed.
+
+**Cleanup.** `kubectl -n lawnmower get pods,pvc -l app=k8s-20a-probe` returns nothing and the
+PV `pvc-ada2fcf6-…` is `NotFound`. The Remote Control session was ended with `/exit`; its state on
+claude.ai was not checked, because listing a claude.ai session from here means reading the
+credential.
+
+**Not covered, so the pass does not extend to it.**
+
+- **A token rotation under a live Remote Control session.** The keeper rotates the Secret about
+  every 6 h (it refreshes under 2 h left of an 8 h token). The probe ran 14 minutes and never saw
+  one. The keeper doc's measurement that a running session reads the file per request was for
+  inference. Whether the Remote Control connection holds its own copy of the token is open, and
+  every B session that lives past its first token will meet it.
+- **A prompt sent from claude.ai.** Registration and reconnect were read from the pane. Nothing was
+  typed into the session from the phone or the browser.
+- **The VM's `claude` 2.1.283**, and the arm64 nodes. Both are one run away.
+- **A hard kill.** `--force --grace-period=0` with two writers alive is D8's separate row.
+- **A different working directory after the restart.** Transcripts sit under a directory named for
+  the cwd (`-data-work`), so the pod must start `claude` in the same directory it had.
+- **The login in `crswd-next`.** FR-016's own keeper login is a separate bootstrap. This was the
+  `lawnmower` namespace's login, the same access-token-only shape.
+
+---
+
 ## D9 — The spec found a defect in its own state design
 
 `persistence.existingClaim: lawnmower-home` in the `crswd-next` chart (FR-016 as first written,

@@ -204,6 +204,8 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
   The keeper contract was measured for inference only (k8s-14). This is D6's first unmeasured
   item, and every session pod under B depends on it. If it fails, session pods need a
   refreshable login, which is a different design and the operator's decision.
+  **Result (9/26/26): PASS**, on claude 2.1.246 in the pod; the evidence, and what it did not
+  cover (a token rotation under a live Remote Control session, the VM's 2.1.283), is research.md D8a.
 - **FR-018**: `host` mode keeps its local login and the phone sign-in relay unchanged.
 
 ### Lawnmower state
