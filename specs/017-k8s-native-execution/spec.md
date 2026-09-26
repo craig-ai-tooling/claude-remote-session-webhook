@@ -236,7 +236,13 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
   item, and every session pod under B depends on it. If it fails, session pods need a
   refreshable login, which is a different design and the operator's decision.
   **Result (9/26/26): PASS**, on claude 2.1.246 in the pod; the evidence, and what it did not
-  cover (a token rotation under a live Remote Control session, the VM's 2.1.283), is research.md D8a.
+  cover (the VM's 2.1.283), is research.md D8a.
+  **Rotation (9/26/26): a session survives one.** A live `--remote-control` session kept its
+  connection and URL across the keeper's 06:30:17Z rotation with no restart, answered a prompt
+  after it, and answered again after the first token's own expiry at 08:30:11Z, on the rotated
+  file the kubelet delivered in 65 s. `creds-link` logged nothing. A pod delete and `--resume`
+  on the rotated credential reconnected on the same URL. Not shown: a prompt from claude.ai
+  after the rotation, or a rotation during a turn (research.md D8c).
 - **FR-018**: `host` mode keeps its local login and the phone sign-in relay unchanged.
 
 ### Lawnmower state

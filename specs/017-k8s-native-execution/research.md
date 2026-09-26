@@ -220,9 +220,11 @@ credential.
   every 6 h (it refreshes under 2 h left of an 8 h token). The probe ran 14 minutes and never saw
   one. The keeper doc's measurement that a running session reads the file per request was for
   inference. Whether the Remote Control connection holds its own copy of the token is open, and
-  every B session that lives past its first token will meet it.
+  every B session that lives past its first token will meet it. **Measured later the same day:
+  D8c.**
 - **A prompt sent from claude.ai.** Registration and reconnect were read from the pane. Nothing was
-  typed into the session from the phone or the browser.
+  typed into the session from the phone or the browser. **D8c saw five such prompts arrive, before
+  the rotation.**
 - **The VM's `claude` 2.1.283**, and the arm64 nodes. Both are one run away.
 - **A hard kill.** `--force --grace-period=0` with two writers alive is D8's separate row.
 - **A different working directory after the restart.** Transcripts sit under a directory named for
@@ -396,6 +398,97 @@ isolate session pods from each other or from the rest of the cluster.
 - Held exec streams across an API-server restart or a kubelet restart, and orphaned loops.
 - Disk-full on the shared claim: one session filling it and what the others see.
 - A reconciler's idle memory for FR-009. The 15.5 MiB in FR-009 is the v0 daemon's.
+
+---
+
+## D8c — A live Remote Control session across a keeper rotation (k8s-20a2): PASS
+
+Measured 9/26/26, 04:56Z to 08:35Z, one pod, one rotation. This answers the first "Not covered"
+bullet of D8a, and FR-017 now says a session survives a rotation. Times are UTC.
+
+**The pod.** D8a's manifest with `k8s-20a-probe` renamed to `k8s-20a2-probe` and nothing else
+changed: image `ralph-runner:2.1.246-ci10`, `claude` 2.1.246, node `lm-amd64-1`, namespace
+`lawnmower`, `claude-credentials` mounted as a directory, `creds-link` at 60 s, a 1Gi PVC on
+`linstor-fs-storage-enc`. `claude --dangerously-skip-permissions --remote-control k8s-20a2-probe`
+ran in tmux from 04:57:41Z. The rotation is the keeper's own 30-minute CronJob. No pass was run by
+hand, no second refresher existed, and only the Secret's annotations were read.
+
+| Time | Event |
+|---|---|
+| 04:57:27 | Pod Running. In-pod `expiresAt` 1790411411117 (08:30:11Z), equal to the Secret's `lawnmower/expires-at` |
+| 04:58:01 | `/remote-control is active`, status bar `/rc active`. SHA-256 of the session URL starts `39939d3e1efa` |
+| 04:58:17 | Codeword `heron-2231` answered |
+| 05:42 to 05:49 | Five prompts typed from claude.ai by the operator, answered (below) |
+| 06:18:23 | Pre-rotation turn, answered |
+| **06:30:17** | **Rotation.** `refreshed-at` 00:30:13Z to 06:30:17Z, `expires-at` 08:30:11Z to 14:30:15Z, `keeper-state` `refreshed` |
+| 06:31:22 | kubelet swapped `..data` in the pod, 65 s after the keeper wrote. In-pod `expiresAt` 1790433015310 (14:30:15Z) |
+| 06:31:37 | Checks (a) to (d) below |
+| 07:00:16 | Next keeper pass: `keeper-state` `ok`. No second refresh followed (07:30, 08:00, 08:30 passes) |
+| 08:30:11 | The first access token's expiry passes |
+| 08:31:53 | Checks (a) to (d) again, on the same pod, still never restarted |
+| 08:33:00 | `kubectl delete pod`, then `kubectl apply` of the same manifest. Running 08:33:33, new UID, same PVC |
+| 08:34:09 | `--resume` on the rotated credential: `/remote-control is active`, same URL hash |
+| 08:35:21 | `/exit`, then pod and PVC deleted |
+
+**The four checks, at 06:31 and again at 08:31 (after the first token had expired).**
+
+- **(a) Same session, still active.** 197 polls at 60 s from 04:59 to 08:29 read active, except six
+  false negatives (caveat below), and the status bar read `/rc active` after each check. The session
+  URL hash was `39939d3e1efa` before, after the
+  rotation, after the expiry and after the resume. The transcript held one `bridge_status` entry
+  and one `bridgeSessionId` throughout.
+- **(b) A new prompt is answered.** 06:31 `osprey-5519`, 08:32 `plover-7703`, each returned together
+  with the earlier codewords. The 08:32 turn is after the first token's expiry, so it needed an
+  unexpired token, and the only one in the pod was the rotated file. The transcript has no 401 or auth-error text.
+- **(c) `creds-link` logged nothing.** `kubectl logs -c creds-link` was 0 bytes at 05:51, 06:31,
+  08:31 and in the second pod. The symlink target was unchanged. Claude never replaced the file, and
+  the sidecar had nothing to re-link: the kubelet's swap of `..data` is what delivered the new token.
+- **(d) The file carries the new `expiresAt`.** 1790433015310 from 06:31:27 onward, matching the
+  annotation (14:30:15Z). Only that number was printed. Container restarts read 0/0 in all 197 polls.
+
+**After the pod restart.** The new pod's `..data` was cut at 08:33:14 and held `expiresAt`
+1790433015310. `--resume e9658d79-…` in the same working directory replayed the earlier turns and
+reconnected on the URL hash `39939d3e1efa`. Asked to list the codewords, it returned all three. The
+transcript grew from 232,064 to 238,494 bytes and now had two `bridge_status` entries (one per
+start) and still one `bridgeSessionId`.
+
+**What the operator's prompts showed.** At 05:42 to 05:49 five prompts arrived from claude.ai, sent
+by the operator to what he took to be another session. That is the "prompt sent from claude.ai"
+D8a did not cover, delivered to a pod about 45 minutes before the rotation. With permissions
+skipped, the session ran `claude auth login` under a throwaway `CLAUDE_CONFIG_DIR` (25 s timeout,
+no code submitted), tried the ports on 10.64.93.252 and 172.19.0.45, and was refused by ssh
+(public key only). Afterwards the credential symlink, the `creds-link` log, `keeper-state` `ok` and
+the in-pod `expiresAt` were all as before. A note typed into the pane at 05:52 asked him not to use
+it, and it answered `ack`. A session pod's name appears in the operator's session list beside his
+own sessions, and anything he types there runs with the pod's reach.
+
+**The stop rule.** The brief said to stop on any `keeper-state` other than `ok`. `refreshed` is the
+state a successful pass writes, and `docs/claude-login-keeper.md` lists it beside `ok` and
+`bootstrapped` as working, so it did not stop the probe. `failed`, `writeback-failed`, `revoked`,
+`not-bootstrapped` and `bad-format` would have. None appeared.
+
+**Poll caveat.** Six poll lines, 05:44:28 to 05:49:45, read `NOT-ACTIVE`. Until 05:52 the check
+searched the pane for the startup banner, and the operator's conversation pushed it out of a
+scrollback that is 0 lines here. The status bar showed `/rc active` at 05:50 and after, and polls
+from 05:52 read the status bar.
+
+**Cleanup.** `kubectl -n lawnmower get pods,pvc -l app=k8s-20a2-probe` returns nothing and the PV
+`pvc-e8e5164f-…` is `NotFound`. The session was ended with `/exit` (no `tmux` server, no `claude`
+process left). Its state on claude.ai was not checked, because listing a claude.ai session from
+here means reading the credential.
+
+**Not covered, so the pass does not extend to it.**
+
+- **A prompt sent from claude.ai after the rotation.** The five claude.ai prompts all came before
+  06:30Z. Every prompt after it was typed into tmux. The connection was reported active and did not
+  re-register (one `bridgeSessionId`), but nothing crossed it inbound after the rotation.
+- **A rotation with a turn in flight.** 06:30:17Z landed in an idle session.
+- **The first token's revocation.** Whether a keeper refresh revokes the previous access token is
+  not observed. The 08:31 check, past that token's own expiry, is what settles the question for
+  the session.
+- **The VM's `claude` 2.1.283**, the arm64 nodes and the `crswd-next` login: unchanged from D8a.
+- **One rotation, one pod.** A keeper that is down past the token's expiry is the k8s-14 case, a 401
+  and recovery when it returns. It was not run under Remote Control.
 
 ---
 
