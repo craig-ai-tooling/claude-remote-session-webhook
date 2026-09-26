@@ -392,6 +392,12 @@ the alternative was a check that lies, and it is bounded by every line above.
   rather than remembered. It is the reason the configuration file is `key = value`
   hand-parsed: YAML and TOML have no standard-library parser, neither is safe to
   hand-roll, and a dependency for either would create the file this rule forbids.
+- **The rule covers the host module**, the root `go.mod` that builds the VM daemon and
+  every release. The cluster build is a second module in `k8s/` (spec 017,
+  `k8s-20c-plan.md` §5, decided 9/26/26) that reaches the root's `internal/` through
+  `replace ../` and may carry `k8s.io/client-go` for the exec, watch and leader-election
+  code the standard library lacks; nothing under the root imports `k8s/`, so the root
+  `go.sum` stays absent and the three tests that assert it are unchanged.
 
 ## Configuration, and the page that shows it
 
@@ -654,6 +660,6 @@ operator's current configuration would refuse to create.
 - [ ] A new setting a secret could be written into is classified by `config.IsSecret`,
       so the 0600 refusal and the settings page cannot disagree about it
 - [ ] No secret value on any rendered page — swept across every route, not reasoned about
-- [ ] No new dependency without justification, and `go.sum` still absent
+- [ ] No new dependency without justification, and the root `go.sum` still absent
 - [ ] No `Access-Control-Allow-*` on any route, either door — swept, not assumed
 - [ ] Browser-door responses all carry the header set above, refusals included

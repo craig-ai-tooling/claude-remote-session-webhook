@@ -59,9 +59,9 @@ FR-013, SC-004, SC-005.
 - `go get k8s.io/client-go@v0.32.8` (matches server v1.32.8 and D8b's generator, keeps go 1.23.0), then pin `github.com/moby/spdystream@v0.5.1 golang.org/x/oauth2@v0.27.0 github.com/gorilla/websocket@v1.5.3`.
   **No controller-runtime.** It adds prometheus, zap and friends for nothing that `kubernetes/fake` + `dynamic/fake` + `tools/leaderelection` do not already cover. ClaudeSession goes through the dynamic client, converted to and from `api/v1alpha1` in one file.
 - `k8s/internal/kube/` holds the in-cluster rest.Config and the Lease elector (LeaseLock). Test: two electors on one fake clientset, exactly one leads. First-PR check: dependency-review green, OSV clean of HIGH.
-- Deps: decision 1, and S4w first under A. **Serial gate**: the only slice that touches go.mod/go.sum, and S5/S6 follow it.
-- Also under A: `.github/dependabot.yml` gets a gomod entry for `/k8s` (not a workflow path), and `docs/security.md` §5 is rescoped to the host module (CODEOWNERS path, so Craig merges that PR).
-- S4w (option A only), lands BEFORE S4: `.github/workflows/ci.yml` adds `go -C k8s vet/test/build` and golangci in `k8s/`, guarded by `[ -f k8s/go.mod ]` in the Detect-stack pattern (`ci.yml:155`), so it is green before the module exists. A workflow file: its own branch of that one file, pushed over SSH and fast-forwarded (no token here can merge `.github/workflows/**`). Without it S4-S6 merge green with their tests never run.
+- Deps: decision 1 (A, decided 9/26/26) and S4w, both done by k8s-20c-decide-lib. **Serial gate**: the only slice that touches go.mod/go.sum, and S5/S6 follow it.
+- Also under A: `.github/dependabot.yml` gets a gomod entry for `/k8s` (not a workflow path), in this slice's PR because Dependabot errors on a directory that does not exist yet. `docs/security.md` §5 is already scoped to the host module (k8s-20c-decide-lib); its CODEOWNERS entry requires no review (`protect-main` has `require_code_owner_review: false`), so it merged like any other PR.
+- S4w (option A only), landed BEFORE S4 (crswd #194): `.github/workflows/ci.yml` adds `go -C k8s` download, vet, test and build and golangci in `k8s/`, inside the required `Build / test / lint` job and guarded by `[ -f k8s/go.mod ]`, so it is green before the module exists. Without it S4-S6 merge green with their tests never run. Landing route: crswd's `protect-main` ruleset requires a PR and has no bypass actor, so the SSH fast-forward this plan first assumed is not available; the PR merges through the craig-ai-tooling App installation token, which now grants `workflows: write` (the `gh` OAuth token still cannot merge `.github/workflows/**`).
 
 **S5: podctl, the second Controller.** `k8s/internal/podctl`. FR-002, FR-011, FR-014.
 - `New`: create the ClaudeSession if absent, then wait (bounded, ~90 s; D8b cold 45-52 s) for pod Running and `has-session`. It is idempotent, which revival needs. `SetOption`: annotation on the object (the object is the record; pod tmux options die with the pod). `SendKeys`/`Paste`/`Resize`/`Has`: exec with the exported argv, and Paste sends the payload on exec stdin (load-buffer), as v0. `CapturePane`: newest frame of one held `crswd pane-loop` exec stream per watched session, reopened on EOF, with ANSI-stripped again on the daemon side. `Kill`: delete the object and confirm the pod gone (never "assumed"). `List`: SessionInfo from objects+pods. `ReconcileServerEnvironment`: empty Reconciliation.
@@ -115,6 +115,8 @@ how:
      versions, Dependabot noise). The no-dependency rule and its three tests are rewritten. You merge it.
   C) no library → we write our own small Kubernetes client, including the WebSocket exec path.
      No rule changes, but it becomes the riskiest code in crswd.
+
+DECIDED 9/26/26 (Craig, option A, backlog item k8s-20c-decide-lib): the cluster build is a second module in `k8s/`; the root module, the VM daemon and its releases keep no dependency. Done with the decision: `docs/security.md` §5 is scoped to the host module, and `ci.yml` runs the `k8s/` module's steps when `k8s/go.mod` exists (crswd #194). Left for S4: the module, the pins and the dependabot entry.
 
 DECISION FOR CRAIG
 what: the session object needs a permanent API group name, and changing it later means migrating every object
