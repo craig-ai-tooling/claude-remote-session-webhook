@@ -2215,6 +2215,7 @@ func createRecord(s Session) journalRecord {
 		At:           time.Now().UTC(),
 		ID:           s.ID,
 		Event:        journalCreated,
+		Name:         s.Name,
 		Owner:        string(s.Owner),
 		Conversation: s.ConversationID,
 		WorkDir:      s.WorkDir,
@@ -2312,8 +2313,14 @@ func (m *Manager) ReplayJournal(ctx context.Context) ([]Recovered, ReplayStats, 
 		}
 
 		s := Session{
-			ID:             rec.ID,
-			Owner:          auth.CallerID(rec.Owner),
+			ID:    rec.ID,
+			Owner: auth.CallerID(rec.Owner),
+			// Restored so the revival can render its start command. The value is
+			// not trusted for that: renderStart re-checks the alphabet before
+			// anything is typed, so a name the journal should not hold fails the
+			// revival rather than reaching a shell. Empty for a record written
+			// before the field existed, which renders as it always did.
+			Name:           rec.Name,
 			ConversationID: rec.Conversation,
 			WorkDir:        workDir,
 			StartCommand:   rec.Start,
