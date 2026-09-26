@@ -302,3 +302,5 @@ func Validate(contents []byte, getenv func(string) string) error {
 	}, io.Discard, WithoutConfigFile())
 	return err
 }
+
+// lint probe: comment-only change to see whether re-analysing dependents of internal/config trips SA5011 on the CI runner.
