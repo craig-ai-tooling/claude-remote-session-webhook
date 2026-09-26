@@ -30,6 +30,7 @@ func TestJournalRoundTrip(t *testing.T) {
 		At:           time.Unix(1785706480, 0).UTC(),
 		ID:           "abc123",
 		Event:        journalCreated,
+		Name:         "refactor-auth",
 		Owner:        "operator",
 		Conversation: "7f3a1b2c-4d5e-4f60-8a71-b2c3d4e5f607",
 		WorkDir:      "/code/repo",
@@ -214,7 +215,7 @@ func TestJournalCarriesNoSecret(t *testing.T) {
 	t.Parallel()
 
 	rec := journalRecord{
-		V: journalVersion, ID: "abc", Event: journalCreated, Owner: "operator",
+		V: journalVersion, ID: "abc", Event: journalCreated, Name: "refactor-auth", Owner: "operator",
 		Conversation: "7f3a1b2c-4d5e-4f60-8a71-b2c3d4e5f607", WorkDir: "/code/repo",
 		Start: "rc", Lifetime: "never", Attempts: 2,
 	}
@@ -225,6 +226,45 @@ func TestJournalCarriesNoSecret(t *testing.T) {
 	for _, forbidden := range []string{"token", "Token", "hash", "Hash", "secret", "pane", "credential"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Errorf("a journal record carries %q: %s", forbidden, encoded)
+		}
+	}
+}
+
+// TestEveryRecordDescribingASessionCarriesItsName is spec 017 SC-002 at the
+// place the records are built. Each of these is the last line the journal may
+// hold for a session before a reboot, and a replay builds the session from
+// nothing else, so one that drops the name is a session that cannot render its
+// start command.
+func TestEveryRecordDescribingASessionCarriesItsName(t *testing.T) {
+	t.Parallel()
+
+	s := Session{
+		ID:             "abc123",
+		Name:           "refactor-auth",
+		Owner:          "operator",
+		ConversationID: "7f3a1b2c-4d5e-4f60-8a71-b2c3d4e5f607",
+		WorkDir:        "/code/repo",
+		StartCommand:   "rc",
+		CreatedAt:      time.Unix(1785706480, 0).UTC(),
+		TokenHash:      [32]byte{0xde, 0xad, 0xbe, 0xef},
+	}
+	records := map[string]journalRecord{
+		"createRecord":  createRecord(s),
+		"reviveRecord":  reviveRecord(s, journalRevived),
+		"failed record": reviveRecord(s, journalFailed),
+		"continued":     reviveRecord(s, journalContinued),
+	}
+	for label, rec := range records {
+		if rec.Name != s.Name {
+			t.Errorf("%s: Name = %q, want %q", label, rec.Name, s.Name)
+		}
+		// FR-014: the hash is set on the session and must reach no record.
+		encoded, err := json.Marshal(rec)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", label, err)
+		}
+		if strings.Contains(string(encoded), "deadbeef") {
+			t.Errorf("%s carries the token hash: %s", label, encoded)
 		}
 	}
 }

@@ -56,12 +56,26 @@ const (
 //
 // **What it must never carry**: a token, a token hash, pane content, conversation
 // content, or caller-supplied free text. There is no request behind this file and
-// FR-042 applies to it exactly as it applies to the audit trail.
+// FR-042 applies to it exactly as it applies to the audit trail. The one
+// caller-supplied string it holds is Name, and it is not free text: ValidateName
+// holds it to ^[a-zA-Z0-9-]{1,64}$ before it reaches a Session at all.
 type journalRecord struct {
 	V     int       `json:"v"`
 	At    time.Time `json:"at"`
 	ID    string    `json:"id"`
 	Event string    `json:"event"`
+
+	// Name is the session's display label, and it is here because the start
+	// command needs it: the deployed template ends in `--remote-control {name}`,
+	// and a revival that has no name cannot render it. Every one of the eight
+	// sessions the 2026-09-22 reboot took failed to come back for exactly that
+	// (spec 017 FR-012).
+	//
+	// It is added under the same schema version and omitted when empty, so a
+	// record written before this field existed reads as it always did, and a
+	// daemon rolled back to a build without it skips the key and still replays
+	// every record. A version bump would have made that rollback drop them all.
+	Name string `json:"name,omitempty"`
 
 	Owner        string `json:"owner,omitempty"`
 	Conversation string `json:"conversation,omitempty"`

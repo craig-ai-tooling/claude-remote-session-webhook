@@ -569,9 +569,12 @@ stopped being sufficient: on 2026-08-22 the kernel OOM killer took a whole
 `tmux-spawn` cgroup and destroyed a session's tmux state along with it, so
 everything recorded on that tmux session went too.
 
-**What it holds**: session id, owner, conversation identifier, working directory,
-start-command *name*, lifetime, original creation time, and a revival attempt
-count. That is the set the daemon cannot rediscover once the shell is gone.
+**What it holds**: session id, owner, session name, conversation identifier,
+working directory, start-command *name*, lifetime, original creation time, and a
+revival attempt count. That is the set the daemon cannot rediscover once the
+shell is gone. The session name is caller-supplied but not free text:
+`ValidateName` holds it to `^[a-zA-Z0-9-]{1,64}$` before it is a session's, and a
+revival cannot render its start command without it.
 
 **What it must never hold**: a bearer token, a token hash, pane content,
 conversation content, or caller-supplied free text. The rule FR-042 places on the
