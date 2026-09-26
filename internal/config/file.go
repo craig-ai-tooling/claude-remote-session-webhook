@@ -213,6 +213,7 @@ func Vars() []string {
 		EnvStartCommand,
 		EnvStartCommands,
 		EnvRemoteControlCommand,
+		EnvExecutionMode,
 	}
 }
 
