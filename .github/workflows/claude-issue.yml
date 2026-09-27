@@ -58,7 +58,7 @@ jobs:
         id: claude
                 # Pinned to a commit SHA for the reason the model below is pinned: a tag
         # can be moved, and this action runs with write access to the repo.
-        uses: anthropics/claude-code-action@2261fcfc88e7de1b55f179edd588805e12de71f2 # v1.0.228
+        uses: anthropics/claude-code-action@9171db3e57d6a3140a37ddc2ba92788584e0ead6 # v1.0.234
         with:
           # Subscription auth (Claude Pro/Max) — no API billing.
           # Generate on the runner (or any machine you are signed in on) with:
