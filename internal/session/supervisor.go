@@ -346,6 +346,11 @@ func (m *Manager) sendStart(ctx context.Context, s Session) error {
 	if err != nil {
 		return fmt.Errorf("render the start command: %w", err)
 	}
+	// A revival can land in a directory that was trusted when it was created and
+	// is not now, so it is seeded again rather than assumed.
+	if err := SeedTrust(m.claudeConfig, s.WorkDir); err != nil {
+		return err
+	}
 	if err := m.tmux.SendKeys(ctx, s.TmuxName(), command, enterKey); err != nil {
 		return fmt.Errorf("send the claude start command: %w", err)
 	}

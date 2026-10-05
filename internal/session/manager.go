@@ -199,6 +199,12 @@ type Manager struct {
 	// before the toggle existed.
 	remoteControlCommand string
 
+	// claudeConfig is the Claude Code config file a session's directory is
+	// trusted in before its start command is typed (trust.go). Empty means
+	// trust is left alone, which is every test's manager and every daemon
+	// before 2026-10-05.
+	claudeConfig string
+
 	tmux  tmuxctl.Controller
 	store *Store
 	roots []config.ApprovedRoot
@@ -253,6 +259,12 @@ func (m *Manager) SetJournal(j *Journal) { m.journal = j }
 // is startup configuration, and a copy on a record would be free to disagree with
 // it after a restart — the second source of truth research R5 rejected.
 func (m *Manager) SetRemoteControlCommand(name string) { m.remoteControlCommand = name }
+
+// SetClaudeConfig names the Claude Code config file whose workspace-trust
+// entry is set for each session's directory before it starts (trust.go). A
+// setter for the reason SetStartCommands is one, and because a manager built by
+// a test must never reach the operator's real ~/.claude.json.
+func (m *Manager) SetClaudeConfig(path string) { m.claudeConfig = path }
 
 // SetLifetimes gives the manager the operator's configured default and ceiling
 // (#37). A setter for the reason SetStartCommands is one: every existing caller
@@ -2007,6 +2019,11 @@ func (m *Manager) start(ctx context.Context, s Session, resume string) error {
 	command, err := m.renderStart(template, resume, s.ConversationID, s.Name)
 	if err != nil {
 		return fmt.Errorf("render the start command for session %s: %w", s.ID, err)
+	}
+	// Before the command is typed, because the dialog is drawn the moment Claude
+	// starts and nothing on this host will answer it.
+	if err := SeedTrust(m.claudeConfig, s.WorkDir); err != nil {
+		return err
 	}
 	if err := m.tmux.SendKeys(ctx, name, command, enterKey); err != nil {
 		return fmt.Errorf("send the claude start command: %w", err)
