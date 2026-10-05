@@ -611,6 +611,25 @@ the allowlist, the ceiling and the cap in force *now* — a journal outlives the
 configuration that produced it, and it must never reinstate a session the
 operator's current configuration would refuse to create.
 
+## Claude Code's workspace trust (a file this daemon edits but does not own)
+
+Before typing a start command, the daemon sets
+`projects[<workdir>].hasTrustDialogAccepted` to `true` in the `.claude.json` a
+session will read (`$CLAUDE_CONFIG_DIR`, else `$HOME`, from the session's own
+environment). Without it a session in a never-trusted directory sits on Claude
+Code's trust dialog with nobody to answer it (`internal/session/trust.go`).
+
+**This grants nothing `allowed_roots` did not.** Only a directory `ResolveWorkDir`
+accepted reaches it, and a session there already runs with tool approval off.
+
+**It edits someone else's file, so it touches as little as it can.** An
+already-trusted directory is read and not rewritten. A missing file stays
+missing. A rewrite takes the `<file>.lock` flock ai-lawnmower's `trust-seed.sh`
+takes, carries every other value through as raw JSON, and replaces the file by
+rename. A file that is not a JSON object fails the create rather than being
+repaired. Wired only in `httpapi.New`, so no test server reaches the operator's
+real file. Not wired in kubernetes mode.
+
 ## Rate limiting & audit
 
 - Per-caller rate limit on session creation. Spawning Claude sessions is expensive

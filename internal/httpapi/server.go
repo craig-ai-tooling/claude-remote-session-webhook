@@ -343,7 +343,7 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	// Neither of the two collaborators below is wired in kubernetes mode (FR-003).
+	// None of the collaborators below is wired in kubernetes mode (FR-003).
 	// The relay drives `claude auth login` in a tmux window on this host, and the
 	// feed exists to offer this binary a newer copy of itself. In a pod the
 	// binary is an image and the sign-in is the cluster's, so both would be a
@@ -371,6 +371,11 @@ func New(cfg *config.Config) (*Server, error) {
 	// runnable, which is a real problem the sign-in panel reports — and taking
 	// the dashboard down over it would remove the page that explains it.
 	sessionEnv := config.SessionEnvironment(os.Environ(), cfg.SessionEnvironment)
+	// Workspace trust is seeded in the config file a session's Claude reads,
+	// which is resolved from the session's environment for the reason the relay
+	// below uses it. Wired here and not in NewWith so that no test server ever
+	// writes the operator's ~/.claude.json.
+	srv.sessions.SetClaudeConfig(session.ClaudeConfigFile(sessionEnv))
 	if startCommand, named := cfg.StartCommands.Command(config.DefaultStartCommandName); named {
 		relay, err := loginrelay.New(tmux, startCommand, relayWorkDir(cfg), sessionEnv)
 		if err != nil {
