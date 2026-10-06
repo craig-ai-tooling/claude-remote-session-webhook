@@ -62,3 +62,48 @@ func TestExactlyOneLeads(t *testing.T) {
 	cancel()
 	wg.Wait()
 }
+
+func holderAfterCancel(t *testing.T, keep bool) string {
+	t.Helper()
+	client := fake.NewSimpleClientset()
+	started := make(chan struct{})
+	e, err := NewElector(client, ElectorConfig{
+		Namespace: "ns", Name: "lock", Identity: "me", KeepLeaseOnCancel: keep,
+		LeaseDuration: 2 * time.Second, RenewDeadline: time.Second, RetryPeriod: 100 * time.Millisecond,
+	}, func(context.Context) { close(started) }, func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.Run(ctx) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("never became leader")
+	}
+	cancel()
+	<-done
+	l, err := client.CoordinationV1().Leases("ns").Get(context.Background(), "lock", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Spec.HolderIdentity == nil {
+		return ""
+	}
+	return *l.Spec.HolderIdentity
+}
+
+func TestElectorReleasesOnCancelByDefault(t *testing.T) {
+	t.Parallel()
+	if got := holderAfterCancel(t, false); got != "" {
+		t.Errorf("holder = %q, want the lease released", got)
+	}
+}
+
+func TestElectorKeepLeaseOnCancelDoesNotRelease(t *testing.T) {
+	t.Parallel()
+	if got := holderAfterCancel(t, true); got != "me" {
+		t.Errorf("holder = %q, want the lease kept by me", got)
+	}
+}

@@ -39,10 +39,17 @@ func InCluster() (*rest.Config, error) {
 type ElectorConfig struct {
 	Namespace, Name, Identity                 string
 	LeaseDuration, RenewDeadline, RetryPeriod time.Duration
+	// KeepLeaseOnCancel leaves the Lease held when the elector stops, so a
+	// successor waits out LeaseDuration. client-go can release on a renew
+	// failure before the leader's callback context is cancelled, which lets a
+	// standby start beside a worker that has not stopped. The default, false,
+	// releases for a fast hand-over.
+	KeepLeaseOnCancel bool
 }
 
-// NewElector builds a Lease-backed elector. ReleaseOnCancel hands the lease back
-// on shutdown so a rolling update does not wait out LeaseDuration.
+// NewElector builds a Lease-backed elector. Unless KeepLeaseOnCancel is set,
+// ReleaseOnCancel hands the lease back on shutdown so a rolling update does not
+// wait out LeaseDuration.
 func NewElector(client kubernetes.Interface, c ElectorConfig, onStart func(context.Context), onStop func()) (*leaderelection.LeaderElector, error) {
 	// Checked before the client is touched so a misconfigured pod fails at start.
 	switch {
@@ -68,7 +75,7 @@ func NewElector(client kubernetes.Interface, c ElectorConfig, onStart func(conte
 			Client:     client.CoordinationV1(),
 			LockConfig: resourcelock.ResourceLockConfig{Identity: c.Identity},
 		},
-		ReleaseOnCancel: true,
+		ReleaseOnCancel: !c.KeepLeaseOnCancel,
 		LeaseDuration:   c.LeaseDuration,
 		RenewDeadline:   c.RenewDeadline,
 		RetryPeriod:     c.RetryPeriod,

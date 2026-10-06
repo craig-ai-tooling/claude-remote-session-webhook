@@ -112,15 +112,23 @@ func finish(q workqueue.TypedRateLimitingInterface[string], name string, err err
 	}
 }
 
+func electorConfig(r *Reconciler, identity string) kube.ElectorConfig {
+	c := leaseTimings
+	c.Namespace, c.Name, c.Identity = r.cfg.LeaseNamespace, LeaseName, identity
+	// Never release: client-go can release, or let a standby acquire, on a renew
+	// failure before the worker's context is cancelled. Failover then waits
+	// LeaseDuration, which bounds any overlap, and the worker is cancelled at
+	// loss and must exit well inside it.
+	c.KeepLeaseOnCancel = true
+	return c
+}
+
 // RunWithLease runs the loop only while holding the reconciler's Lease. A loop
 // that dies ends the call, so a reconciler that cannot act never keeps renewing.
 //
-// The worker is cancelled and joined before the Lease is released. The elector
-// runs under its own context, which is cancelled only after the join, so
-// ReleaseOnCancel hands the Lease back after the last write the worker could
-// make. Cancelling the caller's context straight into the elector would release
-// the Lease while the worker was still reconciling, and a standby could act
-// beside it.
+// The worker is cancelled and joined before the call returns. The elector runs
+// under its own context so the Lease keeps being renewed while the worker is
+// joined on a caller shutdown. The Lease is never released (electorConfig).
 func RunWithLease(ctx context.Context, kc kubernetes.Interface, identity string, r *Reconciler) error {
 	electorCtx, stopElector := context.WithCancel(context.Background())
 	defer stopElector()
@@ -134,9 +142,7 @@ func RunWithLease(ctx context.Context, kc kubernetes.Interface, identity string,
 	)
 	runErr := make(chan error, 1)
 
-	c := leaseTimings
-	c.Namespace, c.Name, c.Identity = r.cfg.LeaseNamespace, LeaseName, identity
-	elector, err := kube.NewElector(kc, c, func(lctx context.Context) {
+	elector, err := kube.NewElector(kc, electorConfig(r, identity), func(lctx context.Context) {
 		mu.Lock()
 		if stopping {
 			mu.Unlock()
