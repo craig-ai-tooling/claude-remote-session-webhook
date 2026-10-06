@@ -101,6 +101,24 @@ func TestConversationsForDispatch(t *testing.T) {
 	})
 }
 
+func TestConversationsForCodexResolvesTheWorkDir(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	home := t.TempDir()
+	f.mgr.SetCodexHome(home)
+	plantCodexRollout(t, home, codexTestID(1), f.repo())
+	plantCodexRollout(t, home, codexTestID(2), f.outside)
+
+	if got := f.mgr.ConversationsFor(harness.Codex, f.outside); len(got) != 0 {
+		t.Errorf("ConversationsFor(codex) outside the approved roots returned %d conversations, want 0", len(got))
+	}
+	link := f.insideLink()
+	if got := f.mgr.ConversationsFor(harness.Codex, link); len(got) != 1 || got[0].ID != codexTestID(1) {
+		t.Errorf("ConversationsFor(codex) through a symlink spelling = %v, want the one rollout for the real path", got)
+	}
+}
+
 func TestContinueOtherRefusedEarly(t *testing.T) {
 	t.Parallel()
 

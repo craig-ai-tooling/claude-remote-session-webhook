@@ -294,7 +294,14 @@ func (m *Manager) ConversationsFor(h harness.Name, workDir string) []Conversatio
 		if m.codexHome == "" {
 			return nil
 		}
-		return codexConversations(filepath.Join(m.codexHome, "sessions"), workDir)
+		// Resolved as Claude's lookup resolves it: a history outside the approved
+		// roots is not offered, and a symlink spelling of a valid directory matches
+		// the path Codex recorded.
+		dir, err := ResolveWorkDir(workDir, m.roots)
+		if err != nil {
+			return nil
+		}
+		return codexConversations(filepath.Join(m.codexHome, "sessions"), dir)
 	case harness.Other:
 		return nil
 	default:
