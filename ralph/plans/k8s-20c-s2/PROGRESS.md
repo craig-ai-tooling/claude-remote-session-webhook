@@ -129,6 +129,24 @@ Added `deploy/k8s/manifest/rbac.go` (`ReconcilerRBAC`, `LeaseRBAC`, `DaemonRBAC`
   helper is `roleAndBinding`. `deploy/k8s/*.json` does not exist yet, so run the generator before the drift test.
 - Not fixed: the walker's `secrets`/`*` check ignores `resourceNames` and `nonResourceURLs`; neither is used.
 
+## Iteration 7 (T7, 10/6/26)
+
+Added `deploy/k8s/gen/main.go`, ran it to write the four JSON files, and added `drift_test.go` and `fixtures_test.go`.
+
+- Failing first: `go test ./deploy/k8s/manifest` printed
+  `drift_test.go:23: read crd.json: open ../crd.json: no such file or directory; run ...` (and the same for the
+  three RBAC files). Passes after the generator ran.
+- The SC-004 walk test passes on a clean tree, so it cannot fail first against the old code. `TestForbiddenHitsCanFail`
+  plants an upper-case match in a temp dir and proves the scanner reports it.
+- Gate green: build, vet, test, `-tags tmux`, golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0.
+  `-tags quickstart ./cmd/crswd` failed once on `TestDashboardQuickstartStory2Cap` (the iteration 3 flake) and
+  passed on the immediate rerun (87s, port 8765 free).
+- Next iteration (T8): gosec G304 fires on `os.ReadFile` with a variable path in tests too, so each carries a
+  `//nolint:gosec` with a reason. The generator writes at 0600; git stores the files as 0644 regardless.
+  `deploy/` (not `deploy/k8s`) holds `crswd.example.service`, which names the forbidden strings, so the SC-004 walk
+  must stay scoped to `deploy/k8s`. T8 edits only `specs/017-k8s-native-execution/spec.md` FR-013, then runs
+  every command in `VALIDATION_CONTRACT.md` and appends `RALPH_COMPLETE`.
+
 ## NEEDS CLARIFICATION
 
 None open.
