@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
@@ -590,5 +591,126 @@ func TestAuthCachesHaveClaudeEntry(t *testing.T) {
 	}
 	if got := f.authStateCached(context.Background(), harness.Codex); got != authUnknown {
 		t.Errorf("authStateCached(codex) = %q; want %q for an absent cache", got, authUnknown)
+	}
+}
+
+// TestDashboardAuthHarnessParam: GET /dashboard/auth answers for the harness the
+// query names, and refuses a value it does not accept rather than reading it as
+// Claude.
+//
+// **Must fail when** the route ignores the harness parameter, answers Claude's
+// cache for harness=codex, or lets a repeated or unknown value through.
+func TestDashboardAuthHarnessParam(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query      string
+		codexRelay signInRelay
+		wantCode   int
+		want       authState
+	}{
+		"absent is claude":     {"", &fakeRelay{signedIn: false}, http.StatusOK, authOK},
+		"claude":               {"?harness=claude", &fakeRelay{signedIn: false}, http.StatusOK, authOK},
+		"codex signed in":      {"?harness=codex", &fakeRelay{signedIn: true}, http.StatusOK, authOK},
+		"codex signed out":     {"?harness=codex", &fakeRelay{signedIn: false}, http.StatusOK, authBad},
+		"codex not configured": {"?harness=codex", nil, http.StatusOK, authUnknown},
+		"duplicate":            {"?harness=codex&harness=claude", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+		"unknown":              {"?harness=gemini", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+		"empty value":          {"?harness=", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFleet(t)
+			// Claude is signed in and Codex is whatever the row says, so an answer
+			// read from the wrong harness's cache shows as the wrong state.
+			f.signins[harness.Claude] = &fakeRelay{signedIn: true}
+			if tc.codexRelay != nil {
+				f.signins[harness.Codex] = tc.codexRelay
+				f.authCaches[harness.Codex] = &authCache{}
+			}
+
+			w := f.open(t, authPath+tc.query)
+			if w.Code != tc.wantCode {
+				t.Fatalf("GET %s%s = %d (%s); want %d", authPath, tc.query, w.Code, w.Body.String(), tc.wantCode)
+			}
+			if tc.wantCode != http.StatusOK {
+				return
+			}
+			if got := authAnswer(t, w); got.State != tc.want {
+				t.Errorf("GET %s%s = %q; want %q", authPath, tc.query, got.State, tc.want)
+			}
+		})
+	}
+}
+
+// TestDashboardAuthDefaultUnchanged: a request with no harness query is
+// byte-identical to the one the pill has always made, and to harness=claude.
+//
+// **Must fail when** the default body changes shape or differs from the explicit
+// Claude one.
+func TestDashboardAuthDefaultUnchanged(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.signins[harness.Claude] = &fakeRelay{signedIn: true}
+
+	bare := f.open(t, authPath)
+	explicit := f.open(t, authPath+"?harness=claude")
+
+	if got, want := strings.TrimSpace(bare.Body.String()), `{"state":"ok"}`; got != want {
+		t.Errorf("GET %s body = %q; want %q", authPath, got, want)
+	}
+	if bare.Body.String() != explicit.Body.String() {
+		t.Errorf("bare body %q differs from harness=claude body %q", bare.Body.String(), explicit.Body.String())
+	}
+}
+
+// TestNewWiresCodexRelayOnlyWhenOffered: New builds the Codex relay and its cache
+// exactly when the config names a command called codex that runs Codex. A
+// NewWith server never has one, so this drives New.
+//
+// **Must fail when** New leaves the Codex entries unwired for a daemon that
+// offers Codex, or wires them for one that does not.
+func TestNewWiresCodexRelayOnlyWhenOffered(t *testing.T) {
+	t.Parallel()
+
+	const claudeCommand = "claude --dangerously-skip-permissions"
+	tests := map[string]struct {
+		commands map[string]string
+		want     bool
+	}{
+		"codex offered": {map[string]string{
+			config.DefaultStartCommandName: claudeCommand,
+			"codex":                        "/usr/local/bin/codex --yolo",
+		}, true},
+		"codex absent": {map[string]string{
+			config.DefaultStartCommandName: claudeCommand,
+		}, false},
+		"codex name runs another binary": {map[string]string{
+			config.DefaultStartCommandName: claudeCommand,
+			"codex":                        claudeCommand,
+		}, false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := testConfig(loopbackListen)
+			cfg.StartCommands = config.NewStartCommands(tc.commands)
+			srv, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New = _, %v; want a server", err)
+			}
+			if got := srv.signins[harness.Codex] != nil; got != tc.want {
+				t.Errorf("signins[codex] wired = %v; want %v", got, tc.want)
+			}
+			if got := srv.authCaches[harness.Codex] != nil; got != tc.want {
+				t.Errorf("authCaches[codex] wired = %v; want %v", got, tc.want)
+			}
+		})
 	}
 }

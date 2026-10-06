@@ -43,7 +43,7 @@ tasks.md narrows this further.
 - [x] **T020** Add the codexauth package. Done when `go test ./internal/codexauth/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T020.
 - [x] **T021** Codex sign-in flow in loginrelay. Done when `go test ./internal/loginrelay/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T021.
 - [x] **T022a** Relays and auth cache become per-harness maps. Done when `go test ./internal/httpapi/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T022a.
-- [ ] **T022b** Codex relay wiring and the auth status route. Done when `go test ./internal/httpapi/... -run DashboardAuth` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T022b.
+- [x] **T022b** Codex relay wiring and the auth status route. Done when `go test ./internal/httpapi/... -run DashboardAuth` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T022b.
 - [ ] **T022c** Per-harness create gate. Done when `go test ./internal/httpapi/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T022c.
 - [ ] **T023** needs-auth for Codex panes. Done when `go test ./internal/httpapi/... -run NeedsAuth` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T023.
 - [ ] **T024** Sign-in routes and panel for Codex. Done when `go test ./internal/httpapi/... -run 'SignIn|Codex'` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T024.

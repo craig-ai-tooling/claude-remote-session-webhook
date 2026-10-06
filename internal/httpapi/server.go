@@ -396,6 +396,20 @@ func New(cfg *config.Config) (*Server, error) {
 			srv.signins[harness.Claude] = relay
 		}
 	}
+	// The Codex relay, on the same terms and from the same session environment, so
+	// the credential it checks is the one a Codex session reads. codexOffered also
+	// checks the binary, so an entry named codex that runs something else gets no
+	// relay. The cache is wired with it: authStateCached reads an absent one as
+	// unknown and never creates one lazily.
+	if codexCommand, offered := srv.codexOffered(); offered {
+		relay, err := loginrelay.NewCodex(tmux, codexCommand, relayWorkDir(cfg), sessionEnv)
+		if err != nil {
+			srv.report(fmt.Errorf("the Codex sign-in relay is unavailable on this host: %w", err))
+		} else {
+			srv.signins[harness.Codex] = relay
+			srv.authCaches[harness.Codex] = &authCache{}
+		}
+	}
 	// A Config with no default start command is not reported, because loading one
 	// always seeds it: reaching here without one means a Config built by hand
 	// rather than by the loader, which is a test fixture and not a host. The

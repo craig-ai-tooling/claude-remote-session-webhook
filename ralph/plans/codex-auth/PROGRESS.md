@@ -36,6 +36,16 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: no Codex relay or cache is wired yet. T022b does that.
 - Left: T022b to T026.
 
+## Iteration 4 (T022b, 10/6/26)
+
+- `New` now builds the Codex relay with `loginrelay.NewCodex` when `codexOffered` is true, and sets `signins[harness.Codex]` and `authCaches[harness.Codex]` together. It sits after the Claude relay and the kubernetes-mode return. A build failure is reported, not fatal.
+- `dashboardAuth` reads `parseHarness(r.URL.Query(), fieldHarness)`; a bad value gets `rejectBadRequest(errHarnessParam)`. No query still yields the Claude answer with an identical body.
+- Tests written first (`TestDashboardAuthHarnessParam`, `TestDashboardAuthDefaultUnchanged`, `TestNewWiresCodexRelayOnlyWhenOffered`); five subtests failed before the change, then all passed. The third drives `New` itself, since a `NewWith` server never has a Codex relay.
+- Learned: the shell guard rejected a heredoc with a brace followed by a quote again, so the tests went in with Edit.
+- Not run: `-tags tmux`, `-tags quickstart`, `k8s/` checks (task touched none of them).
+- Not fixed: the create gate still reads only Claude's cache. T022c makes it per-harness.
+- Left: T022c to T026.
+
 ## NEEDS CLARIFICATION
 
 (none yet)

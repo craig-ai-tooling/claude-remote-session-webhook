@@ -195,7 +195,12 @@ func (s *Server) askAuthState(ctx context.Context, h harness.Name) authState {
 // is for the two embedded assets, so nothing about this answer is cached past
 // the request that asked for it.
 func (s *Server) dashboardAuth(w http.ResponseWriter, r *http.Request) {
-	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context(), harness.Claude)})
+	h, err := parseHarness(r.URL.Query(), fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
+	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context(), h)})
 }
 
 // ---------------------------------------------------------------- create gate
