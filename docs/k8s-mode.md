@@ -103,6 +103,7 @@ The chart creates no secret values. It references Secrets you create in the rele
 |---|---|---|
 | `sharedSecret.existingSecret` | `secret` (`openssl rand -hex 32`) | always |
 | `dashboardPassword.existingSecret` | `password` | for the password door |
+| `access.allowedEmailsSecret.name` | `access.allowedEmailsSecret.key` (comma-separated addresses) | for the Cloudflare Access door |
 | `claudeCredentials.secretName` (default `claude-credentials`) | the keeper login | for Claude Code sessions |
 | `codexAuth.secretName` (default `codex-auth`) | the namespace's Codex login | for Codex sessions |
 | `cloudflared.tokenSecret` | `token` | when `cloudflared.enabled` |
@@ -143,7 +144,8 @@ with no browser door.
 ```
 kubectl create namespace crswd
 kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
-helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode=<node>
+SESSION_NODE=$(kubectl get nodes -l kubernetes.io/arch=amd64 -o name | head -1 | cut -d/ -f2)  # every session pod runs on this node, beside the session disk
+helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode="$SESSION_NODE"
 helm upgrade crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --reuse-values
 helm uninstall crswd -n crswd
 ```

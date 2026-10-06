@@ -416,7 +416,8 @@ and `helm` 3.
 ```bash
 kubectl create namespace crswd
 kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
-helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode=<node>
+SESSION_NODE=$(kubectl get nodes -l kubernetes.io/arch=amd64 -o name | head -1 | cut -d/ -f2)  # every session pod runs on this node, beside the session disk
+helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode="$SESSION_NODE"
 kubectl -n crswd port-forward deploy/crswd 8765
 ```
 

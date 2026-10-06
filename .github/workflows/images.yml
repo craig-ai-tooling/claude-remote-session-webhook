@@ -92,11 +92,17 @@ jobs:
         run: |
           for pair in "crswd:crswd" "session:crswd-session"; do
             key="${pair%%:*}"; img="${pair##*:}"
-            if docker buildx imagetools inspect "ghcr.io/craig-ai-tooling/$img:$VERSION" > /dev/null 2>&1; then
+            # Only a registry answer that the tag is absent allows a push. Any other
+            # failure stops the job: treating "could not ask" as "absent" is how a
+            # published tag gets overwritten.
+            if out=$(docker buildx imagetools inspect "ghcr.io/craig-ai-tooling/$img:$VERSION" 2>&1); then
               echo "::notice::ghcr.io/craig-ai-tooling/$img:$VERSION already exists, not pushing"
               echo "$key=true" >> "$GITHUB_OUTPUT"
-            else
+            elif printf '%s' "$out" | grep -qiE 'not found|manifest unknown|name unknown|404'; then
               echo "$key=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::could not tell whether $img:$VERSION exists: $out"
+              exit 1
             fi
           done
 
@@ -134,8 +140,11 @@ jobs:
         run: |
           helm package deploy/chart --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP"
           echo "$GH_TOKEN" | helm registry login ghcr.io -u "$GH_ACTOR" --password-stdin
-          if helm show chart oci://ghcr.io/craig-ai-tooling/charts/crswd --version "$VERSION" > /dev/null 2>&1; then
+          if out=$(helm show chart oci://ghcr.io/craig-ai-tooling/charts/crswd --version "$VERSION" 2>&1); then
             echo "::notice::chart crswd $VERSION already exists, not pushing"
             exit 0
+          elif ! printf '%s' "$out" | grep -qiE 'not found|manifest unknown|name unknown|404'; then
+            echo "::error::could not tell whether chart crswd $VERSION exists: $out"
+            exit 1
           fi
           helm push "$RUNNER_TEMP/crswd-$VERSION.tgz" oci://ghcr.io/craig-ai-tooling/charts
