@@ -225,3 +225,27 @@ func TestCRDPrinterColumns(t *testing.T) {
 		}
 	}
 }
+
+// Admission runs only before a pod exists, so the fields it reads must not
+// change afterwards. Conversation stays mutable: the daemon records it.
+func TestCRDImmutableSpecFields(t *testing.T) {
+	t.Parallel()
+	crd := decodedCRD(t)
+	rules := asList(t, dig(t, crd, "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations"))
+	got := map[string]string{}
+	for _, r := range rules {
+		m := asObject(t, r)
+		rule, _ := m["rule"].(string)
+		msg, _ := m["message"].(string)
+		got[rule] = msg
+	}
+	for _, f := range []string{"sessionName", "owner", "workDir", "startCommand", "lifetime"} {
+		rule := "self." + f + " == oldSelf." + f
+		if msg, ok := got[rule]; !ok || msg != f+" is immutable" {
+			t.Errorf("missing rule %q with message %q; have %v", rule, f+" is immutable", got)
+		}
+	}
+	if len(got) != 5 {
+		t.Errorf("rules = %d, want 5 (conversation must stay mutable): %v", len(got), got)
+	}
+}

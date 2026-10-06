@@ -210,3 +210,15 @@ func TestAdmitDoesNotMutateOthers(t *testing.T) {
 		t.Fatal("Admit reordered the caller's slice")
 	}
 }
+
+func TestCheckSpecIgnoresTheCap(t *testing.T) {
+	t.Parallel()
+	o := obj("a", "ua", now.Add(-time.Hour), nil)
+	if ok, why := CheckSpec(o, roots, 0); !ok {
+		t.Fatalf("CheckSpec = false, %q; a spec-only check has no cap", why)
+	}
+	o.Spec.WorkDir = "/etc"
+	if ok, _ := CheckSpec(o, roots, 0); ok {
+		t.Fatal("CheckSpec accepted a working directory outside the roots")
+	}
+}

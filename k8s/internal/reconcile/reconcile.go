@@ -72,7 +72,7 @@ func (r *Reconciler) ReconcileOne(ctx context.Context, name string) error {
 		return nil
 	}
 	if obj.Status.Phase == v1alpha1.PhaseRejected || obj.Status.Phase == v1alpha1.PhaseFailed {
-		return nil
+		return r.endRejectedPod(ctx, obj)
 	}
 
 	pods := r.kube.CoreV1().Pods(r.cfg.SessionNamespace)
@@ -119,6 +119,26 @@ func (r *Reconciler) ReconcileOne(ctx context.Context, name string) error {
 	return r.setStatus(ctx, obj, phase, "")
 }
 
+// endRejectedPod finishes a rejection whose pod delete failed: the status is
+// written first, so without this the retry would see a terminal object and
+// leave the pod running.
+func (r *Reconciler) endRejectedPod(ctx context.Context, obj v1alpha1.AgentSession) error {
+	if obj.Status.Phase != v1alpha1.PhaseRejected {
+		return nil
+	}
+	pod, err := r.kube.CoreV1().Pods(r.cfg.SessionNamespace).Get(ctx, obj.Metadata.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reconcile: get pod %s: %w", obj.Metadata.Name, err)
+	}
+	if !ownedBy(pod, obj) || pod.DeletionTimestamp != nil {
+		return nil
+	}
+	return r.deletePod(ctx, pod)
+}
+
 func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSession, pod *corev1.Pod) error {
 	if !ownedBy(pod, obj) {
 		return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, "a pod with this session's name exists and is not owned by it")
@@ -127,6 +147,14 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 	// (FR-010: two writers fork a conversation).
 	if pod.DeletionTimestamp != nil {
 		return nil
+	}
+	// The CRD makes the spec immutable, but an object that predates the rule, or
+	// a cluster without it, must not leave an inadmissible session running. The
+	// cap is left out: it counts creation order and would evict a running one.
+	if live := pod.Status.Phase; live == corev1.PodRunning || live == corev1.PodPending || live == "" {
+		if ok, reason := admit.CheckSpec(obj, r.cfg.Roots(), r.cfg.LifetimeMax); !ok {
+			return r.rejectLive(ctx, obj, pod, reason)
+		}
 	}
 	name := obj.Metadata.Name
 	_, counted := obj.Metadata.Annotations[AnnotationRecreates]
@@ -172,6 +200,25 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 		}
 		return nil
 	}
+}
+
+// rejectLive records the verdict before it ends the pod, so a crash between the
+// two leaves the object Rejected rather than a running pod nobody judged. The
+// delete keeps the pod's own grace period and is bound to its UID.
+func (r *Reconciler) rejectLive(ctx context.Context, obj v1alpha1.AgentSession, pod *corev1.Pod, reason string) error {
+	if err := r.setStatus(ctx, obj, v1alpha1.PhaseRejected, reason); err != nil {
+		return err
+	}
+	return r.deletePod(ctx, pod)
+}
+
+func (r *Reconciler) deletePod(ctx context.Context, pod *corev1.Pod) error {
+	uid := pod.UID
+	err := r.kube.CoreV1().Pods(r.cfg.SessionNamespace).Delete(ctx, pod.Name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("reconcile: delete pod %s: %w", pod.Name, err)
+	}
+	return nil
 }
 
 // ownedBy is true when the pod is this object's controlled, labelled pod.
