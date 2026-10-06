@@ -67,3 +67,27 @@ For the next iteration:
 - The shell sandbox refuses `$?` in a command ("a variable can't be checked"); use `&& echo OK || echo FAIL`.
 
 Noticed, not fixed: none.
+
+## Iteration 2 (T2, httpapi.NewForCluster)
+
+Done: new `internal/httpapi/cluster.go` (`ClusterHooks`, `NewForCluster`, and `Server.PodRecord`,
+which T3 needs, so T3 does not have to add it) and `cluster_test.go` with the five Design §2 tests.
+
+Failing first: `internal/httpapi/cluster_test.go:41:12: undefined: NewForCluster` (the package did
+not compile).
+
+Full pre-commit list passed. `-tags quickstart` failed once on
+`TestDashboardQuickstartStory2Cap` ("a stream opened after one closed = 429, want 200"), passed
+alone and passed on the full rerun (46s). A flake under load; nothing in this change touches streams.
+
+For the next iteration:
+- `session.CreateRequest` needs a `Name` or `Create` fails with "a name is required".
+- The `TestNewForClusterWiresHooks` transcript half drives `Supervisor.Sweep` on a claude session
+  whose pane died (`fake.SetPaneCommand(name, "bash")`); a nil journal is safe there.
+- golangci-lint (errcheck and gosec) rejects both a bare and a `_ =` discarded `Sweep` error; the
+  test logs it instead.
+- `Server.PodRecord` already exists in `cluster.go`, so Design §3 step 11's "otherwise add" branch
+  is done. `ctl.SetDescriber` itself was not checked: grep `podctl` for it first.
+- Heredocs with `cat >> file <<'EOF'` chained after `&&` tripped the shell parser; use Edit.
+
+Noticed, not fixed: the `TestDashboardQuickstartStory2Cap` flake above.
