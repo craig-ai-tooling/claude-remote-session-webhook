@@ -248,7 +248,9 @@ the last `-c` for a key, so an operator's own later `-c check_for_update_on_star
 
 ### T006 — `SetMode` refuses non-Claude sessions (FR-012a)
 
-- **Files**: `internal/session/manager.go` (`SetMode` `:1297`), `internal/session/mode_test.go`.
+- **Files**: `internal/session/manager.go` (`SetMode` `:1297`), `internal/session/harness_test.go`
+  (default build; `mode_test.go` is `//go:build tmux` and must not be used for this fake-based test,
+  operator decision 2026-10-06).
 - **Interface**: first check after the dead-state check: `if !m.specOf(s).RemoteControl { return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable) }`.
 - **Edge cases**: Claude session behaviour unchanged; a session whose start-command name is no longer
   configured resolves to Other and is refused the same way (it could not be switched today either:
