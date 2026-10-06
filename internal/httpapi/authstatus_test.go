@@ -714,3 +714,139 @@ func TestNewWiresCodexRelayOnlyWhenOffered(t *testing.T) {
 		})
 	}
 }
+
+// ------------------------------------------- the create gate, per harness (T022c)
+
+// signedOutCodexHost is a daemon that offers Codex, with Claude's and Codex's
+// answers set independently so a test can tell which cache a create read.
+func signedOutCodexHost(s *testServer, claudeIn, codexIn bool) (claude, codex *fakeRelay) {
+	s.offersCodex("codex --no-alt-screen")
+	claude = &fakeRelay{signedIn: claudeIn}
+	codex = &fakeRelay{signedIn: codexIn}
+	s.signins[harness.Claude] = claude
+	s.signins[harness.Codex] = codex
+	s.authCaches[harness.Codex] = &authCache{}
+	return claude, codex
+}
+
+func codexCreateBody(s *testServer) []byte {
+	return []byte(`{"name":"refactor-auth","work_dir":"` + s.fixture.repo + `","start_command":"codex"}`)
+}
+
+// **Must fail when** a Codex create is gated on Claude's cache, or not gated.
+func TestCreateCodexGatedOnCodexAuth(t *testing.T) {
+	t.Parallel()
+
+	t.Run("API door", func(t *testing.T) {
+		t.Parallel()
+
+		s := newAuditedServer(t)
+		signedOutCodexHost(s, true, false)
+
+		before := len(s.fixture.tmux.Calls())
+		got := postSessions(t, s, codexCreateBody(s))
+
+		if got.answer.Code != http.StatusServiceUnavailable {
+			t.Fatalf("codex create on a Codex-signed-out host = %d (%q); want %d",
+				got.answer.Code, got.answer.Body, http.StatusServiceUnavailable)
+		}
+		if b := got.answer.Body.String(); b != string(bodySignedOut) {
+			t.Errorf("body = %q; want %q", b, bodySignedOut)
+		}
+		if extra := s.fixture.tmux.Calls()[before:]; len(extra) != 0 {
+			t.Errorf("the refused create ran %v; want no tmux command", extra)
+		}
+		if trail := s.sink.String(); !strings.Contains(trail, errCreateCodexSignedOut.Error()) {
+			t.Errorf("the trail lacks %q:\n%s", errCreateCodexSignedOut, trail)
+		}
+	})
+
+	t.Run("browser door", func(t *testing.T) {
+		t.Parallel()
+
+		c := newCreator(t)
+		signedOutCodexHost(c.testServer, true, false)
+
+		w := c.post(t, c.codexCreate(t, "codex"))
+
+		if got := outcomeOf(t, w); got != string(outcomeSignedOut) {
+			t.Fatalf("outcome = %q; want %q", got, outcomeSignedOut)
+		}
+		if calls := c.fixture.tmux.Calls(); len(calls) != 0 {
+			t.Errorf("the refused create ran %v; want no tmux command", calls)
+		}
+		if n := len(c.owned()); n != 0 {
+			t.Errorf("the store holds %d session(s); want none", n)
+		}
+		if trail := c.sink.String(); !strings.Contains(trail, errCreateCodexSignedOut.Error()) {
+			t.Errorf("the trail lacks %q:\n%s", errCreateCodexSignedOut, trail)
+		}
+	})
+}
+
+// **Must fail when** one harness's signed-out answer gates the other's creates.
+func TestCreateClaudeNotGatedOnCodex(t *testing.T) {
+	t.Parallel()
+
+	t.Run("claude create, codex signed out", func(t *testing.T) {
+		t.Parallel()
+
+		s := newAuditedServer(t)
+		signedOutCodexHost(s, true, false)
+
+		if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
+			t.Fatalf("claude create = %d (%q); want %d", got.answer.Code, got.answer.Body, http.StatusCreated)
+		}
+	})
+
+	t.Run("codex create, claude signed out", func(t *testing.T) {
+		t.Parallel()
+
+		s := newAuditedServer(t)
+		signedOutCodexHost(s, false, true)
+
+		if got := postSessions(t, s, codexCreateBody(s)); got.answer.Code != http.StatusCreated {
+			t.Fatalf("codex create = %d (%q); want %d", got.answer.Code, got.answer.Body, http.StatusCreated)
+		}
+	})
+}
+
+// **Must fail when** harness.Other reads a cache.
+func TestCreateOtherNeverGated(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	claude, codex := signedOutCodexHost(s, false, false)
+
+	if s.createRefusedWhileSignedOut(context.Background(), harness.Other) {
+		t.Error("createRefusedWhileSignedOut(Other) = true; want false")
+	}
+	if n := claude.callCount() + codex.callCount(); n != 0 {
+		t.Errorf("the gate asked a relay %d time(s) for harness.Other; want 0", n)
+	}
+}
+
+// harnessOfStartName resolves the name a create carries to the harness it runs.
+func TestHarnessOfStartName(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	s.cfg.StartCommands = config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --no-alt-screen",
+		"plain":                        "bash",
+	})
+
+	tests := map[string]harness.Name{
+		"":        harness.Claude,
+		"default": harness.Claude,
+		"codex":   harness.Codex,
+		"plain":   harness.Other,
+		"unknown": harness.Claude,
+	}
+	for name, want := range tests {
+		if got := s.harnessOfStartName(name); got != want {
+			t.Errorf("harnessOfStartName(%q) = %q; want %q", name, got, want)
+		}
+	}
+}

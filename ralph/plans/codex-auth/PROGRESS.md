@@ -46,6 +46,15 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: the create gate still reads only Claude's cache. T022c makes it per-harness.
 - Left: T022c to T026.
 
+## Iteration 5 (T022c, 10/6/26)
+
+- `createRefusedWhileSignedOut(ctx, h)` reads the create's own harness cache and returns false for `harness.Other` without reading one. `failSignedOut(w, r, h)` and the browser gate record `errCreateCodexSignedOut` for Codex, `errCreateSignedOut` otherwise, through a small `signedOutReason(h)` helper. `harnessOfStartName` added; an unknown name resolves to Claude.
+- Both callers (`actions.go` browser gate, `sessions.go` API gate) resolve the harness from the start-command name. 503 and `bodySignedOut` unchanged.
+- Tests written first (`TestCreateCodexGatedOnCodexAuth` on both doors, `TestCreateClaudeNotGatedOnCodex`, `TestCreateOtherNeverGated`, `TestHarnessOfStartName`); they failed to build before the change, then passed. No existing test needed editing.
+- Not run: `-tags tmux`, `-tags quickstart`, `k8s/` checks (task touched none of them).
+- Not fixed: the `Other` branch is covered by calling the predicate directly, not by a create through a plain-command start entry.
+- Left: T023 to T026.
+
 ## NEEDS CLARIFICATION
 
 (none yet)

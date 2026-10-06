@@ -233,6 +233,17 @@ var bodySignedOut = []byte(`{"error":"host signed out"}`)
 // is the thing to go and fix.
 var errCreateSignedOut = errors.New("this host is signed out of Claude, so the session was refused")
 
+// errCreateCodexSignedOut is errCreateSignedOut for a Codex create, so the trail
+// says which login the host lost.
+var errCreateCodexSignedOut = errors.New("this host is signed out of Codex, so the session was refused")
+
+func signedOutReason(h harness.Name) error {
+	if h == harness.Codex {
+		return errCreateCodexSignedOut
+	}
+	return errCreateSignedOut
+}
+
 // createRefusedWhileSignedOut reports whether a create must be turned away right
 // now because a session started here would come up on the sign-in screen.
 //
@@ -257,8 +268,26 @@ var errCreateSignedOut = errors.New("this host is signed out of Claude, so the s
 // to a revoked token family, not to a missing binary — and it is the only state
 // where a refusal is certainly right. A host that cannot be asked keeps the
 // backstop it already had, which is the needs-auth card.
-func (s *Server) createRefusedWhileSignedOut(ctx context.Context) bool {
-	return s.authStateCached(ctx, harness.Claude) == authBad
+//
+// The answer is the create's own harness's. A host signed out of Codex still
+// starts Claude sessions and the reverse, and harness.Other has no sign-in this
+// daemon can ask about, so it never reads a cache.
+func (s *Server) createRefusedWhileSignedOut(ctx context.Context, h harness.Name) bool {
+	if h == harness.Other {
+		return false
+	}
+	return s.authStateCached(ctx, h) == authBad
+}
+
+// harnessOfStartName is the harness a create naming this start command runs. An
+// unknown name is Claude because the manager refuses it later and the gate has
+// always applied to it.
+func (s *Server) harnessOfStartName(name string) harness.Name {
+	command, ok := s.cfg.StartCommands.Command(name)
+	if !ok {
+		return harness.Claude
+	}
+	return harness.Of(command)
 }
 
 // failSignedOut writes the API door's 503 and records why.
@@ -270,8 +299,8 @@ func (s *Server) createRefusedWhileSignedOut(ctx context.Context) bool {
 // The client that matters is the one this repo already has — lawnmower-route
 // treats any refusal as "leave the item queued" — and a distinguishable status
 // is what lets it say which refusal it hit.
-func (s *Server) failSignedOut(w http.ResponseWriter, r *http.Request) {
-	AuditFrom(r.Context()).Deny(errCreateSignedOut.Error())
+func (s *Server) failSignedOut(w http.ResponseWriter, r *http.Request, h harness.Name) {
+	AuditFrom(r.Context()).Deny(signedOutReason(h).Error())
 
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusServiceUnavailable)

@@ -540,8 +540,9 @@ func (s *Server) createFromBrowser(w http.ResponseWriter, r *http.Request) {
 	// cannot disagree about whether this host can run a session. It sits where the
 	// mode and lifetime refusals do: ahead of the manager, so nothing is resolved
 	// and no tmux command runs for a create that is not going to happen.
-	if s.createRefusedWhileSignedOut(r.Context()) {
-		AuditFrom(r.Context()).Deny(errCreateSignedOut.Error())
+	gated := s.harnessOfStartName(startCommand)
+	if s.createRefusedWhileSignedOut(r.Context(), gated) {
+		AuditFrom(r.Context()).Deny(signedOutReason(gated).Error())
 		s.redirectOutcome(w, r, outcomeSignedOut)
 		return
 	}

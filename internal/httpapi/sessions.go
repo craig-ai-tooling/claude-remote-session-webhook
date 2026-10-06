@@ -440,8 +440,8 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	// what was wrong with it, and ahead of the manager so a refused create costs
 	// no path resolution and no tmux command — where the cap and the rate limit
 	// already sit, for the same reason.
-	if s.createRefusedWhileSignedOut(r.Context()) {
-		s.failSignedOut(w, r)
+	if h := s.harnessOfStartName(req.StartCommand); s.createRefusedWhileSignedOut(r.Context(), h) {
+		s.failSignedOut(w, r, h)
 		return
 	}
 
