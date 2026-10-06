@@ -61,6 +61,27 @@ Exported `UnderAnyRoot` and added `LexicalWorkDir` in `internal/session/workdir.
   `ResolveWorkDir` calls with `grep -n ResolveWorkDir internal/session/manager.go`.
 - Piping the gate through `grep -v '^ok'` makes `$?` 1 when everything passed; read the output, not the code.
 
+## Iteration 3 (T3, 10/6/26)
+
+Added `Manager.SetWorkDirResolver` and the private `m.workDir` helper in `internal/session/manager.go`;
+Create, journal replay and Continue go through it. New `resolver_test.go`.
+
+- Failing first: `go test -run WorkDirResolver ./internal/session` printed
+  `resolver_test.go:18:8: f.mgr.SetWorkDirResolver undefined (type *Manager has no field or method SetWorkDirResolver)`
+  (package did not compile). 4 tests pass after.
+- Gate: build, vet, test, `-tags tmux`, golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0 all green.
+  **`go test -tags quickstart ./cmd/crswd` fails on `TestDashboardQuickstartStory2Cap`**
+  (`quickstart_dashboard_test.go:844: a stream opened after one closed = 429, want 200`).
+  It fails the same way on a clean detached checkout of HEAD `ea6a61a` (6 of 10 runs there, 8 of 10 on this
+  tree with the change), so it is not caused by T3. It passed in iterations 1 and 2 on this VM. Cause not
+  investigated (looks timing-dependent: a stream slot not yet released). Committed anyway because reverting
+  would not change the result; the operator should decide whether to chase it.
+- Next iteration: the resolver test covers Create only. Replay and Continue use the same helper but have
+  no test of their own (plan asked for Create-level tests). A manager's `roots` are passed to the resolver
+  as-is, so a resolver never sees a copy.
+- A scratch worktree for a baseline check must not live under an unset `$TMPDIR` (it resolves to `/`);
+  `go test -C <dir>` avoids the `cd` prompt.
+
 ## NEEDS CLARIFICATION
 
 None open.
