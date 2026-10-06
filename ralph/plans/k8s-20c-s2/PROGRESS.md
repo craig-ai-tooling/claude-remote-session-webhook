@@ -34,6 +34,19 @@ implemented. Facts checked on disk, so no iteration has to rediscover them:
 - Spec 019 (Codex) merged since 9/30, so `manager.go` line numbers above are stale: find the three
   `ResolveWorkDir` calls with `grep -n ResolveWorkDir internal/session/manager.go`.
 
+## Iteration 1 (T1, 10/6/26)
+
+Created `api/v1alpha1/types.go` and `types_test.go` per Design §1.
+
+- Failing first: `go test ./api/...` printed `types_test.go:30:27: undefined: AgentSessionSpec`
+  (package did not compile, no types yet). Passes after.
+- Gate green: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port 8765 was free),
+  golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0.
+- Next iteration: `CreationTimestamp time.Time` with `omitempty` still marshals the zero time
+  (`0001-01-01T00:00:00Z`); `encoding/json` ignores omitempty on structs. Harmless for T4 (admit takes
+  the struct) but T5 and T7 should not rely on it being omitted from JSON.
+- The full quickstart suite takes about 95 seconds.
+
 ## NEEDS CLARIFICATION
 
 None open.

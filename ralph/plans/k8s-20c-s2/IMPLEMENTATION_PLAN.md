@@ -12,7 +12,7 @@ Root module, standard library only. `go.sum` must stay absent and `go.mod` gets 
 
 Take the topmost open task. One per iteration.
 
-- [ ] T1: Create `api/v1alpha1/types.go` and `types_test.go` per Design §1 (constants, AgentSession, Spec, Status, Phase). Tests: reflect allowlist of Spec and Status JSON names, no field name containing "token", group constant. Verify: `go test ./api/...` passes and `go vet ./...` exits 0.
+- [x] T1: Create `api/v1alpha1/types.go` and `types_test.go` per Design §1 (constants, AgentSession, Spec, Status, Phase). Tests: reflect allowlist of Spec and Status JSON names, no field name containing "token", group constant. Verify: `go test ./api/...` passes and `go vet ./...` exits 0.
 - [ ] T2: In `internal/session/workdir.go` export `UnderAnyRoot` (rename, update callers) and add `LexicalWorkDir` per Design §2. New test file `workdir_lexical_test.go`: `..` escape, relative path, `/codeEVIL` boundary, non-existent dir under root admitted. Verify: `go test ./internal/session/` passes.
 - [ ] T3: Add `Manager.SetWorkDirResolver` per Design §3 and route Create, journal replay and Continue through it. New test `resolver_test.go`: lexical resolver admits a missing dir under root, refuses one outside; no resolver still refuses the missing dir. Verify: `go test -run WorkDirResolver ./internal/session -v`.
 - [ ] T4: Create `internal/admit/admit.go` with pure `Admit` per Design §4, and a table test covering outside allowlist, `..` escape, relative path, over cap, past lifetime, bad lifetime, admitted, and cap ordering by creationTimestamp. Verify: `go test -v -run Admit ./internal/admit` passes.
