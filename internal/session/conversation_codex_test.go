@@ -322,6 +322,14 @@ func TestCodexHasTranscript(t *testing.T) {
 			t.Fatal("want false")
 		}
 	})
+	t.Run("metadata id differs from the filename", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeRollout(t, root, "2026/10/02", "2026-10-02T10-00-00", id, codexMetaLine(t, codexTestID(2), codexTestWork, 0))
+		if codexHasTranscript(root, id, codexTestWork) {
+			t.Fatal("want false when line 1 names another conversation")
+		}
+	})
 	t.Run("not an id", func(t *testing.T) {
 		t.Parallel()
 		root := t.TempDir()

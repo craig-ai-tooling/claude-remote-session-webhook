@@ -119,8 +119,8 @@ func codexHasTranscript(sessionsDir, id, workDir string) bool {
 	if !codexRollout(sessionsDir, matches[0]) {
 		return false
 	}
-	_, cwd, ok := readCodexMeta(matches[0])
-	return ok && cwd == workDir
+	metaID, cwd, ok := readCodexMeta(matches[0])
+	return ok && metaID == id && cwd == workDir
 }
 
 // readCodexMeta reads line 1 of a rollout, never more than codexMetaReadLimit bytes.
