@@ -230,3 +230,13 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned, differs from the task text: the shim does not report `pane_current_command` = `codex` on its own. tmux reports argv[0], which for a `#!/bin/sh` script is `sh`, so liveness read `stopped`. The shim is now bash and re-execs itself with `exec -a codex`. The pane also wraps the argv line at its width, so the test waits on the unwrapped prefix and compares with newlines removed.
 - The entry's `state` stays `starting` until the 30s sweep promotes it, so liveness is read through `tmuxctl.NewExec(...).List` with `TMUX_TMPDIR` passed in its environment, not from the API entry.
 - Left: T018. No findings unfixed.
+
+## Iteration 27 (T018)
+
+- Docs only. Rewrote `docs/harnesses.md` from "research" into the shipped design and answered its three questions (goal, Mode, pill) from D1/D3/D13. Added to `docs/security.md`, additively, after the Claude trust section: Codex trust seeding (D10), the bounded rollout read as an amendment to spec 013 FR-025 (D11), the update-check rationale (D5), and the two dangerous Codex flags as the operator's equivalents of `--dangerously-skip-permissions`. `README.md` gets a Codex prerequisite (0.153.4, a `codex=` example, `CODEX_HOME` in `CRSW_SESSION_ENVIRONMENT`). `config.example` gets the entry.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./...`, `go test -tags quickstart ./cmd/crswd` (81s), golangci-lint. `docs/fixes-log.md` untouched. AGENTS.md is 147 lines, unchanged.
+- Learned: `TestConfigExampleParsesAndCoversEveryKey` allows one `start_commands` line in `config.example`, so the Codex entry is written as a commented `codex=...` line to append after a comma, not a second `# start_commands =` line.
+- Wrote "sign-in is not relayed yet" in README and harnesses.md, true for phase 1; phase 2 (codex-auth) should revise both.
+- Left: nothing in this notebook. No findings unfixed.
+
+RALPH_COMPLETE

@@ -292,6 +292,16 @@ version = 1
 # auto-generated one. The flag has none of those three problems.
 # start_commands = rc=claude --dangerously-skip-permissions --remote-control {name}
 
+# Codex is a named entry in the same set. An entry called exactly `codex`, whose
+# command runs the codex binary, adds a Runtime choice to the create form. The
+# daemon adds `--no-alt-screen` and `-c check_for_update_on_startup=false` itself
+# and refuses a command that sets the update check back to true. The two flags
+# below are the Codex equivalents of --dangerously-skip-permissions; leave them
+# out if you want Codex to ask. Tested against Codex 0.153.4. If Codex keeps its
+# state outside ~/.codex, add CODEX_HOME to session_environment.
+# The entry, to add to the start_commands line above after a comma:
+#   codex=/home/you/bin/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust
+
 # Which entry of that set the dashboard's remote-control switch means. Set to a
 # name the set does not have, it is a startup failure: you have said which
 # command you mean, and a switch that quietly started plain sessions instead

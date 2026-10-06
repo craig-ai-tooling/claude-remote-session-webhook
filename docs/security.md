@@ -638,6 +638,52 @@ rename. A file that is not a JSON object fails the create rather than being
 repaired. Wired only in `httpapi.New`, so no test server reaches the operator's
 real file. Not wired in kubernetes mode.
 
+### Codex's workspace trust (amendment, spec 019 D10)
+
+For a Codex session the same step seeds a `[projects."<workdir>"]` table holding
+`trust_level = "trusted"` in `$CODEX_HOME/config.toml` (else `$HOME/.codex`), from the
+session's own environment (`internal/session/trust_codex.go`). Everything above holds: it
+grants nothing `allowed_roots` did not, an already-trusted directory is not rewritten, a
+rewrite takes the `<file>.lock` flock and replaces the file by rename, and it is wired only in
+`httpapi.New`.
+
+- **No TOML library.** The root module has no dependencies (section 5). The edit is line-level
+  and understands exactly the shape Codex writes itself: that header line and a `trust_level`
+  line in the table. Any other mention of the directory refuses the create rather than being
+  edited.
+- **A missing `config.toml` is created at 0600** when `$CODEX_HOME` exists, because Codex's own
+  trust acceptance creates the same table in the same file. A missing `$CODEX_HOME` stays
+  missing: Codex has never run there.
+- **The trust level is never passed with `-c` on the command line.** That would put a
+  caller-influenced path into a line typed at a shell, and no line this daemon types carries one.
+
+### Codex conversation listing (amendment to spec 013 FR-025, spec 019 D11)
+
+FR-025 says a transcript is never opened, because Claude's file name is the id and its
+directory is the working directory. Codex keys rollouts by date and the working directory
+exists only inside line 1, so listing a Codex directory's conversations opens each rollout
+**once, bounded**: at most 64 KiB read, stopping at the first newline, decoding only `type`,
+`payload.id` and `payload.cwd`. Nothing it reads is rendered or logged. It scans at most 500
+rollout files, newest date directory first, and returns at most 50 matches. Claude's listing
+still opens nothing.
+
+### Codex's update check (spec 019 D5)
+
+Codex checks for a new release on startup and offers to install it. A line typed into a pane
+can answer that offer, so an update prompt is a way for typed input to install software. The
+daemon therefore adds `-c check_for_update_on_startup=false` to every Codex line it types
+(and `--no-alt-screen`, without which tmux keeps no scrollback), and configuration refuses a
+Codex command that sets the check back to true. It is a daemon-owned flag, not an operator
+choice, because a forgotten flag costs a global package install.
+
+### Codex's dangerous flags are the operator's
+
+`--dangerously-skip-permissions` is the operator's choice for Claude Code, and for Codex the
+equivalents are `--dangerously-bypass-approvals-and-sandbox` (no approval prompts, no sandbox)
+and `--dangerously-bypass-hook-trust` (hooks run without review). The daemon adds neither.
+Put them in the `codex` entry of `start_commands` if you want unattended sessions, with the
+same consequences as for Claude: a request that passes auth runs code on this host unsandboxed.
+
 ## Rate limiting & audit
 
 - Per-caller rate limit on session creation. Spawning Claude sessions is expensive

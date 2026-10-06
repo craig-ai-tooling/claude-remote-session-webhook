@@ -64,4 +64,4 @@ tasks.md narrows this further.
 - [x] **T015** Create form markup, preview script, components doc. Done when `go test ./internal/httpapi/... -run 'CreateForm|RadioGroup'` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T015.
 - [x] **T016** Show the harness on cards, the session page and the API. Done when `go test ./internal/httpapi/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T016.
 - [x] **T017** Acceptance: a Codex session end to end. Done when `go test -tags quickstart ./cmd/crswd -run Codex` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T017.
-- [ ] **T018** Documentation and the full gate. Done when `go test -tags quickstart ./cmd/crswd` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T018.
+- [x] **T018** Documentation and the full gate. Done when `go test -tags quickstart ./cmd/crswd` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T018.
