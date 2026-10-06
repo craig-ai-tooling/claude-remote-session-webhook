@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -700,7 +701,7 @@ func TestInputToAVanishedWindowIsTheUniformNotFound(t *testing.T) {
 			live := ty.live(t)
 			// The record stays in the store and the window is gone, which is the
 			// state between View and the delivery.
-			if err := ty.fixture.tmux.Kill(t.Context(), live.TmuxName()); err != nil {
+			if err := ty.fixture.tmux.Kill(context.Background(), live.TmuxName()); err != nil {
 				t.Fatalf("Kill: %v", err)
 			}
 
