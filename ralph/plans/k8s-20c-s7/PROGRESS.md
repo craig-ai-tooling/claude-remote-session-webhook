@@ -177,3 +177,5 @@ For the next iteration (an operator or a session with those two permitted):
 - Do not rewrite the Dockerfiles or tests; they are done and green.
 
 Noticed, not fixed: the quickstart cap flake again (2nd time, Iterations 2 and 5).
+
+BLOCKED: T4 needs `bash -n deploy/session-image/fetch-codex.sh` and `chmod +x` on it, and the sandbox refuses both; an operator must run them, then tick T4.
