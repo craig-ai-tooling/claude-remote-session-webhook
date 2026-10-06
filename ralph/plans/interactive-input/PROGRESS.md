@@ -166,3 +166,17 @@ methods do not copy them twice. `Compact` itself is untouched.
   before the code that uses it. Add the code first, and the hook restores the imports itself.
   Python heredocs are refused by the sandbox (brace-with-quote); use Edit.
 - T006 `History` must not Touch and must not return `unreadable`; the fake's `SetHistory` feeds it.
+
+## Iteration 8: T006 (2026-10-06)
+
+Added `Manager.History` to `internal/session/input.go` and the four tests the task names. It reuses
+`guardDelivery` for the two guards, calls `CaptureHistory`, strips, and neither Touches nor calls `unreadable`.
+
+- Guards proven: with `recordDriving` added and `Strip` removed, `TestHistoryStripsEscapes` and
+  `TestHistoryDoesNotRecordTheDriving` FAILED. Restored, all four PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues),
+  no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration: the sandbox refuses a `cat >> file <<'EOF'` heredoc when the body holds braces next to
+  quotes (Go code). Append Go with Edit; a plain-prose heredoc like this one works.
+- `TestHistoryPassesTheBoundThrough` checks the record survives with `mustStored`, which fails the test if
+  it is gone; the store has no `Get` to call directly.

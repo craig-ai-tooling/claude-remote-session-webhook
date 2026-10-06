@@ -78,7 +78,7 @@ The loop may create or edit these paths and no others:
 - [x] **T003** Add `CaptureHistory` (`-S -5000 -E -1`, refuse past 5000 lines or 4 MiB with `ErrHistoryTooLarge`) and `Fake.SetHistory`. Done when `go test -tags tmux ./internal/tmuxctl -run History` and `go test ./internal/tmuxctl` pass.
 - [x] **T004** Add `session.Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes` and three sentinels in a new input file. Done when `go test ./internal/session -run 'Key|Typed'` passes.
 - [x] **T005** Add `Manager.Type` (Touch, bracketed paste, optional Enter) and `Manager.PressKey`. Done when `go test ./internal/session -run 'Type|PressKey'` passes.
-- [ ] **T006** Add `Manager.History` (strip, no Touch, no `unreadable`). Done when `go test ./internal/session -run History` passes.
+- [x] **T006** Add `Manager.History` (strip, no Touch, no `unreadable`). Done when `go test ./internal/session -run History` passes.
 - [ ] **T007** Add audit actions `dashboard.type`, `dashboard.key`, `dashboard.history` to both action tables. Done when `go test ./internal/audit` passes.
 - [ ] **T008** Add seven outcome codes with their exact sentences, and the `inputs` bucket (240/min) built inside `newServer`. Done when `go test ./internal/httpapi -run 'Outcome|InputBudget'` passes.
 - [ ] **T009** Add `POST /dashboard/sessions/{id}/type` behind `handleAction`, answering 204. Done when `go test ./internal/httpapi -run Type` passes, including every refusal shape.
