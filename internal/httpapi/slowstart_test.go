@@ -245,3 +245,50 @@ func TestHostCreateKeepsTheServersWriteTimeout(t *testing.T) {
 		t.Fatalf("the client timed out, not the server: %v", err)
 	}
 }
+
+// A pod-backed destroy waits for the pod to be gone (podctl's KillTimeout, 60 s
+// by default, past a 30 s grace), so it needs the same lifted deadline a create
+// does. Found by the live install of 10/6/26: DELETE answered nothing although
+// the pod went away.
+func TestAPIDestroyLiftsItsWriteDeadlineOnlyWhenSlowStartIsSet(t *testing.T) {
+	t.Parallel()
+	for name, deadline := range map[string]time.Duration{"cluster": 2 * time.Minute, "host": 0} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDestroyFixture(t)
+			f.slowStartDeadline = deadline
+			req := httptest.NewRequest(http.MethodDelete, "/sessions/"+f.live.ID, nil)
+			signRequest(t, req, nil, testTime)
+			req.Header.Set(headerAuthorization, bearerScheme+f.token)
+			w := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder()}
+			f.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("DELETE = %d (%s); want 200", w.Code, w.Body.String())
+			}
+			if deadline == 0 {
+				if got := w.set(); len(got) != 0 {
+					t.Fatalf("host mode set a write deadline %v; want none", got)
+				}
+				return
+			}
+			wantDeadlineIn(t, w.set(), deadline)
+		})
+	}
+}
+
+func TestDestroyRefusesWhenTheWriteDeadlineCannotBeSet(t *testing.T) {
+	t.Parallel()
+	f := newDestroyFixture(t)
+	f.slowStartDeadline = time.Minute
+	req := httptest.NewRequest(http.MethodDelete, "/sessions/"+f.live.ID, nil)
+	signRequest(t, req, nil, testTime)
+	req.Header.Set(headerAuthorization, bearerScheme+f.token)
+	w := httptest.NewRecorder() // no SetWriteDeadline: the response would be cut off
+	f.ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("DELETE = %d; want 500", w.Code)
+	}
+	if calls := f.fixture.tmux.Calls(); len(calls) != 0 {
+		t.Fatalf("a refused destroy reached tmux: %v", calls)
+	}
+}

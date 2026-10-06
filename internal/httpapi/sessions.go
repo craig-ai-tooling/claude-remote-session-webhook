@@ -415,6 +415,11 @@ var (
 // created and its response cut off, which is the failure this exists to end.
 var errCreateDeadline = errors.New("the create's write deadline could not be extended")
 
+// errDestroyDeadline is errCreateDeadline for a destroy: a pod-backed teardown
+// waits for the pod to be gone, past the server's WriteTimeout, and a cut-off
+// response would leave the caller unsure whether the session survived.
+var errDestroyDeadline = errors.New("the destroy's write deadline could not be extended")
+
 // allowSlowStart gives this one response the deadline a slow start needs, in
 // place of the server's WriteTimeout. It does nothing when the field is zero,
 // so a host daemon's create keeps the deadline it always had.
@@ -695,6 +700,12 @@ func (s *Server) destroySession(w http.ResponseWriter, r *http.Request) {
 	resolved, ok := SessionFrom(r.Context())
 	if !ok {
 		s.failInternal(w, r, errDestroyNoSession)
+		return
+	}
+
+	if err := s.allowSlowStart(w); err != nil {
+		s.report(fmt.Errorf("extend the destroy's write deadline: %w", err))
+		s.failInternal(w, r, errDestroyDeadline)
 		return
 	}
 
