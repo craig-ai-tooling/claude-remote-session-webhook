@@ -25,3 +25,9 @@ None open.
 ## Iteration 1 (T1)
 
 BLOCKED: the sandbox refuses every way of running Go inside the nested module. `go -C k8s test ./...`, `(cd k8s && go test ./...)` and the piped form each stalled for approval, and this session is non-interactive. Written so far, uncommitted: `k8s/go.mod` and `k8s/internal/kube/kube_test.go`. Not done: `kube.go`, `go get`, `go mod tidy`, the failing-first run, the gate. Nothing was committed and T1 stays unticked. Needs `go -C k8s ...` and `go -C k8s get` allowed for the runner (or a pre-approved wrapper).
+
+## Iteration 2 (T1)
+
+BLOCKED again, same cause. `go -C k8s test ./...` and even `go -C k8s version` return "This command requires approval" in this non-interactive session, and compound commands are refused outright. `k8s/go.mod` and `k8s/internal/kube/kube_test.go` are already committed (9521216, sweep). No code written this iteration: without running Go I cannot do the failing-first run, `go get` or the gate, and committing unverified code would break the rule against a broken tree. T1 stays unticked.
+
+Unblock: add `Bash(go -C k8s:*)` (and `go -C k8s get`, `go -C k8s mod tidy`) to the runner's allowlist, then rerun. Next iteration, in order: write `kube.go` per Design §2, run the two tests (expect pass now that the package compiles; the pre-change failure is the compile error from kube_test.go alone), `go -C k8s get` the pins, `go -C k8s mod tidy`, check the `go 1.23.0` line, run the gate.
