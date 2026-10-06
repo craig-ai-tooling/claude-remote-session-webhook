@@ -104,3 +104,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Wrote `TestSetModeRefusesCodex` in `harness_test.go` first; it failed on the old code. Then added the `m.specOf(s).Name == harness.Codex` guard to `SetMode` after the dead-state check, returning `ErrModeUnavailable`. Codex only; Other keeps today's behaviour. `mode_test.go` and `commandForMode` untouched.
 - Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
 - Left: T007 onward. No findings unfixed.
+
+## Iteration 12 (T007)
+
+- Wrote `trust_codex_test.go` first (`TestCodexHome`, `TestWithCodexTrust` 17 rows with exact bytes, `TestSeedCodexTrust`); it failed to compile on the old code. Then added `trust_codex.go` (`CodexHome`, `SeedCodexTrust`, `withCodexTrust`, `ErrCodexConfigShape`, `ErrUntrustablePath`) and gave `replaceFile` a `prefix` parameter; its one caller passes `".claude.json.crswd-*"`. `TestSeedTrust` passes unedited.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: the "dir appears on another line" check is a plain substring match, so a header for `/ab` refuses when the session dir is `/a`. That follows the task text; a false refusal fails the create loudly rather than editing the wrong table.
+- Nothing calls `SeedCodexTrust` yet; T008 wires it.
+- Left: T008 onward. No findings unfixed.
