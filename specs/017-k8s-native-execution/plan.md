@@ -9,7 +9,7 @@ written until the credential gate (FR-017) has a result.
 ## Summary
 
 v2 adds a `kubernetes` execution mode to the same binary. Under it, crswd is the front door
-(the authenticated dashboard and API) and a reconciler. A session is a `ClaudeSession` object;
+(the authenticated dashboard and API) and a reconciler. A session is a `AgentSession` object;
 the reconciler keeps one pod per object, and that pod runs `claude` under tmux with the
 `creds-link` sidecar. Deleting a pod costs one session a `--resume`. Restarting or upgrading
 crswd costs no session anything. The `host` mode, v0 today, stays the default and stays the
@@ -38,7 +38,7 @@ Access. **Testing**: table-driven unit tests for the reconciler against a fake c
 
 ## Design
 
-**Object.** `ClaudeSession` carries name, owner, working directory, start options and lifetime
+**Object.** `AgentSession` carries name, owner, working directory, start options and lifetime
 in `spec`, and phase (`Pending`, `Running`, `Rejected`, `Reviving`, `Failed`) and conversation
 identifier in `status`. Nothing in it is a secret.
 
@@ -72,7 +72,7 @@ session ends, which is proposed and not decided.
 ## Project Structure
 
 ```text
-api/v1alpha1/               NEW  ClaudeSession types, CRD manifest generation
+api/v1alpha1/               NEW  AgentSession types, CRD manifest generation
 internal/config/            MOD  execution.mode (host|kubernetes)
 internal/session/journal.go MOD  journalRecord.Name
 internal/session/manager.go MOD  createRecord and ReplayJournal carry Name

@@ -5,7 +5,10 @@
 **Status**: Decided 9/25/26: **option B, the operator**. The operator chose it (ai-lawnmower
 inbox 01M3DCKTP2X3H5V99FMVGWXTXA) over this spec's recommendation of A. The recommendation and
 its numbers stay below as the record of what B costs. The requirements now describe B, and
-[plan.md](plan.md) was replaced for it. Nothing is built.
+[plan.md](plan.md) was replaced for it.
+**Amended 10/6/26** (operator): Codex is a peer runtime (spec 019), so the object is
+`AgentSession`, not `ClaudeSession`, and every requirement below holds for both runtimes.
+No object of the old kind was ever created. FR-021 and FR-022 are new.
 **Input**: Operator, 9/14/26: "a new version that's a rewrite, that is Kubernetes-centric,
 that we can work on and test and iterate on while CRSWD continues to operate in production
 on the VM... I want to make sure that we're not disrupting my work week." Operator, 9/22/26:
@@ -18,7 +21,7 @@ Backlog item k8s-19, then k8s-20. Evidence: [research.md](research.md), and ai-l
 
 | | A. Session host (not chosen) | B. Operator (chosen) |
 |---|---|---|
-| Shape | One StatefulSet pod. tmux and every session in it, one PVC | `ClaudeSession` CRD, a controller, one pod and one PVC per session |
+| Shape | One StatefulSet pod. tmux and every session in it, one PVC | `AgentSession` CRD, a controller, one pod and one PVC per session |
 | New code | a pod mode for config, a Helm chart, one journal field | CRD types, controller, a per-pod agent that replaces `tmuxctl`, and all of that beside the tmux path the daemon mode keeps |
 | Session start | same as today, 3.1 s (k8s-12) | 24 s for one PVC alone. 93 to 98 s each when three start together (measured) |
 | Daemon upgrade | every session restarts and resumes from the PVC (8 to 44 s measured), unless only the daemon container restarts (7.3 s, sessions untouched, measured) | sessions untouched |
@@ -52,7 +55,7 @@ running `claude --resume <its own conversation>` in its own working directory.
 **Acceptance Scenarios**:
 
 1. **Given** running sessions, **When** the crswd pod restarts, **Then** the session pods are
-   untouched and crswd lists them again from their `ClaudeSession` objects.
+   untouched and crswd lists them again from their `AgentSession` objects.
 2. **Given** a running session, **When** its pod is deleted, **Then** the reconciler recreates
    the pod, which revives the session with `--resume` and its conversation identifier.
 3. **Given** a named session, **When** it is revived, **Then** its start command renders. (On
@@ -87,13 +90,13 @@ the VM until k8s-15.
    Cloudflare Access, HMAC secret and Claude login.
 2. **Given** a v2 release, **When** the VM's updater runs, **Then** it does not install it
    (a major is never crossed, k8s-18, already shipped in `internal/updater/fetch.go`).
-3. **Given** the `ClaudeSession` CRD is installed, **When** v0 runs on the VM, **Then** v0 does
+3. **Given** the `AgentSession` CRD is installed, **When** v0 runs on the VM, **Then** v0 does
    not see it and nothing on the VM depends on it. The CRD is the one cluster-scoped object v2
    adds, so it is installed by the chart's owner and never by a session.
 
 ### User Story 4 - A session cannot be created around the daemon's checks (Priority: P1)
 
-A `ClaudeSession` object written directly with `kubectl` or by another controller is held to
+A `AgentSession` object written directly with `kubectl` or by another controller is held to
 the same working-directory allowlist, concurrency cap and lifetime as one made through the API.
 
 **Independent Test**: Create an object with a working directory outside the allowlist. No pod
@@ -119,13 +122,26 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
 
 ## Requirements *(mandatory)*
 
+### Deployment options (amended 10/6/26)
+
+crswd ships two supported deployments, and both run Claude Code and Codex sessions:
+
+| | Host | Kubernetes |
+|---|---|---|
+| Install | `install.sh` or the release binary, `crswd unit install` (systemd user unit) | Helm chart (k8s-20): CRD, RBAC, daemon and reconciler Deployments, claim |
+| Sessions | tmux on the host | one pod per `AgentSession` |
+| Upgrade | the dashboard's self-updater | the chart (FR-003) |
+| Sign-in | the host's own logins and the dashboard relays | per-namespace logins (FR-015, FR-016, FR-022) |
+
+Neither is a reduced version of the other. A change that breaks one is not done.
+
 ### Modes
 
 - **FR-001**: One binary, two modes, chosen by a configuration key (`execution.mode`,
   `host` or `kubernetes`). Absent means `host`, which is v0's behaviour byte for byte.
 - **FR-002**: Both modes MUST drive sessions through `tmuxctl.Controller`. `host` keeps
   `tmuxctl.Exec`. `kubernetes` supplies a second implementation of the same interface, backed
-  by `ClaudeSession` objects and session pods, so `internal/session` and `internal/httpapi` do
+  by `AgentSession` objects and session pods, so `internal/session` and `internal/httpapi` do
   not fork. The table above priced a per-pod agent that replaces `tmuxctl`, and research D8b
   removes it: tmux runs inside each session pod, and `Paste` and `SendKeys` keep `tmuxctl`'s argv
   builders, so no byte that reaches a pane is built by new code. `CapturePane` runs the same
@@ -138,14 +154,14 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
 
 ### Execution (option B)
 
-- **FR-005**: A namespaced `ClaudeSession` custom resource is the record of one session. Its
+- **FR-005**: A namespaced `AgentSession` custom resource is the record of one session. Its
   spec carries the session name, owner, working directory, start options and lifetime. Its
   status carries the phase and the conversation identifier. It MUST NOT carry a token or a
   token hash (FR-014). The API group is `crswd.craigcloud.io` (decided 9/26/26, Craig's own
   domain, so nothing to buy). It shows that domain in the RBAC rules and objects of any other
   operator's cluster, and changing a group later means migrating every object. The resource is
-  `claudesessions.crswd.craigcloud.io`, version `v1alpha1`.
-- **FR-006**: The reconciler owns exactly one pod per `ClaudeSession`, through an owner
+  `agentsessions.crswd.craigcloud.io`, version `v1alpha1`.
+- **FR-006**: The reconciler owns exactly one pod per `AgentSession`, through an owner
   reference. A deleted pod is recreated and revives its session with `--resume`. A deleted
   object deletes its pod, and teardown is confirmed by observing the pod gone, not assumed.
   Only one reconciler runs at a time, by a Lease.
@@ -202,20 +218,20 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
   namespace only (FR-013).
 - **FR-012**: The record of a session MUST carry its name, and a revival MUST render the start
   command with it. This fixes v0 as well: revival failed 8 of 8 sessions after the VM reboot of
-  9/22/26. Under B the name is in the `ClaudeSession` spec; v0's journal record gains a `name`
+  9/22/26. Under B the name is in the `AgentSession` spec; v0's journal record gains a `name`
   field.
 - **FR-013**: Pod-creating permission is bounded and stays out of the daemon (FR-009). The
   reconciler's ServiceAccount may create, list, watch and delete pods, and read and update
-  `ClaudeSession` objects, in the session namespace and nothing else. It needs no verb on PVCs,
+  `AgentSession` objects, in the session namespace and nothing else. It needs no verb on PVCs,
   because the claim belongs to the chart (FR-010). The daemon's ServiceAccount may manage
-  `ClaudeSession` objects, read pods and create `pods/exec` in the session namespace only, and MUST
+  `AgentSession` objects, read pods and create `pods/exec` in the session namespace only, and MUST
   NOT create pods or hold `pods/exec` in the reconciler's namespace. Neither has any verb on
   `secrets`.
 
 ### Tokens across a restart (FR-021 of spec 001)
 
 - **FR-014**: FR-021 is unchanged in both modes. No token and no token hash is persisted, in the
-  journal or in a `ClaudeSession`. A restart of crswd or of a session pod marks every affected
+  journal or in a `AgentSession`. A restart of crswd or of a session pod marks every affected
   session `CredentialPending`, and the first `GET /sessions` mints and hands over its new token
   (`ClaimPending`). The lawnmower keyring already captures it (`loop/session_keyring.py`).
 
@@ -247,6 +263,19 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
   after the rotation, or a rotation during a turn (research.md D8c).
 - **FR-018**: `host` mode keeps its local login and the phone sign-in relay unchanged.
 
+### Runtimes (amended 10/6/26)
+
+- **FR-021**: `spec.startCommand` is a configured key that resolves to either runtime, Claude Code
+  or Codex (spec 019's `harness.Of`). The object carries no runtime field of its own, so the key
+  stays the single source. The CRD prints the start command and the phase in `kubectl get`.
+  The session image carries both CLIs, tmux, and the system CA bundle (Codex's native binary
+  fails its first request without one: O-1, spec 019 research M21).
+- **FR-022**: A Codex session pod signs in with the namespace's own Codex login, never a copy of
+  the host's `~/.codex/auth.json`. Measured 10/6/26 (spec 019 research M21 to M23): a turn runs
+  with `auth.json` copied into an emptyDir and with the Secret mounted read-only. A refresh in the
+  pod rotates the refresh token, so a shared login would sign the host out. How the pod's login
+  is refreshed waits on M22 (spec 019 Phase 4b).
+
 ### Lawnmower state
 
 - **FR-019**: `NEEDS CLARIFICATION`: how the sessions and the lawnmower state meet. As written for
@@ -262,8 +291,9 @@ the VM today. `NEEDS CLARIFICATION`: see FR-019. B changes the answer A gave.
   outcomes.jsonl, flight-watch.json, metrics.db, session-tokens.jsonl) and the `~/code`
   checkouts. The hourly offsite copy continues and still excludes session-tokens.jsonl.
 
-**Key Entities**: **ClaudeSession**: the record of one session, in the cluster's API.
-**Session pod**: the pod the reconciler makes for one, running tmux and `claude`. **Reconciler**:
+**Key Entities**: **AgentSession**: the record of one session, in the cluster's API.
+**Session pod**: the pod the reconciler makes for one, running tmux and the configured runtime
+(`claude` or `codex`). **Reconciler**:
 the loop that keeps pods matching objects. **Journal record**: v0's `journalRecord` plus `name`.
 
 ## Success Criteria *(mandatory)*
