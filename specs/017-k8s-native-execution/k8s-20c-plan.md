@@ -15,7 +15,7 @@ origin/main. Nothing was changed in any repo, cluster or backlog. "Unverified" m
 5. **SC-002 is FR-012, and FR-012 is backlog item k8s-20j (queued).** It is not in k8s-20c's blocked-by. `journalRecord` has no Name (`internal/session/journal.go:60-80`). k8s-20c cannot meet its done-when until k8s-20j lands. Recommend adding `blocked-by:k8s-20j` (I did not change the backlog).
 6. **SC-001's "under 60 s" is a live timing.** A fake client proves the logic: an old pod gone leads to one new pod, and the supervisor sends `--resume`. The seconds belong to plan step 7 (the kill test).
 7. **No GitHub Actions secrets or vars exist for image builds in crswd.** The repo has only `CLAUDE_CODE_OAUTH_TOKEN, QUEUE_APP_KEY, QUEUE_TOKEN, RELEASE_SIGNING_KEY` and var `QUEUE_APP_CLIENT_ID`. ai-lawnmower has `DOCKERHUB_*` and `CI_RUNNER(_AMD64)` at repo level. The VM is x86_64 and logged in to docker.io and ghcr.io (hosts read from ~/.docker/config.json, no values printed).
-8. **Open PRs on crswd: none.** k8s-20c reads `in_flight`. `crswd-next` does not exist in the cluster. The cluster has no ClaudeSession CRD. The server is v1.32. Classes: `linstor-replicated` (Retain, WFFC) and `linstor-fs-storage-enc` (Delete, default).
+8. **Open PRs on crswd: none.** k8s-20c reads `in_flight`. `crswd-next` does not exist in the cluster. The cluster has no AgentSession CRD. The server is v1.32. Classes: `linstor-replicated` (Retain, WFFC) and `linstor-fs-storage-enc` (Delete, default).
 
 ## 1. Seams (origin/main)
 
@@ -39,14 +39,14 @@ that reads origin/main. Always run: `go build ./... && go vet ./... && go test .
 - Tests: config parses `kubernetes` (the old code rejects it as an unknown key), rejects `k8s`, and absent means host. Unit refusal, update-route refusal, relay nil, journal nil in kubernetes mode. No existing test edited.
 - Deps: none. **Parallel** with S2, S3 and S4.
 
-**S2: ClaudeSession API, admission, manifests.** Root module, stdlib. FR-005, FR-007 (logic),
+**S2: AgentSession API, admission, manifests.** Root module, stdlib. FR-005, FR-007 (logic),
 FR-013, SC-004, SC-005.
 - `api/v1alpha1/types.go`: plain structs with JSON tags. Spec: sessionName, owner, workDir, startCommand (the configured *key*, never a command line), conversation, lifetime. Status: phase (Pending|Running|Rejected|Reviving|Failed), reason, conversation. No token field.
   **No pod-shaping field** (image, SA, env, volumes, Secret, command), or anyone who can write the object gets pod creation through the reconciler.
 - `internal/admit/admit.go`: pure `Admit(obj, roots, cap, others, now) (ok, reason)`. Lexical allowlist (path.Clean plus `session.underAnyRoot` exported as `UnderAnyRoot`), cap counted by creationTimestamp, lifetime. `session`: add `SetWorkDirResolver` so the daemon checks lexically in kubernetes mode, because it cannot see the pod's filesystem (`workdir.go:66` EvalSymlinks). The resolved-and-verified check (constitution VI) moves into the pod (S3). Host mode is unchanged.
-- `deploy/k8s/` **JSON** manifests (kubectl applies JSON, no YAML dependency) generated from Go values by `go run ./deploy/k8s/gen`, with a byte-drift test. Contents: the CRD, the reconciler Role (pods create/get/list/watch/delete, claudesessions get/list/watch/update, claudesessions/status update, all in the session namespace, plus leases get/create/update in its own namespace), and the daemon Role (claudesessions full CRUD, pods get/list/watch, pods/exec create+get: the verbs D8b measured, in the session namespace only).
+- `deploy/k8s/` **JSON** manifests (kubectl applies JSON, no YAML dependency) generated from Go values by `go run ./deploy/k8s/gen`, with a byte-drift test. Contents: the CRD, the reconciler Role (pods create/get/list/watch/delete, agentsessions get/list/watch/update, agentsessions/status update, all in the session namespace, plus leases get/create/update in its own namespace), and the daemon Role (agentsessions full CRUD, pods get/list/watch, pods/exec create+get: the verbs D8b measured, in the session namespace only).
 - Tests (SC-005): walk every generated rule: any rule naming `secrets` or `*` fails; a daemon rule with pods create fails; daemon pods/exec in the reconciler namespace fails. Admit table: outside allowlist, `..` escape, over cap, past lifetime each come back Rejected with a reason. A reflect test fails if the Spec gains a field outside the allowed set. A grep test fails if any fixture or manifest names namespace `lawnmower` Secrets or `~/.claude` (SC-004).
-- Amends spec FR-013, which lists no Lease verbs and no `claudesessions/status`, and fills FR-005's group.
+- Amends spec FR-013, which lists no Lease verbs and no `agentsessions/status`, and fills FR-005's group.
 - Deps: decision 2 (API group), decided 9/26/26: `crswd.craigcloud.io`. **Parallel** with S1 and S4.
 
 **S3: in-pod side.** Root module, stdlib. FR-002, FR-011 (pod half), FR-015 (pod shape).
@@ -57,20 +57,20 @@ FR-013, SC-004, SC-005.
 **S4: Kubernetes client foundation.** Shape set by decision 1. Recommended A: a nested module
 `k8s/go.mod` (`module …/claude-remote-session-webhook/k8s`, replace `../`), which leaves root go.sum absent.
 - `go get k8s.io/client-go@v0.32.8` (matches server v1.32.8 and D8b's generator, keeps go 1.23.0), then pin `github.com/moby/spdystream@v0.5.1 golang.org/x/oauth2@v0.27.0 github.com/gorilla/websocket@v1.5.3`.
-  **No controller-runtime.** It adds prometheus, zap and friends for nothing that `kubernetes/fake` + `dynamic/fake` + `tools/leaderelection` do not already cover. ClaudeSession goes through the dynamic client, converted to and from `api/v1alpha1` in one file.
+  **No controller-runtime.** It adds prometheus, zap and friends for nothing that `kubernetes/fake` + `dynamic/fake` + `tools/leaderelection` do not already cover. AgentSession goes through the dynamic client, converted to and from `api/v1alpha1` in one file.
 - `k8s/internal/kube/` holds the in-cluster rest.Config and the Lease elector (LeaseLock). Test: two electors on one fake clientset, exactly one leads. First-PR check: dependency-review green, OSV clean of HIGH.
 - Deps: decision 1 (A, decided 9/26/26) and S4w, both done by k8s-20c-decide-lib. **Serial gate**: the only slice that touches go.mod/go.sum, and S5/S6 follow it.
 - Also under A: `.github/dependabot.yml` gets a gomod entry for `/k8s` (not a workflow path), in this slice's PR because Dependabot errors on a directory that does not exist yet. `docs/security.md` §5 is already scoped to the host module (k8s-20c-decide-lib); its CODEOWNERS entry requires no review (`protect-main` has `require_code_owner_review: false`), so it merged like any other PR.
 - S4w (option A only), landed BEFORE S4 (crswd #194): `.github/workflows/ci.yml` adds `go -C k8s` download, vet, test and build and golangci in `k8s/`, inside the required `Build / test / lint` job and guarded by `[ -f k8s/go.mod ]`, so it is green before the module exists. Without it S4-S6 merge green with their tests never run. Landing route: crswd's `protect-main` ruleset requires a PR and has no bypass actor, so the SSH fast-forward this plan first assumed is not available; the PR merges through the craig-ai-tooling App installation token, which now grants `workflows: write` (the `gh` OAuth token still cannot merge `.github/workflows/**`).
 
 **S5: podctl, the second Controller.** `k8s/internal/podctl`. FR-002, FR-011, FR-014.
-- `New`: create the ClaudeSession if absent, then wait (bounded, ~90 s; D8b cold 45-52 s) for pod Running and `has-session`. It is idempotent, which revival needs. `SetOption`: annotation on the object (the object is the record; pod tmux options die with the pod). `SendKeys`/`Paste`/`Resize`/`Has`: exec with the exported argv, and Paste sends the payload on exec stdin (load-buffer), as v0. `CapturePane`: newest frame of one held `crswd pane-loop` exec stream per watched session, reopened on EOF, with ANSI-stripped again on the daemon side. `Kill`: delete the object and confirm the pod gone (never "assumed"). `List`: SessionInfo from objects+pods. `ReconcileServerEnvironment`: empty Reconciliation.
+- `New`: create the AgentSession if absent, then wait (bounded, ~90 s; D8b cold 45-52 s) for pod Running and `has-session`. It is idempotent, which revival needs. `SetOption`: annotation on the object (the object is the record; pod tmux options die with the pod). `SendKeys`/`Paste`/`Resize`/`Has`: exec with the exported argv, and Paste sends the payload on exec stdin (load-buffer), as v0. `CapturePane`: newest frame of one held `crswd pane-loop` exec stream per watched session, reopened on EOF, with ANSI-stripped again on the daemon side. `Kill`: delete the object and confirm the pod gone (never "assumed"). `List`: SessionInfo from objects+pods. `ReconcileServerEnvironment`: empty Reconciliation.
 - Exec goes behind an `Executor` interface. The real one is `remotecommand` WebSocket with SPDY fallback, and tests use a recording fake, since the fake clientset cannot exec. Tests: argv per method equals `tmuxctl.Argv*`; Paste bytes reach stdin, never argv; Kill without pod-gone returns an error; Has distinguishes an API error from absent; a restart re-mints (Adopt over podctl.List marks CredentialPending, FR-014).
 - Deps: S2, S3, S4. **Parallel** with S6 (different package; go.mod untouched).
 
 **S6: reconciler.** `k8s/internal/reconcile` and a `reconcile` subcommand. FR-006, FR-007, FR-008, FR-010,
 FR-015, SC-001 (logic), SC-005 (objects).
-- Loop: informers on ClaudeSession and pods (label + ownerRef), under the Lease. Admit fails → status Rejected, no pod. Pod name `crswd-<id>`, so AlreadyExists is the one-pod guard. **No replacement while the old pod object exists** (terminating included). Delete with default grace, never GracePeriodSeconds=0. Deleted object leads to ownerRef GC, with the finalizer confirming the pod gone. Pod Failed with DeadlineExceeded means the object is Failed and the pod is not recreated.
+- Loop: informers on AgentSession and pods (label + ownerRef), under the Lease. Admit fails → status Rejected, no pod. Pod name `crswd-<id>`, so AlreadyExists is the one-pod guard. **No replacement while the old pod object exists** (terminating included). Delete with default grace, never GracePeriodSeconds=0. Deleted object leads to ownerRef GC, with the finalizer confirming the pod gone. Pod Failed with DeadlineExceeded means the object is Failed and the pod is not recreated.
 - Pod template (all fixed in code or reconciler config, none from the object): session image, uid/fsGroup 10001, requests 50m/570Mi with no CPU limit, `nodeSelector` lm-amd64-1 (value), `activeDeadlineSeconds` = created+lifetime−now, `automountServiceAccountToken: false`, `restartPolicy: Never`, **no** lost-quorum toleration, claim subPath `<id>/work` → `/work` and `<id>/projects` → `$CLAUDE_CONFIG_DIR/projects`, `CLAUDE_CONFIG_DIR` an emptyDir, Secret `claude-credentials` mounted as a directory (never subPath), and native sidecar `creds-link` copied from ai-lawnmower `ralph-runner/job.yaml:500-525`. The entrypoint is `crswd session-pod`.
 - **Start command owner (E1 below): the daemon's supervisor**, as v0. Amend plan.md's Design "recreate … with `--resume`" in this PR.
 - Tests (fake clientset): missing pod → one create. Terminating pod → zero creates. Delete opts have no zero grace. Rejected leads to zero pods (outside allowlist, over cap). Deadline set and decreasing on recreate. Pod spec has no `secrets` read, no hostPath, no SA token. Two reconcilers leads to one acting.
@@ -93,7 +93,7 @@ Deps: all. Serial, last.
 k8s-20c (JSON, `kubectl apply -f`):
 - Namespaces `crswd-next` (daemon + session pods) and `crswd-next-reconciler` (FR-009: the daemon has no exec there). PR #184 and the spec name no namespace (checked); these names are mine.
 - SA `crswd` in crswd-next and SA `crswd-reconciler` in crswd-next-reconciler. Role+RoleBinding `crswd-reconciler` in crswd-next bound to the reconciler SA from the other namespace. Lease Role in its own namespace. **No verb on secrets** in either.
-- CRD `claudesessions.crswd.craigcloud.io`. One PVC `crswd-sessions` in crswd-next on `linstor-replicated` (Retain, FR-010), sized for the sum of sessions. This also measures what D8b left out: that class and its subPath behaviour. Cleanup of a Retain volume: delete the PVC, then patch the Released PV to `persistentVolumeReclaimPolicy: Delete` so the provisioner removes it. That is standard, but unverified on this driver, so the cleanup ends with a `kubectl get pv` check.
+- CRD `agentsessions.crswd.craigcloud.io`. One PVC `crswd-sessions` in crswd-next on `linstor-replicated` (Retain, FR-010), sized for the sum of sessions. This also measures what D8b left out: that class and its subPath behaviour. Cleanup of a Retain volume: delete the PVC, then patch the Released PV to `persistentVolumeReclaimPolicy: Delete` so the provisioner removes it. That is standard, but unverified on this driver, so the cleanup ends with a `kubectl get pv` check.
 - Deployments: reconciler (1 replica, no port, tolerates `drbd.linbit.com/lost-quorum`) and daemon (listener on 127.0.0.1, reached by `kubectl port-forward`, no Service/ingress, tolerates lost-quorum).
 - A placeholder Secret `claude-credentials` in crswd-next (`{}`), so no pod is logged in (§7). A daemon Secret with a fresh `CRSW_SHARED_SECRET` from `crswd keygen`, never the VM's (US3.1). No browser door is required: `validateDoors` (`config.go:1847`) allows the API alone, so `port-forward` + `crswd-api` is enough.
 - Namespace reading of the done-when: "runs in `crswd-next`" and FR-016 (keeper login in `crswd-next`) make `crswd-next` the session+daemon namespace. FR-009/013 then put the reconciler's Deployment in `crswd-next-reconciler`, reconciling `crswd-next` through its Role there. I take this as meeting the done-when, and the executor states it in the PR.
@@ -127,7 +127,7 @@ how:
   B) your domain → `crswd.craigcloud.io`. Free now, but it names you in other people's clusters.
   C) crswd.dev without buying it → free, but someone else could register it later.
 
-DECIDED 9/26/26 (Craig, option B): the group is `crswd.craigcloud.io`, so the CRD is `claudesessions.crswd.craigcloud.io` and the version is `v1alpha1`. Craig first answered A (buy crswd.dev), then dropped it when he learned it meant a purchase (the .dev registry still showed it unregistered at 23:39Z). Nothing to buy. The cost he accepted is that his domain appears in other operators' clusters, and a later change of group means migrating every object.
+DECIDED 9/26/26 (Craig, option B): the group is `crswd.craigcloud.io`, so the CRD is `agentsessions.crswd.craigcloud.io` and the version is `v1alpha1`. Craig first answered A (buy crswd.dev), then dropped it when he learned it meant a purchase (the .dev registry still showed it unregistered at 23:39Z). Nothing to buy. The cost he accepted is that his domain appears in other operators' clusters, and a later change of group means migrating every object.
 
 Why client-go at all (security.md §5 asks): exec over WebSocket/SPDY, watches and leader election. The stdlib has none of these, and D8b measured the exec path on client-go v0.32.8.
 
@@ -151,15 +151,15 @@ kubectl auth can-i create pods -n crswd-next --as=system:serviceaccount:crswd-ne
 kubectl auth can-i get secrets -n crswd-next --as=system:serviceaccount:crswd-next-reconciler:crswd-reconciler  # no
 kubectl auth can-i create pods/exec -n crswd-next-reconciler --as=system:serviceaccount:crswd-next:crswd  # no
 kubectl -n crswd-next-reconciler get lease                                      # holder = reconciler pod
-kubectl apply -f <ClaudeSession workDir=/etc>  → status Rejected, no pod
-kubectl apply -f <ClaudeSession workDir=/work> → pod crswd-<id> Running, 2/2 (tmux + creds-link)
+kubectl apply -f <AgentSession workDir=/etc>  → status Rejected, no pod
+kubectl apply -f <AgentSession workDir=/work> → pod crswd-<id> Running, 2/2 (tmux + creds-link)
 kubectl delete pod crswd-<id>   (default grace) → exactly one new pod, created only after the old is gone
 kubectl -n crswd-next-reconciler delete pod -l app=crswd-reconciler → session pod UID and start time unchanged
 kubectl top pod -n crswd-next-reconciler                                         # FR-009 RSS number
 daemon via port-forward: create a session; restart the daemon pod; in the session pod `ps` shows one pane-loop
 ```
 
-Cleanup: delete the ClaudeSessions and wait for the pods to be gone (never `--force`). Delete the two namespaces, then the CRD. For the Released PV of `crswd-sessions`: `kubectl patch pv <pv> -p '{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}'`. Then `kubectl get pv | grep crswd-next` must be empty. If it is not, report it and leave the PV. Never touch LINSTOR (break-glass). Leave the images.
+Cleanup: delete the AgentSessions and wait for the pods to be gone (never `--force`). Delete the two namespaces, then the CRD. For the Released PV of `crswd-sessions`: `kubectl patch pv <pv> -p '{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}'`. Then `kubectl get pv | grep crswd-next` must be empty. If it is not, report it and leave the PV. Never touch LINSTOR (break-glass). Leave the images.
 
 ## 7. Hazards and where each is tested
 
