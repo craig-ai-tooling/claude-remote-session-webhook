@@ -62,3 +62,10 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Not added: `specOf` (the Interface lists it, no caller yet; T005/T006 will add it with one).
 - Nothing in `manager.go` calls `harness` beyond `resumeFlagged`; T005 onward consume the rest. `partials_test.go:4110` still holds an unprefixed `local-command` literal, outside T004's Files line and passing.
 - Left: T004a onward. No findings unfixed.
+
+## Iteration 7 (T004a)
+
+- Wrote `codexflags_test.go` first (`TestCodexUpdateCheckValues`, 14 rows, `TestLoadStartCommandsRefusesCodexUpdateCheck`). The Load test failed before `validateStartCommand` called the new check. Then added `codexflags.go` (`ErrCodexUpdateCheck`, `codexUpdateCheckValues`, `validateCodexUpdateCheck`) and made `validateStartCommand` return it last.
+- Gate green: gofmt, build, vet, `go test ./...`, golangci-lint. tmux and quickstart suites not run: nothing in tmuxctl, session or cmd changed.
+- Learned: a key that only starts with `check_for_update_on_startup` is not matched, since the key must equal it exactly. A trailing `-c` with no value is ignored.
+- Left: T005 onward. No findings unfixed.

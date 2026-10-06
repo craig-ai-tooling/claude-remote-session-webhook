@@ -1,0 +1,73 @@
+package config
+
+import (
+	"errors"
+	"io"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func TestCodexUpdateCheckValues(t *testing.T) {
+	t.Parallel()
+
+	const key = "check_for_update_on_startup"
+	tests := []struct {
+		name    string
+		command string
+		want    []string
+		wantErr bool
+	}{
+		{"bare codex", "codex", nil, false},
+		{"false", "codex -c " + key + "=false", []string{"false"}, false},
+		{"true", "codex -c " + key + "=true", []string{"true"}, true},
+		{"long form with equals", "codex --config=" + key + "=true", []string{"true"}, true},
+		{"long form with next token", "codex --config " + key + "=true", []string{"true"}, true},
+		{"attached short form, quoted", `codex -c` + key + `="true"`, []string{"true"}, true},
+		{"single quotes", "codex -c " + key + "='false'", []string{"false"}, false},
+		{"last one wins, both are read", "codex -c " + key + "=false -c " + key + "=true", []string{"false", "true"}, true},
+		{"after the double dash is a prompt", "codex -- -c " + key + "=true", nil, false},
+		{"not codex", "claude -c " + key + "=true", []string{"true"}, false},
+		{"absolute path, numeric", "/abs/sf-cli/bin/codex -c " + key + "=1", []string{"1"}, true},
+		{"another key", "codex -c model=o3", nil, false},
+		{"key prefix only", "codex -c " + key + "x=true", nil, false},
+		{"trailing -c with nothing", "codex -c", nil, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := codexUpdateCheckValues(tc.command); !slices.Equal(got, tc.want) {
+				t.Errorf("codexUpdateCheckValues(%q) = %q, want %q", tc.command, got, tc.want)
+			}
+			err := validateCodexUpdateCheck("VAR", "n", tc.command)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("validateCodexUpdateCheck(%q) = %v, wantErr %v", tc.command, err, tc.wantErr)
+			}
+			if err != nil {
+				if !errors.Is(err, ErrCodexUpdateCheck) {
+					t.Errorf("error %v does not wrap ErrCodexUpdateCheck", err)
+				}
+				if strings.Contains(err.Error(), "check_for_update") {
+					t.Errorf("error spells the command line: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadStartCommandsRefusesCodexUpdateCheck(t *testing.T) {
+	t.Parallel()
+
+	pairs := map[string]string{
+		EnvSharedSecret:        "test-only-shared-secret-32-bytes",
+		EnvAllowedRoots:        t.TempDir(),
+		EnvAccessTeamDomain:    "example-team.cloudflareaccess.com",
+		EnvAccessAUD:           "test-only-audience-tag",
+		EnvAccessAllowedEmails: "operator@example.com",
+		EnvStartCommands:       "codex=codex -c check_for_update_on_startup=true",
+	}
+	_, err := LoadFrom(func(k string) string { return pairs[k] }, io.Discard)
+	if !errors.Is(err, ErrCodexUpdateCheck) {
+		t.Fatalf("LoadFrom() = %v, want ErrCodexUpdateCheck", err)
+	}
+}

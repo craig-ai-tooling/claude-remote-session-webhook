@@ -1527,7 +1527,7 @@ func validateStartCommand(variable, name, command string) error {
 		return fmt.Errorf("%s: the %q start command contains %s, which is not a placeholder this daemon substitutes (only %s); refusing to start",
 			variable, name, token, StartCommandNamePlaceholder)
 	}
-	return nil
+	return validateCodexUpdateCheck(variable, name, command)
 }
 
 // loadSecret returns errors that name the variable and nothing else. The value
