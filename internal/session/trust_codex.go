@@ -36,6 +36,8 @@ const codexTrustLine = `trust_level = "trusted"`
 var (
 	trustedLine   = regexp.MustCompile(`^\s*trust_level\s*=\s*"trusted"\s*(#.*)?$`)
 	trustLevelKey = regexp.MustCompile(`^\s*trust_level\s*=`)
+	// projectsHeader matches a [projects...] table header in any spelling.
+	projectsHeader = regexp.MustCompile(`^\s*\[\s*projects\s*\.`)
 )
 
 // CodexHome is where Codex keeps its config for a process with this
@@ -184,6 +186,12 @@ func withCodexTrust(raw []byte, dir string) ([]byte, bool, error) {
 		if strings.Contains(body, dir) {
 			return nil, false, ErrCodexConfigShape
 		}
+		// An escaped header can name dir without spelling it ("\u0072epo"), so a
+		// second table would be written for the same directory. TOML's escapes
+		// are not decoded here; a projects header holding one is refused.
+		if projectsHeader.MatchString(body) && strings.Contains(body, `\`) {
+			return nil, false, ErrCodexConfigShape
+		}
 	}
 
 	if headerAt < 0 {
@@ -198,6 +206,12 @@ func withCodexTrust(raw []byte, dir string) ([]byte, bool, error) {
 		body := strings.TrimRight(lines[i], "\r\n")
 		if strings.HasPrefix(strings.TrimSpace(body), "[") {
 			break
+		}
+		// A quoted key ("trust_level" = ...) is the same key spelled so the
+		// bare-key match above cannot see it, and adding a bare one would make
+		// the table invalid. Quoted keys in this table are refused outright.
+		if t := strings.TrimSpace(body); strings.HasPrefix(t, `"`) || strings.HasPrefix(t, `'`) {
+			return nil, false, ErrCodexConfigShape
 		}
 		if trustedLine.MatchString(body) {
 			return raw, false, nil

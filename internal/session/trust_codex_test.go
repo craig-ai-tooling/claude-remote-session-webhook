@@ -83,6 +83,22 @@ func TestWithCodexTrust(t *testing.T) {
 		},
 		{name: "comment naming the dir", dir: codexDir, wantErr: ErrCodexConfigShape, in: "# " + codexDir + "\n"},
 		{name: "duplicate header", dir: codexDir, wantErr: ErrCodexConfigShape, in: block + block},
+		{
+			name: "quoted trust_level key", dir: codexDir, wantErr: ErrCodexConfigShape,
+			in: header + "\n\"trust_level\" = \"untrusted\"\n",
+		},
+		{
+			name: "single-quoted trust_level key", dir: codexDir, wantErr: ErrCodexConfigShape,
+			in: header + "\n'trust_level' = \"untrusted\"\n",
+		},
+		{
+			name: "escaped trust_level key", dir: codexDir, wantErr: ErrCodexConfigShape,
+			in: header + "\n\"trust\\u005flevel\" = \"untrusted\"\n",
+		},
+		{
+			name: "escaped header naming the same dir", dir: codexDir, wantErr: ErrCodexConfigShape,
+			in: "[projects.\"/home/op/code/\\u0072epo\"]\ntrust_level = \"untrusted\"\n",
+		},
 		{name: "quote in dir", dir: "/a\"b", wantErr: ErrUntrustablePath},
 		{name: "backslash in dir", dir: "/a\\b", wantErr: ErrUntrustablePath},
 		{name: "newline in dir", dir: "/a\nb", wantErr: ErrUntrustablePath},
