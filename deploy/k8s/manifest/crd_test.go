@@ -235,8 +235,11 @@ func TestCRDImmutableSpecFields(t *testing.T) {
 	got := map[string]string{}
 	for _, r := range rules {
 		m := asObject(t, r)
-		rule, _ := m["rule"].(string)
-		msg, _ := m["message"].(string)
+		rule, okRule := m["rule"].(string)
+		msg, okMsg := m["message"].(string)
+		if !okRule || !okMsg {
+			t.Fatalf("validation %v needs a string rule and message", m)
+		}
 		got[rule] = msg
 	}
 	for _, f := range []string{"sessionName", "owner", "workDir", "startCommand", "lifetime"} {

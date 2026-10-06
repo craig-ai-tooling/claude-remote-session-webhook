@@ -268,7 +268,11 @@ func TestDeletionTimestampSurvivesConversion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if meta, _ := plain.Object["metadata"].(map[string]any); meta["deletionTimestamp"] != nil {
+	meta, ok := plain.Object["metadata"].(map[string]any)
+	if !ok {
+		t.Fatal("metadata is not a map")
+	}
+	if _, has := meta["deletionTimestamp"]; has {
 		t.Fatal("an unset deletionTimestamp was written")
 	}
 }

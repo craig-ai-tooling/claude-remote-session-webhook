@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clienttesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/util/workqueue"
+	"strconv"
 	"testing"
 )
 
@@ -50,7 +51,7 @@ func TestStatusWriteRefusesChangedResourceVersion(t *testing.T) {
 		if err != nil {
 			return true, nil, err
 		}
-		u.SetResourceVersion("rv" + string(rune('0'+gets)))
+		u.SetResourceVersion("rv" + strconv.Itoa(gets))
 		return true, u, nil
 	})
 	err := g.r.ReconcileOne(context.Background(), "crswd-abc")
