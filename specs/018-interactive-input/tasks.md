@@ -477,6 +477,7 @@ dependency order. Do them top to bottom.
     | type-invalid | `Nothing was sent: the text holds a control character. Use the key bar for Esc, Ctrl-C and the arrows.` |
     | type-too-long | `Nothing was sent: the text is longer than 16384 bytes.` |
     | type-failed | `The text could not be delivered. The session may have stopped; reload to see.` |
+    | type-unsubmitted | `The text was typed but not submitted. It is in the session now: press Enter to submit it.` |
     | key-unknown | `Nothing was sent: that is not a key this page offers.` |
     | key-failed | `The key could not be delivered. The session may have stopped; reload to see.` |
     | input-limited | `Nothing was sent: too many keys and messages in a short time. Wait a moment and try again.` |

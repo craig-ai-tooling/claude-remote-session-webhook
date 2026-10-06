@@ -208,13 +208,16 @@ const (
 
 	// Typed input and the key bar (spec 018). Each sentence says whether anything
 	// was sent and never what, for the reason outcomeCompactFailed's does.
-	outcomeTypeEmpty    outcome = "type-empty"
-	outcomeTypeInvalid  outcome = "type-invalid"
-	outcomeTypeTooLong  outcome = "type-too-long"
-	outcomeTypeFailed   outcome = "type-failed"
-	outcomeKeyUnknown   outcome = "key-unknown"
-	outcomeKeyFailed    outcome = "key-failed"
-	outcomeInputLimited outcome = "input-limited"
+	outcomeTypeEmpty   outcome = "type-empty"
+	outcomeTypeInvalid outcome = "type-invalid"
+	outcomeTypeTooLong outcome = "type-too-long"
+	outcomeTypeFailed  outcome = "type-failed"
+	// The paste landed and the Enter after it did not (spec 018 review #4). A
+	// different fact from type-failed, which says nothing was delivered.
+	outcomeTypeUnsubmitted outcome = "type-unsubmitted"
+	outcomeKeyUnknown      outcome = "key-unknown"
+	outcomeKeyFailed       outcome = "key-failed"
+	outcomeInputLimited    outcome = "input-limited"
 )
 
 // queryOutcome is the query parameter the fleet reads its banner from, spelled
@@ -553,6 +556,9 @@ var banners = map[outcome]outcomeView{
 	},
 	outcomeTypeFailed: {
 		Message: "The text could not be delivered. The session may have stopped; reload to see.",
+	},
+	outcomeTypeUnsubmitted: {
+		Message: "The text was typed but not submitted. It is in the session now: press Enter to submit it.",
 	},
 	outcomeKeyUnknown: {
 		Message: "Nothing was sent: that is not a key this page offers.",

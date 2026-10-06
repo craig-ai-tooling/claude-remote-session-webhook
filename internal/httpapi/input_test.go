@@ -431,8 +431,14 @@ func TestKeyAuditsNoKeyName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-encode the audit record %v: %v", rec, err)
 	}
-	if strings.Contains(string(raw), string(session.KeyEscape)) {
-		t.Errorf("the record carries the key name: %s", raw)
+	// Both spellings, folded: the symbolic name the browser posts and the tmux
+	// name it maps to ("Escape"). Checking one lowercase string would pass a
+	// record that carried the other.
+	lower := strings.ToLower(string(raw))
+	for _, name := range []string{string(session.KeyEscape), "Escape"} {
+		if strings.Contains(lower, strings.ToLower(name)) {
+			t.Errorf("the record carries the key name %q: %s", name, raw)
+		}
 	}
 }
 
@@ -620,4 +626,89 @@ func (ty *typer) askedForHistory() bool {
 		}
 	}
 	return false
+}
+
+// An ID that is not routable still costs a token, on both routes, so a flood of
+// malformed requests cannot be had for free (FR-009, spec 018 review #8).
+func TestMalformedIDsSpendTheInputBudget(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+
+	for i := 1; i <= 60; i++ {
+		if w := ty.typed(t, "not-a-session-id", "x", absent); w.Code != http.StatusNotFound {
+			t.Fatalf("malformed type %d = %d (%s); want %d", i, w.Code, w.Body.String(), http.StatusNotFound)
+		}
+		if w := ty.pressed(t, "not-a-session-id", string(session.KeyTab)); w.Code != http.StatusNotFound {
+			t.Fatalf("malformed key %d = %d (%s); want %d", i, w.Code, w.Body.String(), http.StatusNotFound)
+		}
+	}
+
+	wantOutcome(t, ty.typed(t, live.ID, "x", absent), outcomeInputLimited)
+	wantOutcome(t, ty.pressed(t, live.ID, string(session.KeyTab)), outcomeInputLimited)
+	if ty.reachedTheHost() {
+		t.Error("a request refused for budget reached the host")
+	}
+}
+
+// The paste landed and the Enter did not. The answer says so, and it is not the
+// outcome that says nothing was delivered (spec 018 review #4).
+func TestTypeWhoseEnterFailedSaysTheTextWasTyped(t *testing.T) {
+	t.Parallel()
+
+	const canary = "canary-unsubmitted-2b8d"
+	ty := newTyper(t)
+	live := ty.live(t)
+	ty.fixture.tmux.FailOp(tmuxctl.OpSendKeys, tmuxctl.ErrNoSocket)
+
+	w := ty.typed(t, live.ID, canary, confirmYes)
+
+	wantOutcome(t, w, outcomeTypeUnsubmitted)
+	if view := bannerFor(string(outcomeTypeUnsubmitted)); view == nil || !strings.Contains(view.Message, "typed but not submitted") {
+		t.Errorf("the banner for type-unsubmitted = %v; want one that says the text was typed but not submitted", view)
+	}
+	raw, err := json.Marshal(ty.only(t))
+	if err != nil {
+		t.Fatalf("re-encode the audit record: %v", err)
+	}
+	if strings.Contains(string(raw), canary) {
+		t.Errorf("the record carries the typed text: %s", raw)
+	}
+}
+
+// View said live and tmux had already lost the window: every input route
+// answers the uniform not-found, not a generic failure or a 500 (review #3).
+func TestInputToAVanishedWindowIsTheUniformNotFound(t *testing.T) {
+	t.Parallel()
+
+	for name, drive := range map[string]func(*testing.T, *typer, string) *httptest.ResponseRecorder{
+		"type": func(t *testing.T, ty *typer, id string) *httptest.ResponseRecorder {
+			return ty.typed(t, id, "hello", confirmYes)
+		},
+		"key": func(t *testing.T, ty *typer, id string) *httptest.ResponseRecorder {
+			return ty.pressed(t, id, string(session.KeyTab))
+		},
+		"history": func(t *testing.T, ty *typer, id string) *httptest.ResponseRecorder {
+			return ty.read(t, id, secFetchSiteSameOrigin)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			ty := newTyper(t)
+			live := ty.live(t)
+			// The record stays in the store and the window is gone, which is the
+			// state between View and the delivery.
+			if err := ty.fixture.tmux.Kill(t.Context(), live.TmuxName()); err != nil {
+				t.Fatalf("Kill: %v", err)
+			}
+
+			w := drive(t, ty, live.ID)
+
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNotFound)
+			}
+		})
+	}
 }

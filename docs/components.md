@@ -827,8 +827,15 @@ Rules:
 - **Never gated by the dialog heuristic.** A session that looks like it is on a
   dialog or sign-in screen still accepts input, because the heuristic is a guess and
   the operator is looking at the screen.
-- **The panel is drawn only with a page token**, like every other control that
-  changes something.
+- **The panel and the Scrollback disclosure are drawn only with a page token**
+  (FR-017), like every other control that changes something.
+- **One delivery at a time per session.** A message is a paste and an Enter, and
+  the daemon holds both under one lock, so a key from another tab cannot land
+  between them.
+- **Type answers for what happened.** `type-unsubmitted` ("The text was typed but
+  not submitted") means the paste landed and the Enter did not. The script clears
+  the textarea for that outcome and only that one, since the text is already in
+  the session and a retry would type it twice. `type-failed` leaves the box alone.
 - **Scrollback is a `<pre>` filled with `textContent`**, fetched from
   `GET /sessions/{id}/history` when the disclosure opens, never as markup.
 

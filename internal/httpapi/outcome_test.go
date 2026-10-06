@@ -49,7 +49,7 @@ var spelledOutcomes = []outcome{
 	"signin-no-code", "signin-bad-code", "signin-not-running",
 	"signin-cancelled", "signin-unconfirmed", "signin-refused",
 	// Typed input and the key bar (spec 018).
-	"type-empty", "type-invalid", "type-too-long", "type-failed",
+	"type-empty", "type-invalid", "type-too-long", "type-failed", "type-unsubmitted",
 	"key-unknown", "key-failed", "input-limited",
 }
 

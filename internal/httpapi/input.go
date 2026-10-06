@@ -24,6 +24,7 @@ const (
 // carries a byte the caller chose.
 var (
 	errTypeRefused       = errors.New("the typed text could not be delivered")
+	errSubmitRefused     = errors.New("the text was typed but the Enter after it was not delivered")
 	errInputRateExceeded = errors.New("the input budget for this operator is spent")
 )
 
@@ -46,18 +47,18 @@ func (s *Server) typeFromBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Spent before the ID is even looked at, so a flood of malformed requests
+	// costs the same budget a flood of good ones does (FR-009).
+	if !s.inputs.allow(operator.Owner) {
+		AuditFrom(r.Context()).Deny(errInputRateExceeded.Error())
+		s.redirectOutcome(w, r, outcomeInputLimited)
+		return
+	}
+
 	id := r.PathValue(pathValueID)
 	if !routableID(id) {
 		AuditFrom(r.Context()).Deny(errScopeNoRoute.Error())
 		s.renderNotFound(w, r, operator)
-		return
-	}
-
-	// Spent before the text is looked at, so a flood of malformed messages costs
-	// the same budget a flood of good ones does.
-	if !s.inputs.allow(operator.Owner) {
-		AuditFrom(r.Context()).Deny(errInputRateExceeded.Error())
-		s.redirectOutcome(w, r, outcomeInputLimited)
 		return
 	}
 
@@ -90,6 +91,11 @@ func (s *Server) typeFromBrowser(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, session.ErrSessionNotFound), errors.Is(err, session.ErrSessionDead):
 			AuditFrom(r.Context()).Deny(resolveReason(err).Error())
 			s.notFoundAction(w)
+		case errors.Is(err, session.ErrSubmitFailed):
+			// The text is in the pane. Telling the browser it failed would
+			// invite a retry that types it twice.
+			AuditFrom(r.Context()).Deny(errSubmitRefused.Error())
+			s.redirectOutcome(w, r, outcomeTypeUnsubmitted)
 		default:
 			AuditFrom(r.Context()).Deny(errTypeRefused.Error())
 			s.redirectOutcome(w, r, outcomeTypeFailed)
@@ -121,16 +127,18 @@ func (s *Server) keyFromBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Spent before the ID is even looked at, so a flood of malformed requests
+	// costs the same budget a flood of good ones does (FR-009).
+	if !s.inputs.allow(operator.Owner) {
+		AuditFrom(r.Context()).Deny(errInputRateExceeded.Error())
+		s.redirectOutcome(w, r, outcomeInputLimited)
+		return
+	}
+
 	id := r.PathValue(pathValueID)
 	if !routableID(id) {
 		AuditFrom(r.Context()).Deny(errScopeNoRoute.Error())
 		s.renderNotFound(w, r, operator)
-		return
-	}
-
-	if !s.inputs.allow(operator.Owner) {
-		AuditFrom(r.Context()).Deny(errInputRateExceeded.Error())
-		s.redirectOutcome(w, r, outcomeInputLimited)
 		return
 	}
 
@@ -204,6 +212,11 @@ func (s *Server) sessionHistory(w http.ResponseWriter, r *http.Request) {
 	AuditFrom(r.Context()).SetSessionID(live.ID)
 
 	c, err := s.sessions.History(r.Context(), live)
+	if errors.Is(err, session.ErrSessionNotFound) || errors.Is(err, session.ErrSessionDead) {
+		AuditFrom(r.Context()).Deny(resolveReason(err).Error())
+		s.renderNotFound(w, r, operator)
+		return
+	}
 	if err != nil {
 		AuditFrom(r.Context()).Deny(errHistoryUnreadable.Error())
 		s.report(fmt.Errorf("read history of session %s: %w", live.ID, err))
