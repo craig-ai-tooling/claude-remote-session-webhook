@@ -68,6 +68,7 @@ type Controller struct {
 
 	mu      sync.Mutex
 	streams map[string]*stream
+	closing map[string]int // names under Kill; CapturePane refuses them
 }
 
 // New refuses a negative duration, because a negative interval reaches
@@ -102,7 +103,7 @@ func New(sessions *agentsession.Client, pods kubernetes.Interface, exec Executor
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Controller{sessions: sessions, pods: pods, exec: exec, cfg: cfg, streams: map[string]*stream{}}, nil
+	return &Controller{sessions: sessions, pods: pods, exec: exec, cfg: cfg, streams: map[string]*stream{}, closing: map[string]int{}}, nil
 }
 
 // SetDescriber installs the lookup that finds a session's record.

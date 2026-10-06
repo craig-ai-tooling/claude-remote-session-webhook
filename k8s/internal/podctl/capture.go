@@ -26,6 +26,9 @@ type stream struct {
 	cancel  context.CancelFunc
 	ready   chan struct{}
 	once    sync.Once
+	done    chan struct{} // closed when the stream's goroutine exits
+	idle    *time.Timer   // real-time reaper, reset only by CapturePane
+	idleDue time.Time
 }
 
 // markReady wakes the callers waiting on the first frame or the first error.
@@ -36,11 +39,16 @@ func (s *stream) markReady() { s.once.Do(func() { close(s.ready) }) }
 // request's cancellation cannot tear down a pane other requests are reading.
 func (c *Controller) CapturePane(ctx context.Context, name string) (string, error) {
 	c.mu.Lock()
+	if c.closing[name] > 0 {
+		c.mu.Unlock()
+		return "", fmt.Errorf("podctl: capture pane %s: session is being killed", name)
+	}
 	s := c.streams[name]
 	if s == nil {
 		s = c.startStream(name)
 	}
 	s.lastUse = c.cfg.Now()
+	s.armIdle(c.cfg.StreamIdle)
 	c.mu.Unlock()
 
 	wait := time.NewTimer(firstFrameWait)
@@ -63,14 +71,38 @@ func (c *Controller) CapturePane(ctx context.Context, name string) (string, erro
 // startStream registers a stream and starts its goroutine. The caller holds c.mu.
 func (c *Controller) startStream(name string) *stream {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &stream{cancel: cancel, ready: make(chan struct{})}
+	s := &stream{cancel: cancel, ready: make(chan struct{}), done: make(chan struct{})}
 	c.streams[name] = s
+	s.idle = time.AfterFunc(c.cfg.StreamIdle, func() { c.reapIdle(name, s) })
+	s.idleDue = time.Now().Add(c.cfg.StreamIdle)
 	go c.runStream(ctx, name, s)
 	return s
 }
 
+// armIdle pushes the reaper out by d. The caller holds Controller.mu.
+func (s *stream) armIdle(d time.Duration) {
+	s.idleDue = time.Now().Add(d)
+	s.idle.Reset(d)
+}
+
+// reapIdle cancels and removes a stream no CapturePane has touched for
+// StreamIdle, whether or not it ever produced a frame. The frame-driven check
+// in splitter.frame cannot see a stream that only fails.
+func (c *Controller) reapIdle(name string, s *stream) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Now().Before(s.idleDue) {
+		return // a CapturePane re-armed the timer while this callback waited for the lock
+	}
+	s.cancel()
+	if c.streams[name] == s {
+		delete(c.streams, name)
+	}
+}
+
 // runStream holds one exec open and reopens it when it is cut.
 func (c *Controller) runStream(ctx context.Context, name string, s *stream) {
+	defer close(s.done)
 	argv := []string{Binary, "pane-loop", name}
 	sp := &splitter{c: c, name: name, s: s}
 	for {
@@ -157,6 +189,7 @@ func (sp *splitter) frame(raw string, tooBig bool) {
 	sp.s.markReady()
 	if c.cfg.Now().Sub(sp.s.lastUse) > c.cfg.StreamIdle {
 		sp.s.cancel()
+		sp.s.idle.Stop()
 		if c.streams[sp.name] == sp.s {
 			delete(c.streams, sp.name)
 		}

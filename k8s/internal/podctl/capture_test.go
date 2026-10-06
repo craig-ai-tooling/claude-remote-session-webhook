@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
+
 	"github.com/nctiggy/claude-remote-session-webhook/api/v1alpha1"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/sessionpod"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
@@ -297,5 +300,73 @@ func TestCapturePaneCallerContext(t *testing.T) {
 	r.c.mu.Unlock()
 	if s == nil {
 		t.Fatal("the caller's cancellation tore the stream down")
+	}
+}
+
+func TestCapturePaneIdleReapsFailingStream(t *testing.T) {
+	t.Parallel()
+	var execs atomic.Int32
+	r := captureRig(t, func(context.Context, string, []string, io.Writer) (int, error) {
+		execs.Add(1)
+		return 0, errors.New("exec refused")
+	})
+	r.c.cfg.StreamIdle = 40 * time.Millisecond
+	if _, err := r.c.CapturePane(context.Background(), testName); err == nil {
+		t.Fatal("a failing stream returned no error")
+	}
+	r.c.mu.Lock()
+	s := r.c.streams[testName]
+	r.c.mu.Unlock()
+	if s == nil {
+		t.Fatal("no stream registered")
+	}
+	eventually(t, "the failing stream to be reaped", func() bool {
+		r.c.mu.Lock()
+		defer r.c.mu.Unlock()
+		return len(r.c.streams) == 0
+	})
+	select {
+	case <-s.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the reaped stream's goroutine did not exit")
+	}
+	n := execs.Load()
+	time.Sleep(30 * time.Millisecond)
+	if execs.Load() != n {
+		t.Fatal("a reaped stream kept retrying exec")
+	}
+}
+
+func TestCapturePaneRacingKillLeavesNoStream(t *testing.T) {
+	t.Parallel()
+	r := captureRig(t, func(ctx context.Context, _ string, _ []string, _ io.Writer) (int, error) {
+		<-ctx.Done()
+		return 0, ctx.Err()
+	})
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	r.pods.PrependReactor("get", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		once.Do(func() { close(entered) })
+		<-release
+		return false, nil, nil
+	})
+	r.object(t, testName, nil, v1alpha1.AgentSessionStatus{})
+	killed := make(chan error, 1)
+	go func() { killed <- r.c.Kill(context.Background(), testName) }()
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := r.c.CapturePane(ctx, testName); err == nil {
+		t.Fatal("CapturePane on a name being killed returned no error")
+	}
+	close(release)
+	if err := <-killed; err != nil {
+		t.Fatal(err)
+	}
+	r.c.mu.Lock()
+	n := len(r.c.streams)
+	r.c.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d stream(s) survived Kill", n)
 	}
 }

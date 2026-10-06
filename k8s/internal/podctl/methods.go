@@ -303,7 +303,22 @@ func (c *Controller) Has(ctx context.Context, name string) (bool, error) {
 
 // Kill deletes the AgentSession and waits for its pod to go. The pod's own
 // termination grace applies; nothing here shortens it (spec 017 FR-010).
+//
+// The name is marked closing for the whole call so a concurrent CapturePane
+// cannot install a stream that outlives the teardown; the stream is stopped
+// again on every return path.
 func (c *Controller) Kill(ctx context.Context, name string) error {
+	c.mu.Lock()
+	c.closing[name]++
+	c.mu.Unlock()
+	defer func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.stopStreamLocked(name)
+		if c.closing[name]--; c.closing[name] <= 0 {
+			delete(c.closing, name)
+		}
+	}()
 	c.stopStream(name)
 	if err := c.sessions.Delete(ctx, name); err != nil {
 		return fmt.Errorf("podctl: kill %s: %w", name, err)
@@ -334,8 +349,13 @@ func (c *Controller) Kill(ctx context.Context, name string) error {
 func (c *Controller) stopStream(name string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.stopStreamLocked(name)
+}
+
+func (c *Controller) stopStreamLocked(name string) {
 	if s := c.streams[name]; s != nil {
 		s.cancel()
+		s.idle.Stop()
 		delete(c.streams, name)
 	}
 }
