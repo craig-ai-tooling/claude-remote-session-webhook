@@ -46,3 +46,51 @@ func TestChartRBACReadsGeneratedRules(t *testing.T) {
 		}
 	}
 }
+
+// Both Deployments run as the manifests S7 tested: no root, no writable image
+// layer, no privilege, and nothing shared with the node.
+func TestChartWorkloadsAreLockedDown(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"daemon.yaml", "reconciler.yaml"} {
+		text := readTemplate(t, name)
+		for _, want := range []string{
+			"readOnlyRootFilesystem: true",
+			"runAsNonRoot: true",
+			"allowPrivilegeEscalation: false",
+			"serviceAccountName:",
+			"crswd.selectorLabels",
+		} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s does not contain %q", name, want)
+			}
+		}
+		for _, banned := range []string{"hostPath", "privileged: true", "hostNetwork"} {
+			if strings.Contains(text, banned) {
+				t.Errorf("%s contains %q", name, banned)
+			}
+		}
+	}
+}
+
+// FR-021: a fresh install offers Claude Code and Codex without an override.
+func TestChartOffersBothRuntimes(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("values.yaml")
+	if err != nil {
+		t.Fatalf("read values.yaml: %v", err)
+	}
+	var line string
+	for _, l := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(l, "startCommands:") {
+			line = l
+		}
+	}
+	if line == "" {
+		t.Fatal("values.yaml has no startCommands line")
+	}
+	for _, want := range []string{"default=claude", "codex="} {
+		if !strings.Contains(line, want) {
+			t.Errorf("startCommands does not contain %q", want)
+		}
+	}
+}

@@ -111,3 +111,24 @@ Next iteration would waste time on:
 - The Bash sandbox refuses heredocs and commands containing braces plus quotes. Write template files
   with the Write tool, and avoid `${PIPESTATUS[0]}` style expansions.
 - Gate steps 1 to 9 passed (gosec G304 on the test's ReadFile needed a `//nolint:gosec` with a reason).
+
+## Iteration 5 (T5, workloads)
+
+Done: `templates/claim.yaml` (PVC `crswd-sessions`, RWO, `helm.sh/resource-policy: keep`),
+`templates/daemon.yaml` (guards kept, then the Deployment, optional cloudflared sidecar),
+`templates/reconciler.yaml`, `templates/service.yaml` (only when `service.enabled`). Tests added to
+`deploy/chart/chart_test.go`: `TestChartWorkloadsAreLockedDown`, `TestChartOffersBothRuntimes`.
+
+Failing first: `go test ./deploy/chart` printed `daemon.yaml does not contain "runAsNonRoot: true"`
+and `read template reconciler.yaml: open templates/reconciler.yaml: no such file or directory`.
+After: both pass. `helm template t deploy/chart -n crswd` with no secret exits 1; with the secret it renders
+2 Deployments; `service.enabled=true` alone exits 1; with `dashboardPassword.existingSecret=p` it sets
+`CRSW_LISTEN` to `0.0.0.0:8765`; `cloudflared.enabled=true` with no `tokenSecret` exits 1 (an added `required`).
+
+Next iteration would waste time on:
+- T6 edits `.github/workflows/**`; the loop cannot push it (operator uses the App token).
+- The cloudflared sidecar has `readOnlyRootFilesystem: true` per Design §5 and is untested on a cluster.
+  If it crashes writing to its filesystem, the fix is an emptyDir, an operator-acceptance finding.
+- Gate steps 1 to 9 passed. The quickstart suite passed with 127.0.0.1:8765 free.
+
+Noticed, not fixed: none.
