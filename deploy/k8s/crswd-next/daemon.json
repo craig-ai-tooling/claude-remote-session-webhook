@@ -1,0 +1,109 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "labels": {
+      "app.kubernetes.io/component": "daemon",
+      "app.kubernetes.io/instance": "crswd-next",
+      "app.kubernetes.io/name": "crswd",
+      "app.kubernetes.io/part-of": "crswd"
+    },
+    "name": "crswd",
+    "namespace": "crswd-next"
+  },
+  "spec": {
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/component": "daemon",
+        "app.kubernetes.io/instance": "crswd-next",
+        "app.kubernetes.io/name": "crswd"
+      }
+    },
+    "strategy": {
+      "type": "Recreate"
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/component": "daemon",
+          "app.kubernetes.io/instance": "crswd-next",
+          "app.kubernetes.io/name": "crswd"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "CRSW_EXECUTION_MODE",
+                "value": "kubernetes"
+              },
+              {
+                "name": "CRSW_SESSION_NAMESPACE",
+                "value": "crswd-next"
+              },
+              {
+                "name": "CRSW_LISTEN",
+                "value": "127.0.0.1:8765"
+              },
+              {
+                "name": "CRSW_ALLOWED_ROOTS",
+                "value": "/work"
+              },
+              {
+                "name": "CRSW_MAX_SESSIONS",
+                "value": "10"
+              },
+              {
+                "name": "CRSW_START_COMMANDS",
+                "value": "default=claude --dangerously-skip-permissions,codex=/usr/local/bin/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust"
+              },
+              {
+                "name": "CRSW_SHARED_SECRET",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "key": "secret",
+                    "name": "crswd-shared-secret"
+                  }
+                }
+              }
+            ],
+            "image": "docker.io/nctiggy/crswd:2.0.0-dev.REPLACE",
+            "name": "daemon",
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsNonRoot": true
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/work",
+                "name": "work"
+              }
+            ]
+          }
+        ],
+        "serviceAccountName": "crswd",
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "drbd.linbit.com/lost-quorum",
+            "operator": "Exists"
+          }
+        ],
+        "volumes": [
+          {
+            "emptyDir": {},
+            "name": "work"
+          }
+        ]
+      }
+    }
+  }
+}

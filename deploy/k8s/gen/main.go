@@ -27,7 +27,10 @@ func run() error {
 	for name, b := range files {
 		// The name comes from manifest.Files, a closed set of constants, never
 		// from input; 0600 matches what the drift test reads back.
-		p := filepath.Join("deploy", "k8s", name)
+		p := filepath.Join("deploy", "k8s", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			return fmt.Errorf("create %s: %w", filepath.Dir(p), err)
+		}
 		if err := os.WriteFile(p, b, 0o600); err != nil { //nolint:gosec // G306/G304: constant names, repo-local output
 			return fmt.Errorf("write %s: %w", p, err)
 		}

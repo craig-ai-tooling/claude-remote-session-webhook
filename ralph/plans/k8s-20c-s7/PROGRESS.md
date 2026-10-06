@@ -183,3 +183,22 @@ BLOCKED: T4 needs `bash -n deploy/session-image/fetch-codex.sh` and `chmod +x` o
 ## Operator (10/6/26): T4 closed
 
 `bash -n` and shellcheck pass on fetch-codex.sh; it is now mode 0755; a real run fetched the asset, the sha matched, and the binary printed `codex-cli 0.153.4`. T4 ticked. Ignore the BLOCKED line above. Next: T5.
+
+## Iteration 6 (T5, crswd-next manifests): done
+
+Wrote `deploy/k8s/manifest/crswdnext.go` and `crswdnext_test.go`; `Files()` merges the six
+`crswd-next/*.json` entries (a new `render` helper shared with the S2 objects); `gen/main.go`
+creates the directory; `drift_test.go` globs `crswd-next/` too. Generated with `go run ./deploy/k8s/gen`.
+
+Failing first: `crswdnext_test.go:143:18: undefined: DaemonImage` (does not compile before the change).
+
+Task verify `go test ./deploy/k8s/...` passes. Full pre-commit list passed (`-tags quickstart` failed
+once on the known `TestDashboardQuickstartStory2Cap` flake, passed on rerun; `127.0.0.1:8765` free).
+
+For the next iteration:
+- `fixtures_test.go` bans the literal `.claude` and `lawnmower` in every file under `deploy/k8s`,
+  tests included; build such strings from two parts.
+- gosec G101 fires on a map literal that pairs `*_SECRET` env names with Secret names; nolint is in the test.
+- Bash refuses `$?` and `$VAR` in a command line here; write literal paths.
+
+Noticed, not fixed: the quickstart cap flake (3rd time, Iterations 2, 5, 6).
