@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
@@ -61,6 +62,11 @@ var (
 	ErrUnknownKey   = errors.New("that is not a key the session page offers")
 	ErrInputTooLong = errors.New("typed text is longer than the bound")
 	ErrInputInvalid = errors.New("typed text holds a control character or is not UTF-8")
+
+	// ErrSubmitFailed means the text reached the pane and the Enter after it
+	// did not. It is not a failure to deliver, and a caller must not offer a
+	// retry that types the text a second time (spec 018 review #4).
+	ErrSubmitFailed = errors.New("the text was typed but not submitted")
 )
 
 // ValidateTyped applies FR-004 to text the caller has already CRLF-normalised.
@@ -99,15 +105,30 @@ func (m *Manager) Type(ctx context.Context, s Session, text string, submit bool)
 	if err := ValidateTyped(text); err != nil {
 		return fmt.Errorf("type into session %s: %w", s.ID, err)
 	}
-	if err := m.recordDriving(s); err != nil {
+
+	// Held across the paste and the Enter, so a key or another message cannot
+	// land between them.
+	unlock := m.lockInput(s.ID)
+	defer unlock()
+
+	if err := m.stillLive(s); err != nil {
 		return fmt.Errorf("type into session %s: %w", s.ID, err)
 	}
 	if err := m.tmux.PasteBracketed(ctx, s.TmuxName(), []byte(text)); err != nil {
+		return m.vanished(ctx, s, "type into", err)
+	}
+	// After the delivery, not before: a session that is not there must not look
+	// driven in the fleet.
+	if err := m.recordDriving(s); err != nil {
 		return fmt.Errorf("type into session %s: %w", s.ID, err)
 	}
 	if submit {
 		if err := m.tmux.SendKeys(ctx, s.TmuxName(), enterKey); err != nil {
-			return fmt.Errorf("submit typed text in session %s: %w", s.ID, err)
+			err = m.vanished(ctx, s, "submit typed text in", err)
+			if errors.Is(err, ErrSessionDead) {
+				return err
+			}
+			return fmt.Errorf("%w: %w", ErrSubmitFailed, err)
 		}
 	}
 	return nil
@@ -123,29 +144,60 @@ func (m *Manager) PressKey(ctx context.Context, s Session, key Key) error {
 	if !ok {
 		return fmt.Errorf("press a key in session %s: %w", s.ID, ErrUnknownKey)
 	}
-	if err := m.recordDriving(s); err != nil {
+
+	unlock := m.lockInput(s.ID)
+	defer unlock()
+
+	if err := m.stillLive(s); err != nil {
 		return fmt.Errorf("press a key in session %s: %w", s.ID, err)
 	}
 	if err := m.tmux.SendKeys(ctx, s.TmuxName(), name); err != nil {
+		return m.vanished(ctx, s, "press a key in", err)
+	}
+	if err := m.recordDriving(s); err != nil {
 		return fmt.Errorf("press a key in session %s: %w", s.ID, err)
 	}
 	return nil
 }
 
+// lockInput takes the session's input mutex and returns its release.
+func (m *Manager) lockInput(id string) func() {
+	mu, _ := m.inputLocks.LoadOrStore(id, &sync.Mutex{})
+	l, ok := mu.(*sync.Mutex)
+	if !ok {
+		// Unreachable: the map is only ever given a *sync.Mutex.
+		l = new(sync.Mutex)
+	}
+	l.Lock()
+	return l.Unlock
+}
+
+// stillLive asks the store whether the record is still there, without moving
+// its clock. recordDriving's Touch answers the same question but also counts as
+// activity, which must wait until something has been delivered.
+func (m *Manager) stillLive(s Session) error {
+	_, err := m.store.Get(s.ID, s.Owner)
+	return err
+}
+
 // History returns the session's tmux scrollback, excluding the visible screen,
 // stripped. Reading is not driving, so the record is not touched (FR-011).
 //
-// A failure is returned as it is and never handed to unreadable: a refusal for
-// size (ErrHistoryTooLarge) is no evidence the window died, and treating it as
-// such would let a long scrollback end a live session's card.
+// A refusal for size (ErrHistoryTooLarge) is returned as it is: it is no
+// evidence the window died, and treating it as such would let a long scrollback
+// end a live session's card. Any other failure asks the host whether the
+// session is still there, and a session that is not answers ErrSessionDead.
 func (m *Manager) History(ctx context.Context, s Session) (Capture, error) {
 	if err := guardDelivery(s); err != nil {
 		return Capture{}, fmt.Errorf("capture history: %w", err)
 	}
 
 	text, err := m.tmux.CaptureHistory(ctx, s.TmuxName())
-	if err != nil {
+	if errors.Is(err, tmuxctl.ErrHistoryTooLarge) {
 		return Capture{}, fmt.Errorf("capture history of session %s: %w", s.ID, err)
+	}
+	if err != nil {
+		return Capture{}, m.vanished(ctx, s, "capture history of", err)
 	}
 
 	return Capture{Text: tmuxctl.Strip(text), At: m.clock.Now()}, nil

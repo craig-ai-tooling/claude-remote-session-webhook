@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -371,5 +372,169 @@ func TestHistoryRefusesWhatItCannotRead(t *testing.T) {
 				t.Errorf("the refused History ran %v", f.tmux.Calls()[before:after])
 			}
 		})
+	}
+}
+
+// A message is a paste and then an Enter. Another message or a key landing
+// between the two would arrive inside the first one's text (review #1).
+func TestInputOnOneSessionNeverInterleaves(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	before := len(f.tmux.Calls())
+	// The Enter is slow, which is what widens the gap between a message's paste
+	// and its Enter far enough for an unserialised key to land in it.
+	slow, err := NewManagerWithClock(slowEnter{f.tmux}, f.store, f.roots(), capNotUnderTest, stoppedClock{now: f.now})
+	if err != nil {
+		t.Fatalf("NewManagerWithClock: %v", err)
+	}
+	f.mgr = slow
+
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			if err := f.mgr.Type(context.Background(), *s, "hello", true); err != nil {
+				t.Errorf("Type: %v", err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			if err := f.mgr.PressKey(context.Background(), *s, KeyTab); err != nil {
+				t.Errorf("PressKey: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	calls := f.tmux.Calls()[before:]
+	for i := 0; i < len(calls); i++ {
+		if calls[i].Op != tmuxctl.OpPasteBracketed {
+			continue
+		}
+		// load-buffer, paste-buffer, then this message's own Enter.
+		if i+2 >= len(calls) || calls[i+1].Op != tmuxctl.OpPasteBracketed ||
+			calls[i+2].Op != tmuxctl.OpSendKeys || calls[i+2].Argv[len(calls[i+2].Argv)-1] != "Enter" {
+			t.Fatalf("a typed message was interleaved with other input at call %d: %v", i, calls[i:min(i+4, len(calls))])
+		}
+		i += 2
+	}
+}
+
+// slowEnter delays every key press, so two unserialised deliveries interleave.
+type slowEnter struct{ *tmuxctl.Fake }
+
+func (c slowEnter) SendKeys(ctx context.Context, name string, keys ...string) error {
+	time.Sleep(time.Millisecond)
+	return c.Fake.SendKeys(ctx, name, keys...)
+}
+
+// The destroy path removes the lock with the record, so the map does not grow
+// with every session the daemon ever ran.
+func TestDestroyReleasesTheInputLock(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	if err := f.mgr.PressKey(context.Background(), *s, KeyTab); err != nil {
+		t.Fatalf("PressKey: %v", err)
+	}
+	if _, ok := f.mgr.inputLocks.Load(s.ID); !ok {
+		t.Fatal("no input lock after a key press")
+	}
+	if err := f.mgr.Destroy(context.Background(), *s); err != nil {
+		t.Fatalf("Destroy: %v", err)
+	}
+	if _, ok := f.mgr.inputLocks.Load(s.ID); ok {
+		t.Error("the input lock outlived its session")
+	}
+}
+
+// View said the session was live and tmux then lost it. Every delivery path
+// answers ErrSessionDead, drops the stale record, and never counts as driving
+// (review #3).
+func TestInputToASessionThatVanishedAfterViewIsDead(t *testing.T) {
+	t.Parallel()
+
+	ops := map[string]func(*Manager, Session) error{
+		"Type": func(m *Manager, s Session) error { return m.Type(context.Background(), s, "hello", true) },
+		"PressKey": func(m *Manager, s Session) error {
+			return m.PressKey(context.Background(), s, KeyTab)
+		},
+		"History": func(m *Manager, s Session) error { _, err := m.History(context.Background(), s); return err },
+	}
+	for name, op := range ops {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newManagerFixture(t)
+			s, _ := mustCreate(t, f, f.request())
+			stale := *s
+			if err := f.tmux.Kill(context.Background(), s.TmuxName()); err != nil {
+				t.Fatalf("Kill: %v", err)
+			}
+
+			later := f.now.Add(time.Hour)
+			err := op(f.managerAt(t, f.store, later), stale)
+			if !errors.Is(err, ErrSessionDead) {
+				t.Fatalf("err = %v, want ErrSessionDead", err)
+			}
+			if name != "History" {
+				// Dropped by the vanished path, so there is no record to be
+				// driven, and certainly none with a refreshed clock.
+				if got, ok := f.store.lookup(s.ID); ok && got.LastActivity.Equal(later) {
+					t.Errorf("a failed delivery refreshed LastActivity to %v", got.LastActivity)
+				}
+			}
+		})
+	}
+}
+
+// A failure the host cannot explain by the session being gone stays a plain
+// failure and leaves the clock alone.
+func TestFailedDeliveryOnALiveSessionKeepsTheClock(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	f.tmux.FailOp(tmuxctl.OpSendKeys, errors.New("tmux hiccup"))
+
+	later := f.now.Add(time.Hour)
+	err := f.managerAt(t, f.store, later).PressKey(context.Background(), *s, KeyTab)
+	if err == nil || errors.Is(err, ErrSessionDead) {
+		t.Fatalf("err = %v, want a failure that is not ErrSessionDead", err)
+	}
+	if got := mustStored(t, f, s.ID).LastActivity; got.Equal(later) {
+		t.Errorf("the failed key refreshed LastActivity to %v", got)
+	}
+}
+
+// The text is in the pane and the Enter is not: say so, so the browser does not
+// offer a retry that types it twice (review #4).
+func TestTypeReportsATypedButNotSubmittedMessage(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	f.tmux.FailOp(tmuxctl.OpSendKeys, errors.New("tmux hiccup"))
+
+	err := f.mgr.Type(context.Background(), *s, "secret-text", true)
+	if !errors.Is(err, ErrSubmitFailed) {
+		t.Fatalf("err = %v, want ErrSubmitFailed", err)
+	}
+	if errors.Is(err, ErrSessionDead) {
+		t.Errorf("err = %v must not claim the session died", err)
+	}
+	if strings.Contains(err.Error(), "secret-text") {
+		t.Errorf("error names the text: %v", err)
+	}
+	// A paste that fails is still a plain failure.
+	g := newManagerFixture(t)
+	s2, _ := mustCreate(t, g, g.request())
+	g.tmux.FailOp(tmuxctl.OpPasteBracketed, errors.New("tmux hiccup"))
+	if err := g.mgr.Type(context.Background(), *s2, "x", true); err == nil || errors.Is(err, ErrSubmitFailed) {
+		t.Errorf("a failed paste = %v, want a failure that is not ErrSubmitFailed", err)
 	}
 }
