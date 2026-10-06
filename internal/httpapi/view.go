@@ -90,6 +90,13 @@ type sessionView struct {
 	// card renders it unconditionally where it states the absence of a name.
 	Mode session.Mode
 
+	// Harness is the label of the agent this session runs: "Claude Code" or
+	// "Codex", and empty for Other. Not harness.Label, which answers "Other": a
+	// card that said so would name a harness the daemon cannot place, and the
+	// card renders nothing rather than a guess. The mode row below also reads it,
+	// and an empty value keeps the row, so a view built without one is unchanged.
+	Harness string
+
 	// Age is already formatted — coarse, human-readable, computed server-side.
 	// There is no ticking clock in the browser for it to drift from, and no
 	// duration formatting inside a template, so the string is the projection's

@@ -454,6 +454,22 @@ func (s *Server) rootPaths() []string {
 	return paths
 }
 
+// harnessCardLabel is the card's name for a harness. Other answers empty rather
+// than harness.Label's "Other", so the card renders no span for a session the
+// daemon cannot place.
+func harnessCardLabel(h harness.Name) string {
+	switch h {
+	case harness.Claude:
+		return "Claude Code"
+	case harness.Codex:
+		return "Codex"
+	case harness.Other:
+		return ""
+	default:
+		return ""
+	}
+}
+
 // cardOf projects one record into the parameters the card renders from.
 //
 // One function because there is one card (docs/components.md, FR-024): the fleet
@@ -481,6 +497,8 @@ func (s *Server) rootPaths() []string {
 // route). Empty means "not checked" — sessionPage passes its own screen
 // capture; fleet does not capture one per card on every render, so its cards
 // answer exactly as they did before this parameter existed.
+//
+// h is the session's harness, which also decides the card's Harness label.
 func cardOf(live session.Session, now time.Time, token, remoteCommand, paneText string, h harness.Name) sessionView {
 	displayState, parkedOn := effectiveDisplayState(live, now, paneText, h)
 	return sessionView{
@@ -490,6 +508,7 @@ func cardOf(live session.Session, now time.Time, token, remoteCommand, paneText 
 		DisplayState: displayState,
 		ParkedOn:     parkedOn,
 		StartCommand: live.StartCommand,
+		Harness:      harnessCardLabel(h),
 		// The record's own method again, for the reason DisplayState is one: a
 		// derived value is computed where it is defined, and the card renders
 		// what it was handed.
@@ -657,7 +676,7 @@ func (s *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 		Pane:    pane,
 		// The record's own directory. Every failure is an empty list, so a host
 		// whose Claude layout moved renders a page that still works.
-		Conversations: s.conversationsForDir(s.clock.Now(), live.WorkDir),
+		Conversations: s.conversationsForDir(s.clock.Now(), s.sessions.SpecOf(live).Name, live.WorkDir),
 	})
 }
 

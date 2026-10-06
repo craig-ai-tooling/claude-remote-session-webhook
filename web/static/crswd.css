@@ -1599,6 +1599,13 @@ button.pill:hover {
   text-transform: uppercase;
 }
 
+/* The harness a session runs under, in the same line as the start-command label.
+   Text only, never a colour or a badge shape (FR-030): which agent is typing is
+   a fact to read, not a state to scan for. */
+.card-harness {
+  color: var(--text);
+}
+
 /* The card's parked-dialog label (internal/session/dialog.go). Only rendered
    beside the "blocked" pill, and only when the dialog was named — "unknown"
    carries no name for this line to show. The name is tinted from the same

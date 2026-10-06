@@ -1689,6 +1689,7 @@ func TestListAnswersTheContractResponse(t *testing.T) {
 		"created_at":    testTime.Format(time.RFC3339),
 		"expires_at":    testTime.Add(24 * time.Hour).Format(time.RFC3339),
 		"last_activity": used.Format(time.RFC3339),
+		"harness":       "claude",
 		"adopted":       false,
 	}
 	for name, value := range want {
@@ -2041,6 +2042,7 @@ func TestDetailAnswersTheContractResponse(t *testing.T) {
 		"created_at":    detailCreated.Format(time.RFC3339),
 		"expires_at":    detailCreated.Add(24 * time.Hour).Format(time.RFC3339),
 		"last_activity": detailUsed.Format(time.RFC3339),
+		"harness":       "claude",
 		"adopted":       false,
 	}
 	for name, value := range want {
@@ -2617,5 +2619,40 @@ func TestAFailedResponseWriteIsReported(t *testing.T) {
 	}
 	if !errors.Is(s.failed[0], want) {
 		t.Errorf("reported %v; want the write failure wrapped", s.failed[0])
+	}
+}
+
+// TestSessionEntryHarnessField is FR-013 at the API: an entry names the harness
+// its start command resolves to, and says nothing for one it cannot place.
+func TestSessionEntryHarnessField(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	s.offersCodex("codex --dangerously-bypass-approvals-and-sandbox")
+	claude, _ := s.fixture.plant(t, session.Session{Name: "a", WorkDir: s.fixture.repo, State: session.StateRunning})
+	codex, _ := s.fixture.plant(t, session.Session{Name: "b", WorkDir: s.fixture.repo, State: session.StateRunning, StartCommand: codexStartCommandName})
+	other, _ := s.fixture.plant(t, session.Session{Name: "c", WorkDir: s.fixture.repo, State: session.StateRunning, StartCommand: "removed"})
+
+	_, body := getSessions(t, s, testTime)
+
+	byID := map[string]map[string]any{}
+	for _, entry := range listed(t, body) {
+		id, ok := entry["id"].(string)
+		if !ok {
+			t.Fatalf("an entry carries id %v; want a string", entry["id"])
+		}
+		byID[id] = entry
+	}
+	if got := byID[claude.ID]["harness"]; got != "claude" {
+		t.Errorf("a Claude entry carries harness %v; want %q", got, "claude")
+	}
+	if got := byID[codex.ID]["harness"]; got != "codex" {
+		t.Errorf("a Codex entry carries harness %v; want %q", got, "codex")
+	}
+	if got, present := byID[other.ID]["harness"]; present {
+		t.Errorf("an entry for a command no longer configured carries harness %v; want the key omitted", got)
+	}
+	if got := byID[codex.ID]["start_command"]; got != codexStartCommandName {
+		t.Errorf("start_command = %v; want it unchanged at %q", got, codexStartCommandName)
 	}
 }

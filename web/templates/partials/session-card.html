@@ -93,7 +93,7 @@
 
   Text, never a colour or a badge shape alone (FR-030), and inside the card's
   single anchor because that is what it is: a label, not a control (FR-047, #60).
-*/}}{{ with .StartCommand }}<p class="card-mode">running <span class="card-mode-name">{{ . }}</span></p>{{ end }}
+*/}}{{ if or .StartCommand .Harness }}<p class="card-mode">{{ with .Harness }}<span class="card-harness">{{ . }}</span>{{ end }}{{ with .StartCommand }}{{ if $.Harness }} {{ end }}running <span class="card-mode-name">{{ . }}</span>{{ end }}</p>{{ end }}
 <dl class="card-meta">{{/*
   Where this session is driven from (US4, FR-031): the operator's own dashboard,
   or claude.ai through the configured remote-control command.
@@ -121,9 +121,9 @@
   question the toggle answers and the one an operator cannot work out from a name
   without reading the settings page.
 */}}
-<dt>mode</dt>
+{{ if ne .Harness "Codex" }}<dt>mode</dt>
 <dd>{{ .Mode }}</dd>
-<dt>working directory</dt>
+{{ end }}<dt>working directory</dt>
 <dd>{{ if .WorkDir }}<span class="card-path" title="{{ .WorkDir }}">{{ .WorkDir }}</span>{{ else }}<span class="card-unknown">no working directory recorded</span>{{ end }}</dd>
 <dt>age</dt>
 <dd>{{ .Age }}</dd>{{/*

@@ -6,6 +6,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -135,5 +136,33 @@ func TestConversationsNeedsTheBrowserDoor(t *testing.T) {
 	w := f.openWith(t, conversationsPath+"?dir=/tmp", absent)
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("GET %s with no identity = %d; want %d — a read outside the door is still a read", conversationsPath, w.Code, http.StatusUnauthorized)
+	}
+}
+
+// TestConversationsRouteHarness: the route reads its harness through the one
+// parser, so an unknown value is a 400 and codex lists Codex rollouts.
+func TestConversationsRouteHarness(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.cfg.Roots = []config.ApprovedRoot{{Path: f.fixture.root}}
+	home := t.TempDir()
+	f.fixture.mgr.SetCodexHome(home)
+	const id = "019a0000-0000-7000-8000-000000000043"
+	plantCodexRolloutFile(t, home, id, f.fixture.repo)
+
+	ask := func(harnessValue string) *httptest.ResponseRecorder {
+		return f.open(t, conversationsPath+"?"+url.Values{queryDir: {f.fixture.repo}, fieldHarness: {harnessValue}}.Encode())
+	}
+
+	if w := ask("x"); w.Code != http.StatusBadRequest {
+		t.Errorf("harness=x answered %d; want %d", w.Code, http.StatusBadRequest)
+	}
+	w := ask("codex")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), id) {
+		t.Errorf("harness=codex answered %d (%s); want 200 listing %s", w.Code, w.Body.String(), id)
+	}
+	if w := ask("claude"); strings.Contains(w.Body.String(), id) {
+		t.Errorf("harness=claude listed a Codex rollout: %s", w.Body.String())
 	}
 }

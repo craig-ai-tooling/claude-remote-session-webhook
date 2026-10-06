@@ -214,3 +214,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Decision, not in the task text: the group is a one-column grid at every width. A phone-only rule would add a row to the breakpoint table in `docs/design-system.md`, which is outside this task's Files and the allowlist. Two short options stacked cost a desktop one extra line. If the operator wants side-by-side on desktop, that is a follow-up touching `design-system.md`.
 - The disabled-option rule uses `.button:disabled`'s treatment (dim text, default cursor), per iteration 23's finding. No radio is disabled by anything yet; the script disables the remote switch, not a radio.
 - Left: T016 onward. No findings unfixed.
+
+## Iteration 25 (T016)
+
+- Wrote `TestCardShowsHarness`, `TestCardOmitsHarnessForOther`, `TestSessionEntryHarnessField`, `TestSessionPageListsCodexConversations` and `TestConversationsRouteHarness` first; they failed on the old code. Then added `sessionView.Harness` (`harnessCardLabel`: Claude Code, Codex, empty for Other), `sessionEntry.Harness` (`entryFor` now takes the harness; key omitted for Other), the `card-harness` span inside the `card-mode` paragraph (which now renders when either the harness or the start command is set), the mode row guard `ne .Harness "Codex"`, the `.card-harness` rule, and a `harness.Name` parameter on `conversationsForDir`. The route reads `harness` through `parseHarness` and answers 400 via `rejectBadRequest`; the session page passes `SpecOf(live).Name`.
+- Frozen JSON: list and detail gain `"harness":"claude"` (`frozenEntry`, `TestListAnswersTheContractResponse`, `TestDetailAnswersTheContractResponse`). `createResponse` is a separate struct the task's Interface does not name, so POST /sessions is unchanged.
+- Gate green: gofmt, build, vet, `go test ./...`, golangci-lint. tmux and quickstart suites not run: nothing in tmuxctl, session or cmd changed.
+- Learned: the Codex rollout planter lives in the session test package, so httpapi has its own `plantCodexRolloutFile`. A removed start command reads as Other, which is how the tests build one.
+- Left: T017, T018. No findings unfixed.

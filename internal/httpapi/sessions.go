@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 )
 
@@ -184,6 +185,11 @@ type sessionEntry struct {
 	// what did, and guessing "default" would be inventing a fact.
 	StartCommand string `json:"start_command,omitempty"`
 
+	// Harness is the agent the start command resolves to: "claude" or "codex".
+	// Omitted for a command the daemon cannot place, for the reason StartCommand
+	// is: naming one would be a guess.
+	Harness string `json:"harness,omitempty"`
+
 	// Adopted says the session was reconciled from the host at startup rather
 	// than created through this API (FR-023). It changes no rule — an adopted
 	// session is owned, deadlined, and reaped exactly as any other — and is
@@ -215,8 +221,8 @@ type listResponse struct {
 // entryFor renders one record as the contract's entry. It is the only place a
 // session becomes something a client sees, so the list and the detail cannot
 // describe the same session two ways.
-func entryFor(s session.Session) sessionEntry {
-	return sessionEntry{
+func entryFor(s session.Session, h harness.Name) sessionEntry {
+	entry := sessionEntry{
 		ID:      s.ID,
 		Name:    s.Name,
 		WorkDir: s.WorkDir,
@@ -229,6 +235,10 @@ func entryFor(s session.Session) sessionEntry {
 		StartCommand: s.StartCommand,
 		Adopted:      s.Adopted,
 	}
+	if h == harness.Claude || h == harness.Codex {
+		entry.Harness = string(h)
+	}
+	return entry
 }
 
 // destroyResponse is the contract's 200 body for DELETE /sessions/{id}: the
@@ -594,7 +604,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	// has to treat the two spellings alike is one this API has made guess.
 	entries := make([]sessionEntry, 0, len(owned))
 	for _, one := range owned {
-		entry := entryFor(one)
+		entry := entryFor(one, s.sessions.SpecOf(one).Name)
 		entry.Token = claimed[one.ID]
 		entries = append(entries, entry)
 	}
@@ -634,7 +644,7 @@ func (s *Server) sessionDetail(w http.ResponseWriter, r *http.Request) {
 	// No SetSessionID. The resolver already stamped the record's own ID on the
 	// trail, and stamping it again here would be this handler asserting something
 	// it did not establish.
-	s.writeJSON(w, r, http.StatusOK, entryFor(resolved))
+	s.writeJSON(w, r, http.StatusOK, entryFor(resolved, s.sessions.SpecOf(resolved).Name))
 }
 
 // destroySession is DELETE /sessions/{id}: tear the session down, and say it is
