@@ -212,6 +212,13 @@ func (s *Server) destroyFromBrowser(w http.ResponseWriter, r *http.Request) {
 	// trail rather than merely present in it.
 	AuditFrom(r.Context()).SetSessionID(live.ID)
 
+	if err := s.allowSlowStart(w); err != nil {
+		s.report(fmt.Errorf("extend the destroy's write deadline: %w", err))
+		AuditFrom(r.Context()).Deny(errDestroyDeadline.Error())
+		s.redirectOutcome(w, r, outcomeDestroyFailed)
+		return
+	}
+
 	if err := s.sessions.Destroy(r.Context(), live); err != nil {
 		s.refuseBrowserDestroy(w, r, err)
 		return
