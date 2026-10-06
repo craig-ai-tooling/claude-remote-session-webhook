@@ -147,6 +147,34 @@ Added `deploy/k8s/gen/main.go`, ran it to write the four JSON files, and added `
   must stay scoped to `deploy/k8s`. T8 edits only `specs/017-k8s-native-execution/spec.md` FR-013, then runs
   every command in `VALIDATION_CONTRACT.md` and appends `RALPH_COMPLETE`.
 
+## Iteration 8 (T8, 10/6/26)
+
+Amended spec 017 FR-013 (reconciler: pods get, `agentsessions/status` update, Lease in its own namespace; daemon `pods/exec` verbs `create`, `get`).
+
+- Failing first: `sed -n '223,229p'` of the spec at HEAD piped to `grep -c -E 'leases|agentsessions/status'` printed `0`. After the edit both strings are in the FR-013 paragraph (spec.md lines 225-226).
+- Gate: build, vet, test, `-tags tmux`, golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0. `-tags quickstart ./cmd/crswd` failed twice on `TestDashboardQuickstartStory2Cap` (the iteration 3 flake, `quickstart_dashboard_test.go:844`) and passed on the third run (47s, port 8765 free). Spec-only change, so it cannot cause that failure.
+
+Validation contract results (each command run from the repo root):
+
+- Gate green: yes, with the flake rerun above.
+- `test ! -e go.sum` ok; `grep -c require go.mod` printed 0.
+- `git diff --diff-filter=M --name-only origin/main...HEAD -- '*_test.go'` printed nothing.
+- `go run ./deploy/k8s/gen && git status --porcelain deploy/k8s` printed nothing (run before this commit, tree clean for deploy/k8s).
+- CRD jq: `agentsessions.crswd.craigcloud.io`, `crswd.craigcloud.io`, `Namespaced`, `AgentSession`; `true,true,true`.
+- Spec keys `["conversation","lifetime","owner","sessionName","startCommand","workDir"]`; status keys `["conversation","phase","reason"]`.
+- Secrets/wildcard walk printed `0`.
+- Daemon walk printed `[{"ns":"crswd-next","pods":["get","list","watch"],"exec":["create","get"]}]`: one Role, no `create` on pods, no `crswd` Role in `crswd-next-reconciler`.
+- Reconciler: Role `crswd-reconciler` in `crswd-next` has pods `create,get,list,watch,delete`, agentsessions `get,list,watch,update`, agentsessions/status `update`; Role `crswd-reconciler-lease` in `crswd-next-reconciler` has only coordination.k8s.io leases `get,create,update`. RoleBindings name `crswd`/`crswd-next` and `crswd-reconciler`/`crswd-next-reconciler`.
+- `grep -rniE 'lawnmower|\.claude' deploy/k8s/` printed nothing, exit 1.
+- `go test -v -run Admit ./internal/admit` passes with cases for outside, dotdot, over cap, past lifetime, admitted. On `main` the package is absent, so it fails there.
+- `go test -run 'WorkDirResolver|LexicalWorkDir' ./internal/session -v` passes (6 tests: missing dir under root admitted, outside refused, unset still refuses).
+- Spec greps for `leases` and `agentsessions/status` each hit lines inside FR-013.
+- Printer columns `["Start","Phase","Age"]`; short names `["as"]`.
+
+Not fixed: `TestDashboardQuickstartStory2Cap` flakes on clean HEAD too (iteration 3); operator should decide whether to chase it. The contract's daemon `jq` walk only works because it filters on `.metadata.name`; a bare `select(.kind == "Role")` also matches each RoleBinding's `roleRef`.
+
 ## NEEDS CLARIFICATION
 
 None open.
+
+RALPH_COMPLETE

@@ -19,7 +19,7 @@ Take the topmost open task. One per iteration.
 - [x] T5: Create package `deploy/k8s/manifest` with the CRD value per Design §5 (`crd.go`) and a test that the CRD's spec and status schema property names equal the `api/v1alpha1` JSON names by reflection. Verify: `go test ./deploy/k8s/manifest` passes.
 - [x] T6: Add the three RBAC Lists to `deploy/k8s/manifest` per Design §6 (`rbac.go`) and the SC-005 walk tests in `rbac_test.go` (secrets or `*` anywhere fails; daemon pods create fails; daemon pods/exec outside the session ns fails; reconciler rules exact). Verify: `go test ./deploy/k8s/manifest -v`.
 - [x] T7: Create `deploy/k8s/gen/main.go` per Design §7, run `go run ./deploy/k8s/gen` to write the four JSON files, and add `drift_test.go` (byte equality, no stray *.json) and the SC-004 grep test. Verify: `go run ./deploy/k8s/gen && git status --porcelain deploy/k8s` is empty after commit.
-- [ ] T8: Amend spec FR-013 per Design §8. Then run every command in VALIDATION_CONTRACT.md and record each result in PROGRESS.md. Verify: `go build ./... && go vet ./... && go test ./... && go test -tags tmux ./... && go test -tags quickstart ./cmd/crswd && golangci-lint run` exits 0.
+- [x] T8: Amend spec FR-013 per Design §8. Then run every command in VALIDATION_CONTRACT.md and record each result in PROGRESS.md. Verify: `go build ./... && go vet ./... && go test ./... && go test -tags tmux ./... && go test -tags quickstart ./cmd/crswd && golangci-lint run` exits 0.
 
 ## Files touched
 
