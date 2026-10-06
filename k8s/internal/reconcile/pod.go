@@ -174,7 +174,7 @@ func PodFor(obj v1alpha1.AgentSession, cfg Config, now time.Time) (*corev1.Pod, 
 			// Each link is resolved in the session container's mount namespace,
 			// so the Secret is mounted there at the same path as in the sidecar.
 			InitContainers: []corev1.Container{
-				sidecar("creds-link", claudeDir+"/.credentials.json", claudeCredsMount+"/.credentials.json", []corev1.VolumeMount{
+				sidecar("creds-link", claudeDir+"/.credentials.json", claudeCredsMount+"/.credentials.json", []corev1.VolumeMount{ // gitleaks:allow: two file paths, not a credential
 					{Name: "claude-config", MountPath: claudeDir},
 					{Name: "claude-creds", MountPath: claudeCredsMount, ReadOnly: true},
 				}),
