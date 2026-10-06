@@ -39,3 +39,5 @@ Plan written by an operator-session planner against origin/main `50d7e9c`. Facts
 ## NEEDS CLARIFICATION
 
 None open.
+
+BLOCKED: T1 cannot edit .claude/settings.json, the Edit tool was denied write permission (iteration 1, 10/6/26). The operator must grant the write or add "Bash(helm lint:*)" and "Bash(helm template:*)" to permissions.allow, one per line.
