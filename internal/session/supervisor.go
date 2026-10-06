@@ -165,7 +165,9 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 				return fmt.Errorf("confirm session %s is running: %w", sess.ID, err)
 			}
 		}
-		return nil
+		// A failed discovery does not change the verdict: the session is
+		// healthy, and the next sweep asks again.
+		return s.discover(ctx, sess)
 	}
 
 	// 4 — backing off.
@@ -235,6 +237,39 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 	if err := s.mgr.revive(ctx, sess, present); err != nil {
 		return fmt.Errorf("revive session %s: %w", sess.ID, err)
 	}
+	return nil
+}
+
+// discover records the conversation a healthy Codex session is in, once.
+//
+// The store is written last because it is what the next sweep reads: a failure
+// at the option or the journal leaves ConversationID empty, so the next sweep
+// finds the same id and writes both again, which is idempotent for one id.
+func (s *Supervisor) discover(ctx context.Context, sess Session) error {
+	if s.mgr.specOf(sess).Name != harness.Codex || sess.ConversationID != "" {
+		return nil
+	}
+	id, err := s.mgr.findCodexConversation(ctx, sess)
+	if err != nil {
+		return fmt.Errorf("discover the conversation of session %s: %w", sess.ID, err)
+	}
+	if id == "" {
+		return nil
+	}
+	if _, err := ValidateResume(id); err != nil {
+		return fmt.Errorf("discover the conversation of session %s: %w", sess.ID, err)
+	}
+	if err := s.mgr.tmux.SetOption(ctx, sess.TmuxName(), tmuxctl.OptionConversation, id); err != nil {
+		return fmt.Errorf("record the conversation of session %s: %w", sess.ID, err)
+	}
+	sess.ConversationID = id
+	if err := s.mgr.journal.Append(reviveRecord(sess, journalDiscovered)); err != nil {
+		return fmt.Errorf("journal the conversation of session %s: %w", sess.ID, err)
+	}
+	if err := s.mgr.store.SetConversation(sess.ID, id); err != nil {
+		return fmt.Errorf("store the conversation of session %s: %w", sess.ID, err)
+	}
+	s.mgr.emit(FleetChanged, sess)
 	return nil
 }
 

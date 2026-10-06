@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -238,6 +239,11 @@ type Manager struct {
 	// does not pay 1.5 seconds per press.
 	sleep func(ctx context.Context, d time.Duration) error
 
+	// findCodexConversation answers which Codex conversation a session is in.
+	// A field so a test, and a later phase that learns it another way, can
+	// replace the /proc walk.
+	findCodexConversation func(ctx context.Context, s Session) (string, error)
+
 	tmux  tmuxctl.Controller
 	store *Store
 	roots []config.ApprovedRoot
@@ -469,14 +475,29 @@ func NewManagerWithClock(tmux tmuxctl.Controller, store *Store, roots []config.A
 		return nil, fmt.Errorf("session: a concurrent-session cap of %d would permit no session at all; refusing to start", maxSessions)
 	}
 
-	return &Manager{
+	m := &Manager{
 		tmux:        tmux,
 		store:       store,
 		roots:       roots,
 		maxSessions: maxSessions,
 		clock:       clock,
 		sleep:       sleepContext,
-	}, nil
+	}
+	m.findCodexConversation = m.hostCodexConversation
+	return m, nil
+}
+
+// hostCodexConversation reads /proc under the session's pane for a rollout file
+// Codex holds open. It is the only place this daemon reads /proc.
+func (m *Manager) hostCodexConversation(ctx context.Context, s Session) (string, error) {
+	if m.codexHome == "" {
+		return "", nil
+	}
+	pid, err := m.tmux.PanePID(ctx, s.TmuxName())
+	if err != nil {
+		return "", fmt.Errorf("find the process of session %s: %w", s.ID, err)
+	}
+	return DiscoverCodexConversation("/proc", pid, filepath.Join(m.codexHome, "sessions"))
 }
 
 // FleetEventKind is what happened, in the vocabulary contracts/fleet-stream.md

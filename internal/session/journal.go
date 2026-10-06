@@ -45,6 +45,11 @@ const (
 	// the conversation a session is having must outlive the shell it is having it
 	// in, or a session recreated after an OOM comes back on the wrong one.
 	journalContinued = "continued"
+
+	// journalDiscovered is the supervisor finding which conversation a Codex
+	// session is in. Codex picks its own id, so the daemon cannot record one at
+	// create; without this line a recreated shell would have nothing to resume.
+	journalDiscovered = "discovered"
 )
 
 // journalRecord is one line of the journal.

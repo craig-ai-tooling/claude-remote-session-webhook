@@ -1,12 +1,18 @@
 package session
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
 const (
@@ -188,5 +194,265 @@ func TestDiscoverCodexConversationEmptySessionsDir(t *testing.T) {
 	got, err := DiscoverCodexConversation(d.proc, 100, "")
 	if err != nil || got != "" {
 		t.Fatalf("got %q, %v; want empty, nil", got, err)
+	}
+}
+
+// sweepRig is a Codex session on a fake host, a supervisor over the fixture's
+// own manager (so the codex entry resolves), and a finder the test controls.
+type sweepRig struct {
+	f       managerFixture
+	s       Session
+	sup     *Supervisor
+	journal *Journal
+	calls   int
+}
+
+type finder func(ctx context.Context, s Session) (string, error)
+
+func newSweepRig(t *testing.T, find finder) *sweepRig {
+	t.Helper()
+
+	f, s := codexFixture(t)
+	sup, err := NewSupervisor(f.mgr, audit.NewTo(&bytes.Buffer{}, func() time.Time { return f.now }))
+	if err != nil {
+		t.Fatalf("NewSupervisor() unexpected error: %v", err)
+	}
+	// The fake pane says claude, which is outside Codex's process set.
+	f.tmux.SetPaneCommand(s.TmuxName(), "codex")
+	r := &sweepRig{f: f, s: *s, sup: sup, journal: tempJournal(t)}
+	f.mgr.SetJournal(r.journal)
+	f.mgr.findCodexConversation = func(ctx context.Context, s Session) (string, error) {
+		r.calls++
+		return find(ctx, s)
+	}
+	return r
+}
+
+func (r *sweepRig) stored(t *testing.T) string {
+	t.Helper()
+	return mustStored(t, r.f, r.s.ID).ConversationID
+}
+
+func (r *sweepRig) option(t *testing.T) string {
+	t.Helper()
+	infos, err := r.f.tmux.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	for _, info := range infos {
+		if info.Name == r.s.TmuxName() {
+			return info.ConversationID
+		}
+	}
+	t.Fatalf("session %s is not on the fake host", r.s.ID)
+	return ""
+}
+
+// journalled is the conversation and event of the journal's latest record for
+// the session.
+func (r *sweepRig) journalled(t *testing.T) (conversation, event string) {
+	t.Helper()
+	records, _, err := r.journal.Replay()
+	if err != nil {
+		t.Fatalf("Replay() unexpected error: %v", err)
+	}
+	for _, rec := range records {
+		if rec.ID == r.s.ID {
+			return rec.Conversation, rec.Event
+		}
+	}
+	return "", ""
+}
+
+func found(id string) finder {
+	return func(context.Context, Session) (string, error) { return id, nil }
+}
+
+func (r *sweepRig) wantRecorded(t *testing.T, id string) {
+	t.Helper()
+	if got := r.stored(t); got != id {
+		t.Errorf("store conversation = %q, want %q", got, id)
+	}
+	if got := r.option(t); got != id {
+		t.Errorf("tmux option conversation = %q, want %q", got, id)
+	}
+	if conv, event := r.journalled(t); conv != id || event != journalDiscovered {
+		t.Errorf("journal latest = (%q, %q), want (%q, %q)", conv, event, id, journalDiscovered)
+	}
+}
+
+func TestSweepRecordsCodexConversation(t *testing.T) {
+	r := newSweepRig(t, found(discoverID))
+	if got := r.stored(t); got != "" {
+		t.Fatalf("a fresh Codex session already carries conversation %q", got)
+	}
+
+	if err := r.sup.Sweep(context.Background()); err != nil {
+		t.Fatalf("Sweep() = %v", err)
+	}
+	r.wantRecorded(t, discoverID)
+}
+
+func TestSweepIgnoresClaude(t *testing.T) {
+	f := newManagerFixture(t)
+	s := liveSession(t, f)
+	sup, err := NewSupervisor(f.mgr, audit.NewTo(&bytes.Buffer{}, func() time.Time { return f.now }))
+	if err != nil {
+		t.Fatalf("NewSupervisor() unexpected error: %v", err)
+	}
+	f.mgr.SetJournal(tempJournal(t))
+	calls := 0
+	f.mgr.findCodexConversation = func(context.Context, Session) (string, error) {
+		calls++
+		return discoverID, nil
+	}
+	before := mustStored(t, f, s.ID).ConversationID
+
+	if err := sup.Sweep(context.Background()); err != nil {
+		t.Fatalf("Sweep() = %v", err)
+	}
+	if calls != 0 {
+		t.Errorf("the finder ran %d times for a Claude session, want 0", calls)
+	}
+	if got := mustStored(t, f, s.ID).ConversationID; got != before {
+		t.Errorf("a Claude session's conversation moved from %q to %q", before, got)
+	}
+}
+
+func TestSweepKeepsExistingConversation(t *testing.T) {
+	r := newSweepRig(t, found(discoverID2))
+	if err := r.f.store.SetConversation(r.s.ID, discoverID); err != nil {
+		t.Fatalf("SetConversation() unexpected error: %v", err)
+	}
+
+	if err := r.sup.Sweep(context.Background()); err != nil {
+		t.Fatalf("Sweep() = %v", err)
+	}
+	if r.calls != 0 {
+		t.Errorf("the finder ran %d times for a session with a conversation, want 0", r.calls)
+	}
+	if got := r.stored(t); got != discoverID {
+		t.Errorf("store conversation = %q, want the recorded %q kept", got, discoverID)
+	}
+}
+
+func TestSweepAmbiguousRecordsNothing(t *testing.T) {
+	testDiscoveryError(t, ErrAmbiguousConversation)
+}
+
+func TestSweepBoundsErrorRecordsNothing(t *testing.T) {
+	testDiscoveryError(t, ErrDiscoveryBounds)
+}
+
+func testDiscoveryError(t *testing.T, want error) {
+	t.Helper()
+
+	r := newSweepRig(t, func(context.Context, Session) (string, error) { return "", want })
+
+	err := r.sup.Sweep(context.Background())
+	if !errors.Is(err, want) {
+		t.Fatalf("Sweep() = %v, want it to join %v", err, want)
+	}
+	if got := r.stored(t); got != "" {
+		t.Errorf("store conversation = %q, want none", got)
+	}
+	if got := r.option(t); got != "" {
+		t.Errorf("tmux option conversation = %q, want none", got)
+	}
+	if _, event := r.journalled(t); event == journalDiscovered {
+		t.Errorf("journal latest event = %q, want no discovered record", event)
+	}
+	if st := mustStored(t, r.f, r.s.ID); st.State == StateFailed || st.ReviveAttempts != 0 {
+		t.Errorf("a discovery error changed the verdict: state %s, attempts %d", st.State, st.ReviveAttempts)
+	}
+}
+
+func TestSweepRetriesAfterOptionFailure(t *testing.T) {
+	r := newSweepRig(t, found(discoverID))
+	boom := errors.New("tmux refused the option")
+	r.f.tmux.FailOp(tmuxctl.OpSetOption, boom)
+
+	if err := r.sup.Sweep(context.Background()); !errors.Is(err, boom) {
+		t.Fatalf("first Sweep() = %v, want it to join %v", err, boom)
+	}
+	if got := r.stored(t); got != "" {
+		t.Fatalf("store conversation = %q after the option failed, want none so the next sweep retries", got)
+	}
+
+	r.f.tmux.FailOp(tmuxctl.OpSetOption, nil)
+	if err := r.sup.Sweep(context.Background()); err != nil {
+		t.Fatalf("second Sweep() = %v", err)
+	}
+	r.wantRecorded(t, discoverID)
+}
+
+func TestSweepRetriesAfterJournalFailure(t *testing.T) {
+	r := newSweepRig(t, found(discoverID))
+	// A regular file where the journal's directory belongs makes Append fail
+	// until the file is removed.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatalf("plant a blocker: %v", err)
+	}
+	r.f.mgr.SetJournal(NewJournal(filepath.Join(blocker, "sessions.jsonl")))
+
+	if err := r.sup.Sweep(context.Background()); err == nil {
+		t.Fatal("first Sweep() = nil, want the journal failure")
+	}
+	if got := r.stored(t); got != "" {
+		t.Fatalf("store conversation = %q after the journal failed, want none so the next sweep retries", got)
+	}
+
+	if err := os.Remove(blocker); err != nil {
+		t.Fatalf("remove the blocker: %v", err)
+	}
+	if err := r.sup.Sweep(context.Background()); err != nil {
+		t.Fatalf("second Sweep() = %v", err)
+	}
+	if got := r.stored(t); got != discoverID {
+		t.Errorf("store conversation = %q, want %q", got, discoverID)
+	}
+	if got := r.option(t); got != discoverID {
+		t.Errorf("tmux option conversation = %q, want %q", got, discoverID)
+	}
+}
+
+func TestSweepRefusesAnInvalidDiscoveredID(t *testing.T) {
+	r := newSweepRig(t, found("not a conversation id"))
+
+	if err := r.sup.Sweep(context.Background()); err == nil {
+		t.Fatal("Sweep() = nil, want the id refused")
+	}
+	if got := r.stored(t); got != "" {
+		t.Errorf("store conversation = %q, want none", got)
+	}
+	if got := r.option(t); got != "" {
+		t.Errorf("tmux option conversation = %q, want none", got)
+	}
+}
+
+func TestReplayRestoresDiscoveredConversation(t *testing.T) {
+	r := newSweepRig(t, found(discoverID))
+	if err := r.sup.Sweep(context.Background()); err != nil {
+		t.Fatalf("Sweep() = %v", err)
+	}
+
+	// The restarted daemon: an empty store over the same journal, with the shell
+	// gone from the host.
+	if err := r.f.tmux.Kill(context.Background(), r.s.TmuxName()); err != nil {
+		t.Fatalf("Kill() unexpected error: %v", err)
+	}
+	store := NewStore()
+	mgr := r.f.managerAt(t, store, r.f.now)
+	mgr.SetJournal(r.journal)
+	if _, _, err := mgr.ReplayJournal(context.Background()); err != nil {
+		t.Fatalf("ReplayJournal() = %v", err)
+	}
+	got, ok := store.lookup(r.s.ID)
+	if !ok {
+		t.Fatalf("session %s was not replayed", r.s.ID)
+	}
+	if got.ConversationID != discoverID {
+		t.Errorf("replayed conversation = %q, want %q", got.ConversationID, discoverID)
 	}
 }

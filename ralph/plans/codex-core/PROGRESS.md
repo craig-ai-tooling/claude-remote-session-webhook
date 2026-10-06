@@ -163,3 +163,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: the 64-pid cap counts the pane pid, so a root with 64 children already overflows. The task text does not say; the row with 65 children errors under either reading. Test dirs use 0o750 for gosec G301.
 - Nothing calls `DiscoverCodexConversation` yet; T012 wires it.
 - Left: T012 onward. No findings unfixed.
+
+## Iteration 19 (T012)
+
+- Wrote the `TestSweep*` tests and `TestReplayRestoresDiscoveredConversation` first (in `discover_test.go`, with a `sweepRig` helper); they failed to compile on the old code. Then added `journalDiscovered` (journal.go), `Manager.findCodexConversation` defaulted to `hostCodexConversation` in `NewManagerWithClock` (manager.go), and `Supervisor.discover`, called from `judge` branch 3 after the promotion logic (supervisor.go). Write order is option, journal, store, emit.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: the Codex fixture's fake pane reports `claude`, so a sweep judges it stopped and gives up; the rig sets the pane command to `codex`. The replay test needed no code change, since `reviveRecord` already carries `Conversation`. I added `TestSweepRefusesAnInvalidDiscoveredID` beyond the task's list to cover the `ValidateResume` branch.
+- A discovery error is returned from `judge` and joined by `Sweep`, but leaves the verdict healthy.
+- Left: T013 onward. No findings unfixed.
