@@ -300,6 +300,11 @@ type fakeSession struct {
 	// pid it means rather than inheriting one.
 	panePID int
 
+	// quitAfter is the interrupt count at which the pane's process exits, and
+	// interrupts the count so far. Zero quitAfter means the process ignores
+	// interrupts, which is how a test says "Codex is still running".
+	quitAfter, interrupts int
+
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
 	// the fake holds what the host holds, so a test cannot pass against a daemon
@@ -362,10 +367,37 @@ func (f *Fake) SendKeys(_ context.Context, name string, keys ...string) error {
 	if err := f.fail[OpSendKeys]; err != nil {
 		return err
 	}
-	if _, ok := f.sessions[name]; !ok {
+	s, ok := f.sessions[name]
+	if !ok {
 		return errNoSession(name)
 	}
+	for _, key := range keys {
+		if key != "C-c" {
+			continue
+		}
+		s.interrupts++
+		if s.quitAfter > 0 && s.interrupts == s.quitAfter {
+			s.paneCommand = "bash"
+		}
+	}
 	return nil
+}
+
+// QuitAfterInterrupts makes the n-th "C-c" sent to name end its process: the
+// pane's command becomes the login shell, as it does when Codex exits. The
+// count starts from zero when this is called. It seeds the session if it does
+// not exist yet, as SetPane does.
+func (f *Fake) QuitAfterInterrupts(name string, n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.quitAfter = n
+	s.interrupts = 0
 }
 
 // Paste records two calls, as the real controller runs two commands. The

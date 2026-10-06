@@ -365,10 +365,50 @@ func (m *Manager) sendStart(ctx context.Context, s Session) error {
 // it a different function: the process is still alive, so it has to be stopped
 // first. A revival types into a shell whose Claude has already gone.
 func (m *Manager) restartInto(ctx context.Context, s Session) error {
+	if m.specOf(s).SteppedQuit {
+		if err := m.quitStepped(ctx, s); err != nil {
+			return err
+		}
+		return m.sendStart(ctx, s)
+	}
 	if err := m.tmux.SendKeys(ctx, s.TmuxName(), interruptKey, interruptKey); err != nil {
 		return fmt.Errorf("interrupt the process: %w", err)
 	}
 	return m.sendStart(ctx, s)
+}
+
+// quitStepped ends the pane's process one Ctrl-C at a time and returns only
+// once tmux reports the process gone. Unknown liveness is not confirmation: a
+// session that records no expectation keeps getting pressed until the budget
+// runs out, then fails, rather than being typed into on a guess.
+func (m *Manager) quitStepped(ctx context.Context, s Session) error {
+	name := s.TmuxName()
+	for i := 0; i < steppedQuitPresses; i++ {
+		if err := m.tmux.SendKeys(ctx, name, interruptKey); err != nil {
+			return fmt.Errorf("interrupt the process: %w", err)
+		}
+		if err := m.sleep(ctx, steppedQuitWait); err != nil {
+			return fmt.Errorf("wait for the process to exit: %w", err)
+		}
+		infos, err := m.tmux.List(ctx)
+		if err != nil {
+			return fmt.Errorf("check that the process exited: %w", err)
+		}
+		found := false
+		for _, info := range infos {
+			if info.Name != name {
+				continue
+			}
+			found = true
+			if info.Claude == tmuxctl.LivenessStopped {
+				return nil
+			}
+		}
+		if !found {
+			return fmt.Errorf("session %s: %w", s.ID, ErrSessionDead)
+		}
+	}
+	return fmt.Errorf("session %s: %w", s.ID, ErrQuitUnconfirmed)
 }
 
 // markSession writes every @crswd-* option a session carries. Create writes them

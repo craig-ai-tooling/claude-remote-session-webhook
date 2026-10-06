@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
@@ -325,5 +326,209 @@ func TestSetModeRefusesCodex(t *testing.T) {
 	}
 	if got := f.tmux.Calls()[before:]; len(got) != 0 {
 		t.Errorf("a refused Codex mode change touched the pane: %v", opsOf(got))
+	}
+}
+
+// noSleep stands in for the real wait between interrupts. A test about the
+// order of keystrokes has no use for the 1.5 seconds Codex needs to exit.
+func noSleep(context.Context, time.Duration) error { return nil }
+
+// interruptsAndStarts splits the send-keys calls into bare Ctrl-C presses and
+// everything else, so a test can count the interrupts typed and whether a
+// start line followed.
+func interruptsAndStarts(calls []tmuxctl.Call) (interrupts, others int) {
+	for _, c := range calls {
+		if c.Op != tmuxctl.OpSendKeys {
+			continue
+		}
+		if c.Argv[len(c.Argv)-1] == interruptKey {
+			interrupts++
+		} else {
+			others++
+		}
+	}
+	return interrupts, others
+}
+
+func TestRestartCodexQuitsThenTypes(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	f.mgr.sleep = noSleep
+	f.tmux.SetPaneCommand(s.TmuxName(), "codex")
+	f.tmux.QuitAfterInterrupts(s.TmuxName(), 3)
+	s.ConversationID = harnessTestConversation
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.restartInto(context.Background(), *s); err != nil {
+		t.Fatalf("restartInto() unexpected error: %v", err)
+	}
+
+	got := f.tmux.Calls()[before:]
+	interrupts, others := interruptsAndStarts(got)
+	if interrupts != 3 || others != 1 {
+		t.Fatalf("restartInto() typed %d interrupts and %d other lines, want 3 and 1", interrupts, others)
+	}
+	last := got[len(got)-1]
+	if last.Op != tmuxctl.OpSendKeys || !slices.Contains(last.Argv, "codex resume "+harnessTestConversation+" --no-alt-screen -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox") {
+		t.Errorf("the last call was %s %q, want the resume line", last.Op, last.Argv)
+	}
+}
+
+func TestRestartCodexNeverTypesWhenStillRunning(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	f.mgr.sleep = noSleep
+	f.tmux.SetPaneCommand(s.TmuxName(), "node")
+	s.ConversationID = harnessTestConversation
+	before := len(f.tmux.Calls())
+
+	err := f.mgr.restartInto(context.Background(), *s)
+	if !errors.Is(err, ErrQuitUnconfirmed) {
+		t.Fatalf("restartInto() error = %v, want ErrQuitUnconfirmed", err)
+	}
+
+	interrupts, others := interruptsAndStarts(f.tmux.Calls()[before:])
+	if interrupts != steppedQuitPresses || others != 0 {
+		t.Errorf("restartInto() typed %d interrupts and %d other lines, want %d and 0", interrupts, others, steppedQuitPresses)
+	}
+}
+
+func TestRestartCodexStopsWhenTheSessionVanishes(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	f.tmux.SetPaneCommand(s.TmuxName(), "node")
+	f.mgr.sleep = func(context.Context, time.Duration) error {
+		f.tmux.Vanish(s.TmuxName())
+		return nil
+	}
+
+	if err := f.mgr.quitStepped(context.Background(), *s); !errors.Is(err, ErrSessionDead) {
+		t.Fatalf("quitStepped() error = %v, want ErrSessionDead", err)
+	}
+}
+
+func TestRestartCodexReturnsTheContextError(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	f.tmux.SetPaneCommand(s.TmuxName(), "node")
+	f.mgr.sleep = func(context.Context, time.Duration) error { return context.Canceled }
+
+	if err := f.mgr.quitStepped(context.Background(), *s); !errors.Is(err, context.Canceled) {
+		t.Fatalf("quitStepped() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestRestartClaudeUnchanged(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	f.mgr.sleep = func(context.Context, time.Duration) error {
+		t.Error("a Claude restart waited between interrupts")
+		return nil
+	}
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.restartInto(context.Background(), *s); err != nil {
+		t.Fatalf("restartInto() unexpected error: %v", err)
+	}
+
+	got := f.tmux.Calls()[before:]
+	if len(got) < 2 {
+		t.Fatalf("restartInto() made %d calls, want the interrupt then the start line", len(got))
+	}
+	if want := []string{interruptKey, interruptKey}; !slices.Equal(got[0].Argv[len(got[0].Argv)-2:], want) {
+		t.Errorf("first call argv %q does not end in one send of two interrupts", got[0].Argv)
+	}
+}
+
+// continueFixture is a Codex session with a transcript on disk for the
+// conversation it is about to be moved to. It sets HOME, so its callers cannot
+// run in parallel.
+func continueFixture(t *testing.T) (managerFixture, *Session, *Journal) {
+	t.Helper()
+
+	f, s := codexFixture(t)
+	f.mgr.sleep = noSleep
+	j := tempJournal(t)
+	f.mgr.SetJournal(j)
+	conversationHome(t, s.WorkDir, map[string]time.Time{harnessTestConversation + ".jsonl": {}})
+	return f, s, j
+}
+
+func TestContinueCodexFailedQuitChangesNothing(t *testing.T) {
+	f, s, j := continueFixture(t)
+	f.tmux.SetPaneCommand(s.TmuxName(), "node")
+	if err := f.tmux.SetOption(context.Background(), s.TmuxName(), tmuxctl.OptionConversation, "before"); err != nil {
+		t.Fatalf("SetOption() unexpected error: %v", err)
+	}
+	wasID := s.ConversationID
+	records, _, err := j.Replay()
+	if err != nil {
+		t.Fatalf("Replay() unexpected error: %v", err)
+	}
+
+	_, err = f.mgr.Continue(context.Background(), *s, harnessTestConversation)
+	if !errors.Is(err, ErrQuitUnconfirmed) {
+		t.Fatalf("Continue() error = %v, want ErrQuitUnconfirmed", err)
+	}
+
+	stored, getErr := f.store.Get(s.ID, s.Owner)
+	if getErr != nil {
+		t.Fatalf("Get() unexpected error: %v", getErr)
+	}
+	if stored.ConversationID != wasID {
+		t.Errorf("store ConversationID = %q, want %q", stored.ConversationID, wasID)
+	}
+	infos, err := f.tmux.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() unexpected error: %v", err)
+	}
+	for _, info := range infos {
+		if info.Name == s.TmuxName() && info.ConversationID != "before" {
+			t.Errorf("tmux option = %q, want %q", info.ConversationID, "before")
+		}
+	}
+	after, _, err := j.Replay()
+	if err != nil {
+		t.Fatalf("Replay() unexpected error: %v", err)
+	}
+	if len(after) != len(records) {
+		t.Errorf("journal holds %d records, want %d", len(after), len(records))
+	}
+}
+
+func TestContinueCodexPersistsAfterQuit(t *testing.T) {
+	f, s, j := continueFixture(t)
+	f.tmux.SetPaneCommand(s.TmuxName(), "codex")
+	f.tmux.QuitAfterInterrupts(s.TmuxName(), 2)
+	before := len(f.tmux.Calls())
+
+	got, err := f.mgr.Continue(context.Background(), *s, harnessTestConversation)
+	if err != nil {
+		t.Fatalf("Continue() unexpected error: %v", err)
+	}
+
+	if got.ConversationID != harnessTestConversation {
+		t.Errorf("Continue() ConversationID = %q, want %q", got.ConversationID, harnessTestConversation)
+	}
+	stored, err := f.store.Get(s.ID, s.Owner)
+	if err != nil || stored.ConversationID != harnessTestConversation {
+		t.Errorf("store ConversationID = %q (%v), want %q", stored.ConversationID, err, harnessTestConversation)
+	}
+	interrupts, others := interruptsAndStarts(f.tmux.Calls()[before:])
+	if interrupts != 2 || others != 1 {
+		t.Errorf("Continue() typed %d interrupts and %d other lines, want 2 and 1", interrupts, others)
+	}
+	records, _, err := j.Replay()
+	if err != nil {
+		t.Fatalf("Replay() unexpected error: %v", err)
+	}
+	if len(records) == 0 {
+		t.Error("the journal holds no record of the continue")
 	}
 }

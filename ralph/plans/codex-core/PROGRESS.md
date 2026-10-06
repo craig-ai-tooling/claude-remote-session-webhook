@@ -119,3 +119,10 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
 - Learned: an Other start command now seeds no Claude trust where it used to. No existing test depended on it, since the fixtures use `claude`-prefixed stand-ins (T004).
 - Left: T009 onward. No findings unfixed.
+
+## Iteration 14 (T009)
+
+- Wrote `TestRestartCodexQuitsThenTypes`, `TestRestartCodexNeverTypesWhenStillRunning`, `TestRestartCodexStopsWhenTheSessionVanishes`, `TestRestartCodexReturnsTheContextError`, `TestRestartClaudeUnchanged`, `TestContinueCodexFailedQuitChangesNothing` and `TestContinueCodexPersistsAfterQuit` first (in `harness_test.go`); they failed to compile on the old code (no `sleep` field). Then added `Fake.QuitAfterInterrupts`, `Manager.sleep` (`sleepContext`), `steppedQuitPresses`/`steppedQuitWait`, `ErrQuitUnconfirmed`, `quitStepped`, the `SteppedQuit` branch in `restartInto`, and the quit-before-persist branch in `Continue` (which then calls `sendStart`). Claude's path keeps one `SendKeys(C-c, C-c)`.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: a Codex fixture's fake pane reports `claude`, which is outside the Codex process set, so a test must `SetPaneCommand` to `codex` or `node` before the quit means anything. The Continue tests set HOME through `conversationHome`, so they are not parallel. They pass on Claude's transcript layout because `HasTranscript` is not yet per harness (T010b).
+- Left: T010a onward. No findings unfixed.

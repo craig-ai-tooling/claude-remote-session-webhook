@@ -78,6 +78,16 @@ const (
 // SetMode, which says what this daemon may and may not claim about that.
 const interruptKey = "C-c"
 
+const (
+	// steppedQuitPresses is how many single interrupts a harness that quits
+	// stepwise is given before the restart gives up, and steppedQuitWait the
+	// pause after each. Codex reads the first Ctrl-C as "clear the composer" and
+	// a second inside its window as "exit", so two in one call is not a quit and
+	// the only proof of one is the pane's process having changed.
+	steppedQuitPresses = 5
+	steppedQuitWait    = 1500 * time.Millisecond
+)
+
 // compactCommand is Claude Code's own /compact and the newline that submits it
 // (FR-016, research D2). Nine bytes, every one of them delivered as data.
 //
@@ -133,6 +143,11 @@ var (
 	// to. Both are configuration rather than request, so the refusal is the same
 	// whoever asks and no session is touched by it.
 	ErrModeUnavailable = errors.New("this daemon configures no command for that mode")
+
+	// ErrQuitUnconfirmed is a stepped quit that ran out of presses with the
+	// pane's process still alive. Nothing was typed after it, because a start
+	// line sent into a running Codex lands in its composer as a prompt.
+	ErrQuitUnconfirmed = errors.New("the session's process did not exit, so nothing was typed into it")
 
 	// ErrModeUnchanged refuses a toggle to the mode the session is already in.
 	//
@@ -218,6 +233,10 @@ type Manager struct {
 	// (trust_codex.go). Empty means Codex trust is left alone: every test's
 	// manager, and a daemon in kubernetes mode.
 	codexHome string
+
+	// sleep is the wait between interrupts in quitStepped. A field so a test
+	// does not pay 1.5 seconds per press.
+	sleep func(ctx context.Context, d time.Duration) error
 
 	tmux  tmuxctl.Controller
 	store *Store
@@ -409,6 +428,18 @@ func NewManager(tmux tmuxctl.Controller, store *Store, roots []config.ApprovedRo
 	return NewManagerWithClock(tmux, store, roots, maxSessions, systemClock{})
 }
 
+// sleepContext waits d, or returns the context's error if it ends first.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 // NewManagerWithClock fails closed on anything that would let a session start
 // without the constraints standing in for the permission prompt.
 //
@@ -444,6 +475,7 @@ func NewManagerWithClock(tmux tmuxctl.Controller, store *Store, roots []config.A
 		roots:       roots,
 		maxSessions: maxSessions,
 		clock:       clock,
+		sleep:       sleepContext,
 	}, nil
 }
 
@@ -2578,6 +2610,17 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 	}
 	s.LastActivity = now
 
+	// A harness that quits stepwise is quit before anything is recorded: the
+	// record, the option and the journal all name the new conversation, so one
+	// written ahead of a quit that then fails would claim a conversation the
+	// pane never moved to.
+	stepped := m.specOf(s).SteppedQuit
+	if stepped {
+		if err := m.quitStepped(ctx, s); err != nil {
+			return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
+		}
+	}
+
 	// Recorded before the restart. See the note above on why the order matters.
 	if err := m.store.SetConversation(s.ID, checked); err != nil {
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
@@ -2593,7 +2636,12 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 	// The supervisor's own restart path, deliberately: continue and revive must
 	// type the same line for the same session, and two implementations of "start
 	// this session on this conversation" is one more than can be kept in step.
-	if err := m.restartInto(ctx, s); err != nil {
+	restart := m.restartInto
+	if stepped {
+		// The process has already exited, so only the start line is left.
+		restart = m.sendStart
+	}
+	if err := restart(ctx, s); err != nil {
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
 	}
 
