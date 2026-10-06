@@ -155,3 +155,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
 - Nothing outside the session package calls `ConversationsFor` yet; T014/T015 consume it. `Conversations` and `HasTranscript` are unchanged.
 - Left: T011 onward. No findings unfixed.
+
+## Iteration 18 (T011)
+
+- Wrote `discover_test.go` first (`TestDiscoverCodexConversation`, 14 rows, plus the empty `sessionsDir` case); it failed to compile on the old code. Then added `discover.go`: `DiscoverCodexConversation`, the two errors, the four limits, and two helpers (`discoverChildren`, `discoverRollouts`). BFS reads pids at depth 0 to 6 and follows children only below depth 6.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: the 64-pid cap counts the pane pid, so a root with 64 children already overflows. The task text does not say; the row with 65 children errors under either reading. Test dirs use 0o750 for gosec G301.
+- Nothing calls `DiscoverCodexConversation` yet; T012 wires it.
+- Left: T012 onward. No findings unfixed.
