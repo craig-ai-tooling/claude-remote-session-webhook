@@ -367,6 +367,7 @@ func (s *Server) fleet(operator *access.VerifiedOperator, token string, outcome 
 			Suggestions:            suggestions,
 			LifetimeCeilingRemoved: s.sessions.LifetimeCeilingRemoved(),
 			Commands:               s.previewCommands(),
+			CodexCommand:           s.previewCodexCommand(),
 		},
 		Outcome: outcome,
 	}
@@ -403,6 +404,20 @@ func (s *Server) previewCommands() map[bool]string {
 		out[remote] = line
 	}
 	return out
+}
+
+// previewCodexCommand is the line a Codex create would run, or empty where this
+// daemon offers no Codex harness. It asks the manager for the same reason
+// previewCommands does: the page and the session must share one renderer.
+func (s *Server) previewCodexCommand() string {
+	if _, ok := s.codexOffered(); !ok {
+		return ""
+	}
+	line, err := s.sessions.StartCommandLineFor(codexStartCommandName, "")
+	if err != nil {
+		return ""
+	}
+	return line
 }
 
 // conversationsFor stood here until spec 013. It answered for the first

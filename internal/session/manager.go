@@ -2297,6 +2297,21 @@ func (m *Manager) StartCommandLine(mode Mode, resume, sessionName string) (strin
 	return m.renderStart(template, resume, "", sessionName)
 }
 
+// StartCommandLineFor is StartCommandLine for a configured command name instead of
+// a mode, for the entry the create form previews beside the two modes. Same
+// readout-only contract: it resolves the name out of the operator's configured set
+// and returns a string to render. An empty sessionName leaves the placeholder.
+func (m *Manager) StartCommandLineFor(name, sessionName string) (string, error) {
+	template, err := m.resolveStartCommand(name)
+	if err != nil {
+		return "", err
+	}
+	if sessionName == "" {
+		return m.resumeFlagged(template, "", "")
+	}
+	return m.renderStart(template, "", "", sessionName)
+}
+
 // rollback undoes a half-started session and returns the error Create answers
 // with. It is deliberately asymmetric about what it does not know.
 //

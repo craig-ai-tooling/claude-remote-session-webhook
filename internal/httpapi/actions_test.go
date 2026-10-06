@@ -7117,3 +7117,186 @@ func TestReflowTrailNamesTheSessionAndNotTheWidth(t *testing.T) {
 		t.Errorf("the trail carries the column count the caller sent:\n%s", written)
 	}
 }
+
+// offersCodex configures a daemon the way an operator who wants a Codex entry
+// does, on both halves a production daemon tells from one value: the manager
+// resolves the name a create runs, and the config is what codexOffered reads.
+func (s *testServer) offersCodex(command string) {
+	commands := config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		codexStartCommandName:          command,
+	})
+	s.fixture.mgr.SetStartCommands(commands)
+	s.cfg.StartCommands = commands
+}
+
+// codexCreate is the wellFormed create with the harness field set to the values
+// given, spelled as a browser spells it.
+func (c *creator) codexCreate(t *testing.T, values ...string) url.Values {
+	t.Helper()
+
+	form := c.wellFormed(t)
+	form[fieldHarness] = values
+	return form
+}
+
+// typedLines is every command line the host was asked to type into a pane.
+func (c *creator) typedLines() []string {
+	var lines []string
+	for _, call := range c.fixture.tmux.Calls() {
+		if call.Op != tmuxctl.OpSendKeys {
+			continue
+		}
+		lines = append(lines, strings.Join(call.Argv, " "))
+	}
+	return lines
+}
+
+// untouchedByRefusal is what every refused harness create shares: a redirect to
+// the bad-mode outcome, no record, and no tmux command of any kind.
+func (c *creator) untouchedByRefusal(t *testing.T, w *httptest.ResponseRecorder) {
+	t.Helper()
+
+	wantOutcome(t, w, outcomeBadMode)
+	if got := len(c.owned()); got != 0 {
+		t.Errorf("the store holds %d records after a refused create; want none", got)
+	}
+	if calls := c.fixture.tmux.Calls(); len(calls) != 0 {
+		t.Errorf("the host saw %d calls for a refused create: %v", len(calls), calls)
+	}
+}
+
+func TestBrowserCreateCodex(t *testing.T) {
+	t.Parallel()
+
+	c := newCreator(t)
+	c.offersCodex("codex --dangerously-bypass-approvals-and-sandbox")
+
+	w := c.post(t, c.codexCreate(t, "codex"))
+
+	wantOutcome(t, w, wantCreatedOutcome)
+	owned := c.owned()
+	if len(owned) != 1 {
+		t.Fatalf("the store holds %d records after one create; want 1", len(owned))
+	}
+	if got := owned[0].StartCommand; got != codexStartCommandName {
+		t.Errorf("the record runs %q; want %q", got, codexStartCommandName)
+	}
+	lines := c.typedLines()
+	if len(lines) != 1 {
+		t.Fatalf("the host typed %d lines; want 1: %v", len(lines), lines)
+	}
+	for _, want := range []string{"codex", "--no-alt-screen", "-c check_for_update_on_startup=false"} {
+		if !strings.Contains(lines[0], want) {
+			t.Errorf("the typed line %q lacks %q", lines[0], want)
+		}
+	}
+}
+
+func TestBrowserCreateCodexRefusedWhenNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		setup func(c *creator)
+	}{
+		{"no codex entry", func(c *creator) {
+			commands := config.NewStartCommands(map[string]string{
+				config.DefaultStartCommandName: "claude local-command",
+			})
+			c.fixture.mgr.SetStartCommands(commands)
+			c.cfg.StartCommands = commands
+		}},
+		{"codex names another binary", func(c *creator) { c.offersCodex("claude --dangerously-skip-permissions") }},
+		{"no start commands at all", func(*creator) {}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			c := newCreator(t)
+			tt.setup(c)
+
+			c.untouchedByRefusal(t, c.post(t, c.codexCreate(t, "codex")))
+		})
+	}
+}
+
+func TestBrowserCreateCodexRefusesRemote(t *testing.T) {
+	t.Parallel()
+
+	c := newCreator(t)
+	c.offersCodex("codex --dangerously-bypass-approvals-and-sandbox")
+	form := c.codexCreate(t, "codex")
+	form.Set(remoteControlField, remoteControlTicked)
+
+	c.untouchedByRefusal(t, c.post(t, form))
+}
+
+func TestBrowserCreateHarnessUnknownValueRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"CODEX", "Codex", "", "evil", "rc", "codex --x"} {
+		t.Run(value, func(t *testing.T) {
+			t.Parallel()
+
+			c := newCreator(t)
+			c.offersCodex("codex --dangerously-bypass-approvals-and-sandbox")
+
+			c.untouchedByRefusal(t, c.post(t, c.codexCreate(t, value)))
+		})
+	}
+}
+
+func TestBrowserCreateHarnessDuplicateRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, values := range [][]string{{"codex", "codex"}, {"codex", "claude"}, {"claude", "claude"}} {
+		t.Run(strings.Join(values, "+"), func(t *testing.T) {
+			t.Parallel()
+
+			c := newCreator(t)
+			c.offersCodex("codex --dangerously-bypass-approvals-and-sandbox")
+
+			c.untouchedByRefusal(t, c.post(t, c.codexCreate(t, values...)))
+		})
+	}
+}
+
+// With no harness field, and with the explicit claude one, a create does what it
+// did before the field existed.
+func TestBrowserCreateClaudeUnchanged(t *testing.T) {
+	t.Parallel()
+
+	run := func(t *testing.T, form func(c *creator) url.Values) []tmuxctl.Call {
+		t.Helper()
+
+		c := newCreator(t)
+		c.offersCodex("codex --dangerously-bypass-approvals-and-sandbox")
+		wantOutcome(t, c.post(t, form(c)), wantCreatedOutcome)
+		owned := c.owned()
+		if len(owned) != 1 || owned[0].StartCommand != "" {
+			t.Fatalf("records = %+v; want one with no start command name", owned)
+		}
+		return c.fixture.tmux.Calls()
+	}
+
+	shape := func(calls []tmuxctl.Call) []tmuxctl.Op {
+		ops := make([]tmuxctl.Op, 0, len(calls))
+		for _, call := range calls {
+			ops = append(ops, call.Op)
+		}
+		return ops
+	}
+
+	absentCalls := run(t, func(c *creator) url.Values { return c.wellFormed(t) })
+	explicitCalls := run(t, func(c *creator) url.Values { return c.codexCreate(t, "claude") })
+	if got, want := shape(explicitCalls), shape(absentCalls); !slices.Equal(got, want) {
+		t.Errorf("explicit claude ran %v; no field ran %v", got, want)
+	}
+	for _, call := range absentCalls {
+		if call.Op == tmuxctl.OpSendKeys && strings.Contains(strings.Join(call.Argv, " "), "codex") {
+			t.Errorf("a create with no harness field typed %v", call.Argv)
+		}
+	}
+}

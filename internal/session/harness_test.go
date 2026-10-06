@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -533,4 +534,42 @@ func TestContinueCodexPersistsAfterQuit(t *testing.T) {
 	if len(records) == 0 {
 		t.Error("the journal holds no record of the continue")
 	}
+}
+
+func TestStartCommandLineFor(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	f.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: claudeStartCommand,
+		"codex":                        "codex --dangerously-bypass-approvals-and-sandbox",
+	}))
+
+	t.Run("codex renders the fresh line with the placeholder standing", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := f.mgr.StartCommandLineFor("codex", "")
+		if err != nil {
+			t.Fatalf("err = %v", err)
+		}
+		const want = "codex --no-alt-screen -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox"
+		if got != want {
+			t.Errorf("line = %q, want %q", got, want)
+		}
+	})
+	t.Run("a name is substituted", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := f.mgr.StartCommandLineFor("codex", "my-session")
+		if err != nil || !strings.HasPrefix(got, "codex --no-alt-screen") {
+			t.Errorf("line = %q, err = %v", got, err)
+		}
+	})
+	t.Run("an unknown name is refused", func(t *testing.T) {
+		t.Parallel()
+
+		if _, err := f.mgr.StartCommandLineFor("nope", ""); !errors.Is(err, ErrUnknownStartCommand) {
+			t.Errorf("err = %v, want ErrUnknownStartCommand", err)
+		}
+	})
 }

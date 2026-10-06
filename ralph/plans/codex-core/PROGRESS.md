@@ -179,3 +179,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: goimports in the edit hook strips an import that is not yet used, so add the import and its first use in one edit. The fixture read needs `//nolint:gosec` (G304), as in iteration 15.
 - The fleet grid still passes an empty pane, so Codex cards read `running` there until the session page opens, same as Claude.
 - Left: T014 onward. No findings unfixed.
+
+## Iteration 21 (T014)
+
+- Wrote `TestParseHarness`, `TestStartCommandLineFor` and the six `TestBrowserCreate*` harness tests first; they failed to compile on the old code (no `parseHarness`, `StartCommandLineFor`, `codexStartCommandName`). Then added `harnessparam.go` (`parseHarness`, `errHarnessParam`, the field and value constants), `Manager.StartCommandLineFor`, `createFormView.CodexCommand` with `Server.codexOffered` and `previewCodexCommand`, and the harness block in `createFromBrowser`, placed after the remote-control check and ahead of the lifetime parse.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: a refused harness create reuses `errCreateStateNotOffered` and `outcomeBadMode`; Codex plus remote uses `errModeUnavailable` with `outcomeBadMode`, per the task, where the Claude no-remote-command case answers `outcomeCreateFailed`. `parseHarness` treats a present key with zero entries as refused. An empty `codexHome` seeds nothing, so httpapi tests need no HOME override.
+- Nothing renders `CodexCommand` yet; T014a and T015 add the control and the preview.
+- Left: T014a onward. No findings unfixed.
