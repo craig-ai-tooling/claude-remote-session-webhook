@@ -260,3 +260,16 @@ Added `canaryTyped`, a `dashboard.type` act in `driveTheActionRoutes`, the secre
 - Guard proven: with `AuditFrom(r.Context()).Deny(text)` added before `Manager.Type` in `typeFromBrowser`, `TestNoOperationLeaksSecretMaterialIntoTheTrailOrTheLogs` FAILED (canary in a `dashboard.type` deny record). Reverted, all PASSED.
 - Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
 - Next iteration (T013): the act uses the literal field names `"text"` and `"enter"`, since `fieldText`/`fieldEnter` live in `internal/httpapi` and the audit test spells its own values on purpose.
+
+## Iteration 15: T013 (2026-10-06)
+
+Replaced the pane note with the FR-020 sentence and added the input panel, key bar and Scrollback disclosure to `partials/pane.html`, the five classes to `crswd.css` (plus `.scrollback` and `.scrollback-summary` in the two shared lists, and `.key-bar .button` in the coarse block), and `TestTheSessionPageOffersTypingKeysAndScrollback` and `TestNoInputPanelWithoutAPageToken` in `dashboard_test.go`.
+
+- Guards proven: with `{{ with .PageToken }}` swapped for `{{ with "x" }}`, `TestNoInputPanelWithoutAPageToken` FAILED; with the `pageup` button's value changed to `pgup`, `TestTheSessionPageOffersTypingKeysAndScrollback` FAILED. Restored, both PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T014): `TestTheSessionPageStatesAScreenItCouldNotRead` asserted no `<pre` anywhere on an unreadable page, and the Scrollback `<pre>` now sits outside the unread branch as the task asks. It now looks for `<pre class="pane" id="pane-`. The Scrollback `<pre>` has id `history-<id>`, so `paneBody` is unaffected.
+- The quickstart test at `cmd/crswd/quickstart_dashboard_test.go:534` was not run (needs tmux and a free port 8765); the phrase it checks is unchanged. `go vet -tags quickstart` passes.
+
+### Findings
+
+- `TestKeyAndTypeShareOneBudget` and `TestTypeSpendsTheInputBudget` failed once in a full `go test ./internal/httpapi` (204 where 303 was wanted) and passed in isolation and on three later full runs. They post 120 and 240 requests against a 240/min bucket, so a slow run that lets the bucket refill past the last post flips them. Not fixed here; T008 and T009 own them.
