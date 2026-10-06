@@ -191,3 +191,20 @@ and to both tables in `audit_test.go`.
 - Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues),
   no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
 - Next iteration: `leak_test.go:1542` lists the dashboard action names; T012 owns it, not T007.
+
+## Iteration 10: T008 (2026-10-06)
+
+Added the seven input outcome codes and sentences to `outcome.go`, `inputRatePerMin = 240` to
+`ratelimit.go`, the `inputs` limiter field and its construction in `newServer`, and
+`TestTheInputBudgetIsBuilt` in the new `input_test.go`.
+
+- Guards proven: with the `Server` literal's `inputs` forced to nil, `TestTheInputBudgetIsBuilt` FAILED;
+  with `key-unknown`'s sentence emptied, `TestEveryOutcomeThisPackageSpellsHasASentence` FAILED.
+  Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues),
+  no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration: `outcome_test.go`'s `spelledOutcomes` table did need the seven codes (the task said
+  "only if"); the count check fails without them. The Read tool shows an extra leading tab on that
+  file's lines, so match with one tab fewer than displayed.
+- Removing the `inputs:` literal line breaks the build (declared and not used), so it proves nothing;
+  break a guard in a way that still compiles.

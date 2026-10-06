@@ -80,7 +80,7 @@ The loop may create or edit these paths and no others:
 - [x] **T005** Add `Manager.Type` (Touch, bracketed paste, optional Enter) and `Manager.PressKey`. Done when `go test ./internal/session -run 'Type|PressKey'` passes.
 - [x] **T006** Add `Manager.History` (strip, no Touch, no `unreadable`). Done when `go test ./internal/session -run History` passes.
 - [x] **T007** Add audit actions `dashboard.type`, `dashboard.key`, `dashboard.history` to both action tables. Done when `go test ./internal/audit` passes.
-- [ ] **T008** Add seven outcome codes with their exact sentences, and the `inputs` bucket (240/min) built inside `newServer`. Done when `go test ./internal/httpapi -run 'Outcome|InputBudget'` passes.
+- [x] **T008** Add seven outcome codes with their exact sentences, and the `inputs` bucket (240/min) built inside `newServer`. Done when `go test ./internal/httpapi -run 'Outcome|InputBudget'` passes.
 - [ ] **T009** Add `POST /dashboard/sessions/{id}/type` behind `handleAction`, answering 204. Done when `go test ./internal/httpapi -run Type` passes, including every refusal shape.
 - [ ] **T010** Add `POST /dashboard/sessions/{id}/key` behind `handleAction`, sharing the bucket. Done when `go test ./internal/httpapi -run Key` passes.
 - [ ] **T011** Add `GET /sessions/{id}/history` behind `handleBrowser`, refusing cross-site, as text/plain no-store. Done when `go test ./internal/httpapi -run History` passes.
