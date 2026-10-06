@@ -68,3 +68,26 @@ Next iteration would waste time on:
 Noticed, not fixed: one `go test ./...` run failed `TestCodexSignedIn` in `internal/loginrelay` with
 `text file busy` (fork/exec of a just-written fake codex). It passed on the next run. Outside this
 plan's files.
+
+## Iteration 3 (T3, chart skeleton)
+
+Done: `Chart.yaml`, `values.yaml` (the Design §3 keys and defaults, one comment each), `.helmignore`,
+`doc.go`, `templates/_helpers.tpl`, `templates/NOTES.txt`, and a placeholder `templates/daemon.yaml`
+holding only the two guards.
+
+Failing first: `helm lint deploy/chart --set sharedSecret.existingSecret=s` printed
+`Error unable to check Chart.yaml file in chart: stat deploy/chart/Chart.yaml: no such file or directory`.
+After: lint exits 0 (only `icon is recommended`). `helm template` without the secret fails with
+`sharedSecret.existingSecret is required`; with `service.enabled=true` and no door it fails with
+`service.enabled needs a browser door`; with `dashboardPassword.existingSecret=p` it renders (empty,
+no workloads yet).
+
+Next iteration would waste time on:
+- `crswd.selectorLabels` and `crswd.labels` take a dict, not a bare component string: call them as
+  `include "crswd.selectorLabels" (dict "root" . "component" "daemon")`. A Helm `include` takes one
+  argument, and the helper needs both the release and the component.
+- `daemon.yaml` renders nothing until T5. `helm template` of a valid install prints no output, and
+  that is expected, not a bug. T4 adds the first rendered objects.
+- No Go test was added in T3 (the plan's T3 verify is helm lint). `deploy/chart/doc.go` is the only
+  Go file there, and `chart_test.go` arrives in T4.
+- Gate steps 1 to 9 passed, including `helm lint` with the secret set.

@@ -1,0 +1,2 @@
+{{- $_ := required "sharedSecret.existingSecret is required (a Secret with key secret: openssl rand -hex 32)" .Values.sharedSecret.existingSecret }}
+{{- if and .Values.service.enabled (not .Values.access.teamDomain) (not .Values.dashboardPassword.existingSecret) }}{{ fail "service.enabled needs a browser door: set access.* or dashboardPassword.existingSecret" }}{{- end }}
