@@ -135,3 +135,13 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Added `//nolint` on the `os.Open` (gosec G304, path proven by `codexRollout`) and the read-only `Close`, following `journal.go` and `trust_codex.go`.
 - Nothing calls these yet; T010b dispatches to them.
 - Left: T010b onward. No findings unfixed.
+
+## Iteration 16 (T010b, stopped)
+
+- No code changed. Wrote the dispatchers (`ConversationsFor`, `hasTranscriptFor`, the `Continue` `ResumeArgs == nil` guard, both call sites) and three tests; the tests failed on the old code. Then `go test ./internal/session/...` failed in two tests outside T010b's Files line. Reverted every edited file with `git restore`; nothing is committed except this notebook.
+- T010b is marked `- [!]`.
+
+## NEEDS CLARIFICATION (5)
+
+- **T010b**: quoted text: "Files: `internal/session/conversation.go` (dispatchers), `internal/session/supervisor.go` (`:197` HasTranscript gate), `internal/session/manager.go` (`Continue` `:2471`), `internal/session/conversation_codex_test.go`." and "Acceptance: `go test ./internal/session/...` passes." With `Continue` checking the Codex transcript for a Codex session, `TestContinueCodexFailedQuitChangesNothing` and `TestContinueCodexPersistsAfterQuit` (`internal/session/harness_test.go`, written in T009) fail with `ErrInvalidResume: there is no such conversation on this host`. Their `continueFixture` (`harness_test.go`) plants a Claude transcript with `conversationHome`, which iteration 14 noted only passed because `HasTranscript` was not yet per harness. `harness_test.go` is not in T010b's Files line. Question: may T010b also edit `continueFixture` in `internal/session/harness_test.go`? Suggested fix: add `internal/session/harness_test.go` (`continueFixture` only) to T010b's Files line. Verified in a scratch edit: replacing its `conversationHome(...)` line with `home := t.TempDir(); f.mgr.SetCodexHome(home); plantCodexRollout(t, home, harnessTestConversation, s.WorkDir)` turns both tests green. `plantCodexRollout` is a new helper in `conversation_codex_test.go` (`writeRollout` plus `codexMetaLine`).
+- Also for the retry: `TestConversationsForDispatch`'s Claude row must use `f.repo()` as the work dir, not `/work/proj`, because `Conversations` resolves the directory against the approved roots and `/work/proj` is outside them. That is inside T010b's Files and needs no decision.
