@@ -460,20 +460,49 @@ func (r *Relay) SignedIn(ctx context.Context) (bool, error) {
 	return status.LoggedIn, nil
 }
 
-// codexSignedIn runs `codex login status`: exit 0 is signed in, exit 1 with
-// "Not logged in" on stdout is signed out (research M14), anything else is a
-// host problem. The output is matched, never echoed.
+// codexSignedIn runs `codex login status` and reads the answer from its text.
+//
+// Signed in prints "Logged in using ..." and exits 0; signed out prints "Not
+// logged in" on stderr and exits 1 (research M14). Stdout and stderr are read
+// together, bounded, and the phrase decides regardless of exit code. A failure
+// with neither phrase is a host problem. The output is matched, never echoed.
 func (r *Relay) codexSignedIn(ctx context.Context) (bool, error) {
 	cmd := exec.CommandContext(ctx, r.executable, "login", "status") //nolint:gosec // executable is the operator's configured command, argv is constant
 	cmd.Env = r.env
+	out := &boundedBuffer{limit: statusOutputLimit}
+	cmd.Stdout = out
+	cmd.Stderr = out
 
-	out, err := cmd.Output()
-	if err == nil {
+	err := cmd.Run()
+	text := out.buf.String()
+	switch {
+	case strings.Contains(text, "Not logged in"):
+		return false, nil
+	case strings.Contains(text, "Logged in"):
+		return true, nil
+	case err == nil:
 		return true, nil
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 && strings.Contains(string(out), "Not logged in") {
-		return false, nil
-	}
 	return false, fmt.Errorf("read the Codex sign-in state: %w", err)
+}
+
+// statusOutputLimit bounds what `codex login status` may make this process hold.
+const statusOutputLimit = 64 << 10
+
+// boundedBuffer keeps the first limit bytes written and discards the rest, so a
+// noisy child cannot grow the daemon. It always reports a full write so the
+// child is never blocked on a closed pipe.
+type boundedBuffer struct {
+	buf   strings.Builder
+	limit int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if room := b.limit - b.buf.Len(); room > 0 {
+		if len(p) < room {
+			room = len(p)
+		}
+		b.buf.Write(p[:room])
+	}
+	return len(p), nil
 }

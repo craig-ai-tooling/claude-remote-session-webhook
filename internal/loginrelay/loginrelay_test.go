@@ -472,9 +472,16 @@ func TestDeliverTrimsTheWhitespaceAPhonePasteCarries(t *testing.T) {
 // not on PATH, that prints out and exits with code.
 func codexBin(t *testing.T, out string, code int) string {
 	t.Helper()
+	return codexBinTo(t, out, code, "")
+}
+
+// codexBinTo is codexBin with a choice of stream: redirect "" is stdout, ">&2"
+// is stderr, where the real `codex login status` prints "Not logged in".
+func codexBinTo(t *testing.T, out string, code int, redirect string) string {
+	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "codex")
-	script := "#!/bin/sh\necho " + strconv.Quote(out) + "\nexit " + strconv.Itoa(code) + "\n"
+	script := "#!/bin/sh\necho " + strconv.Quote(out) + " " + redirect + "\nexit " + strconv.Itoa(code) + "\n"
 	//nolint:gosec // G306: the script must be executable.
 	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
 		t.Fatalf("write fake codex: %v", err)
@@ -636,18 +643,20 @@ func TestCodexSignedIn(t *testing.T) {
 		name    string
 		out     string
 		code    int
+		to      string
 		want    bool
 		wantErr bool
 	}{
 		{name: "signed in", out: "Logged in using ChatGPT", code: 0, want: true},
-		{name: "signed out", out: "Not logged in", code: 1},
+		{name: "signed out on stdout", out: "Not logged in", code: 1},
+		{name: "signed out on stderr, as codex 0.153.4 prints it", out: "Not logged in", code: 1, to: ">&2"},
 		{name: "exit 1 without the phrase", out: "boom", code: 1, wantErr: true},
-		{name: "exit 2", out: "Not logged in", code: 2, wantErr: true},
+		{name: "exit 1 without the phrase on stderr", out: "boom", code: 1, to: ">&2", wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r := newCodexRelay(t, tmuxctl.NewFake(), codexBin(t, tc.out, tc.code))
+			r := newCodexRelay(t, tmuxctl.NewFake(), codexBinTo(t, tc.out, tc.code, tc.to))
 			got, err := r.SignedIn(context.Background())
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
