@@ -56,7 +56,7 @@ watches for that string and stops.
   1. `go -C k8s vet ./...`
   2. `go -C k8s test ./...`
   3. `go -C k8s build ./...`
-  4. `(cd k8s && golangci-lint run)`
+  4. Do not lint the cluster module yourself: the sandbox refuses `cd`. CI lints it, and the operator runs it before the PR.
 - The root module stays standard library only and the root `go.sum` must not exist. `k8s/go.sum` is expected.
 - No manifest or fixture names the `lawnmower` namespace or its Secrets, or `~/.claude`.
 - Never push to `main`. Never force-push. Do not open the PR; the runner does.
