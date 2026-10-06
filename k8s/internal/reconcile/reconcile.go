@@ -21,6 +21,9 @@ const (
 	AnnotationRecreates = v1alpha1.Group + "/pod-recreates"
 	// MaxRecreates bounds a pod that fails at every start.
 	MaxRecreates = 5
+	// AnnotationRecreateOf records the UID of the failed pod whose recreate has
+	// been counted, which makes the count-then-delete step idempotent.
+	AnnotationRecreateOf = v1alpha1.Group + "/pod-recreate-of"
 	// AnnotationConversation is the key podctl writes for @crswd-conversation.
 	AnnotationConversation = v1alpha1.Group + "/conversation"
 
@@ -162,8 +165,8 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 			return r.rejectLive(ctx, obj, pod, reason)
 		}
 	}
-	name := obj.Metadata.Name
 	_, counted := obj.Metadata.Annotations[AnnotationRecreates]
+	_, reserved := obj.Metadata.Annotations[AnnotationRecreateOf]
 
 	switch pod.Status.Phase {
 	case corev1.PodFailed, corev1.PodSucceeded:
@@ -171,29 +174,38 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 			return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, reasonLifetime)
 		}
 		n := recreateCount(obj.Metadata.Annotations)
-		if n >= MaxRecreates {
+		reservedHere := obj.Metadata.Annotations[AnnotationRecreateOf] == string(pod.UID)
+		// An attempt already reserved for this pod passed the cap when it was made.
+		if n >= MaxRecreates && !reservedHere {
 			return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, fmt.Sprintf("the session pod failed %d times in a row", MaxRecreates))
 		}
-		uid := pod.UID
-		err := r.kube.CoreV1().Pods(r.cfg.SessionNamespace).Delete(ctx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}})
-		if err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("reconcile: delete pod %s: %w", name, err)
-		}
-		obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
-			if o.Metadata.Annotations == nil {
-				o.Metadata.Annotations = map[string]string{}
+		// Reserve the attempt before the pod goes: a crash between the two
+		// writes then costs a retry of the delete, not an uncounted recreate.
+		// The pod's UID marks the reservation, so a second pass over the same
+		// failed pod deletes without counting again.
+		if !reservedHere {
+			var err error
+			obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
+				if o.Metadata.Annotations == nil {
+					o.Metadata.Annotations = map[string]string{}
+				}
+				o.Metadata.Annotations[AnnotationRecreates] = strconv.Itoa(n + 1)
+				o.Metadata.Annotations[AnnotationRecreateOf] = string(pod.UID)
+			})
+			if err != nil {
+				return err
 			}
-			o.Metadata.Annotations[AnnotationRecreates] = strconv.Itoa(n + 1)
-		})
-		if err != nil {
+		}
+		if err := r.deletePod(ctx, pod); err != nil {
 			return err
 		}
 		return r.setStatus(ctx, obj, v1alpha1.PhaseReviving, "")
 	case corev1.PodRunning:
-		if counted {
+		if counted || reserved {
 			var err error
 			obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
 				delete(o.Metadata.Annotations, AnnotationRecreates)
+				delete(o.Metadata.Annotations, AnnotationRecreateOf)
 			})
 			if err != nil {
 				return err
