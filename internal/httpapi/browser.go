@@ -198,6 +198,10 @@ const (
 // notFoundView is the not-found page's composition: the header every page
 // carries, and the canonical empty state carrying the explanation.
 type notFoundView struct {
+	// Header is what the header component renders from. Operator stays for the
+	// handlers and tests that read it; the template reads this.
+	Header headerView
+
 	// Operator is the identity layer 1 verified, passed straight to the header
 	// component — the same pointer OperatorFrom returned, never a copy (FR-020,
 	// FR-036).
@@ -256,6 +260,7 @@ func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 func (s *Server) renderNotFound(w http.ResponseWriter, r *http.Request, operator *access.VerifiedOperator) {
 	s.renderPage(w, r, http.StatusNotFound, "not-found", notFoundView{
 		Operator: operator,
+		Header:   s.headerFor(operator),
 		Message:  emptyView{Title: notFoundTitle, Body: notFoundBody},
 	})
 }

@@ -28,6 +28,7 @@ import (
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
@@ -100,6 +101,10 @@ const (
 // parameter lists are that file's subject, while this is the composition one
 // page makes of them.
 type fleetView struct {
+	// Header is what the header component renders from. Operator stays for the
+	// handlers and tests that read it; the template reads this.
+	Header headerView
+
 	// Operator is the identity layer 1 verified, passed straight to the header
 	// component. It is a pointer to the same value OperatorFrom returned rather
 	// than a copied address, so there is no second place for the identity to be
@@ -156,6 +161,10 @@ type sessionPageView struct {
 	// there is nothing to continue — never as an empty control, which reads as an
 	// offer with nothing behind it.
 	Conversations []conversationView
+
+	// Header is what the header component renders from. Operator stays for the
+	// handlers and tests that read it; the template reads this.
+	Header headerView
 
 	// Operator is the identity layer 1 verified, passed straight to the header
 	// component as the same pointer OperatorFrom returned (FR-020, FR-036).
@@ -315,6 +324,7 @@ func (s *Server) fleet(operator *access.VerifiedOperator, token string, outcome 
 
 	return fleetView{
 		Operator: operator,
+		Header:   s.headerFor(operator),
 		Summary:  summarise(views),
 		Sessions: views,
 		// Composed on every render and hidden when there is a grid instead. The
@@ -555,7 +565,7 @@ func effectiveDisplayState(live session.Session, now time.Time, paneText string,
 	// This one runs first because it is the more specific: `needs-auth` names
 	// the remedy, where `blocked` or `unknown` would report a host-wide
 	// credential problem as one session waiting on a keystroke.
-	if _, ok := claudeauth.DetectPrompt(paneText); ok {
+	if paneNeedsAuth(paneText, h) {
 		// The prompt itself is dropped. It carries the sign-in URL, which is a
 		// one-shot PKCE challenge, and docs/auth-and-sessions.md forbids
 		// rendering it back into the page or storing it anywhere; a card says
@@ -576,6 +586,24 @@ func effectiveDisplayState(live session.Session, now time.Time, paneText string,
 		// file exists to fix.
 		return session.DisplayUnknown, ""
 	}
+}
+
+// paneNeedsAuth asks the detector that belongs to the session's harness. Other
+// checks both: a command the daemon cannot name may still be either program.
+func paneNeedsAuth(paneText string, h harness.Name) bool {
+	switch h {
+	case harness.Claude:
+		_, ok := claudeauth.DetectPrompt(paneText)
+		return ok
+	case harness.Codex:
+		_, ok := codexauth.DetectPrompt(paneText)
+		return ok
+	}
+	if _, ok := claudeauth.DetectPrompt(paneText); ok {
+		return true
+	}
+	_, ok := codexauth.DetectPrompt(paneText)
+	return ok
 }
 
 // sessionPage serves GET /sessions/{id}/view (contracts/dashboard.md): one
@@ -665,6 +693,7 @@ func (s *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 
 	s.renderPage(w, r, http.StatusOK, "session", sessionPageView{
 		Operator: operator,
+		Header:   s.headerFor(operator),
 		// pane.Text is the screen this handler just captured above — reused
 		// rather than read twice, and the reason this page's card can answer
 		// DisplayBlocked/DisplayUnknown where the fleet grid's cannot (cardOf).

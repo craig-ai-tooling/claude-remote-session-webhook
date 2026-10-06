@@ -8,6 +8,10 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
 // signInViewPath is derived from the pattern the server registers rather than
@@ -233,14 +237,14 @@ func TestSignInViewAsksFreshAndStoresIntoTheCache(t *testing.T) {
 
 	d := newSignInDoor(t)
 	relay := &fakeRelay{signedIn: true}
-	d.signin = relay
+	d.signins[harness.Claude] = relay
 	d.clock = fixedClock{at: testTime}
 
 	// Primed stale on purpose, with the opposite answer, so a fragment that
 	// merely read the cache instead of asking would report it.
-	d.authCache.state = authBad
-	d.authCache.fetched = testTime
-	d.authCache.has = true
+	d.authCaches[harness.Claude].state = authBad
+	d.authCaches[harness.Claude].fetched = testTime
+	d.authCaches[harness.Claude].has = true
 
 	w := d.get(t, signInViewPath)
 	if w.Code != http.StatusOK {
@@ -258,5 +262,165 @@ func TestSignInViewAsksFreshAndStoresIntoTheCache(t *testing.T) {
 	}
 	if calls := relay.callCount(); calls != 1 {
 		t.Errorf("GET %s ran SignedIn again (%d calls total); want the fragment's ask to have been stored into the cache", authPath, calls)
+	}
+}
+
+const (
+	// codexTestCode and codexTestURL are placeholders in the shape research F2
+	// records. The code is a canary: the real one is a live credential.
+	codexTestCode = "ABCD-EFGH1"
+	codexTestURL  = "https://auth.openai.com/codex/device"
+)
+
+// codexPanelPage renders the Codex panel in the state a sign-in is waiting.
+func codexPanelPage(t *testing.T) string {
+	t.Helper()
+
+	signedOut := false
+	return signInPanelPage(t, &signInPanel{
+		Available: true,
+		Token:     "test-token",
+		Harness:   harness.Codex,
+		SignedIn:  &signedOut,
+		Running:   true,
+		DeviceURL: codexTestURL,
+		Code:      codexTestCode,
+		AuthState: authBad,
+	})
+}
+
+// TestCodexPanelShowsLinkAndCode: the device link as an href and the one-time
+// code in a <code> element, which is what the operator reads off a phone.
+func TestCodexPanelShowsLinkAndCode(t *testing.T) {
+	t.Parallel()
+
+	page := codexPanelPage(t)
+
+	if !strings.Contains(page, `href="`+codexTestURL+`"`) {
+		t.Errorf("the Codex panel does not render the device link as an href:\n%s", page)
+	}
+	if !strings.Contains(page, `rel="noopener noreferrer"`) {
+		t.Errorf("the Codex link lacks rel=noopener noreferrer:\n%s", page)
+	}
+	if !strings.Contains(page, "<code>"+codexTestCode+"</code>") {
+		t.Errorf("the Codex panel does not show the code in a <code> element:\n%s", page)
+	}
+}
+
+// TestCodexPanelWaitsWhileTheScreenDraws: no link and no code yet reads as
+// waiting, not as an empty link.
+func TestCodexPanelWaitsWhileTheScreenDraws(t *testing.T) {
+	t.Parallel()
+
+	page := signInPanelPage(t, &signInPanel{
+		Available: true, Token: "test-token", Harness: harness.Codex, Running: true, AuthState: authBad,
+	})
+	if strings.Contains(page, "<a ") || strings.Contains(page, "<code>") {
+		t.Errorf("a Codex panel with nothing drawn rendered a link or a code:\n%s", page)
+	}
+	if !strings.Contains(page, "starting") {
+		t.Errorf("a Codex panel with nothing drawn did not say it is waiting:\n%s", page)
+	}
+}
+
+// TestCodexPanelHasNoCodeForm: Codex takes no code from the browser (D12).
+func TestCodexPanelHasNoCodeForm(t *testing.T) {
+	t.Parallel()
+
+	page := codexPanelPage(t)
+	for _, banned := range []string{"/dashboard/signin/code", `name="code"`, "signin-code"} {
+		if strings.Contains(page, banned) {
+			t.Errorf("the Codex panel carries a code form (%q):\n%s", banned, page)
+		}
+	}
+}
+
+// TestCodexPanelFormsCarryHarness: every form in a Codex panel, Start and
+// Cancel in both states, names Codex, so none can reach the Claude relay.
+// Claude's forms name Claude for the converse reason.
+func TestCodexPanelFormsCarryHarness(t *testing.T) {
+	t.Parallel()
+
+	const codexField = `<input type="hidden" name="harness" value="codex">`
+	const claudeField = `<input type="hidden" name="harness" value="claude">`
+
+	for name, panel := range map[string]*signInPanel{
+		"codex running": {Available: true, Token: "t", Harness: harness.Codex, Running: true, AuthState: authBad},
+		"codex idle":    {Available: true, Token: "t", Harness: harness.Codex, AuthState: authBad},
+	} {
+		page := signInPanelPage(t, panel)
+		forms := strings.Count(page, "<form ")
+		if forms == 0 {
+			t.Fatalf("%s: no form rendered:\n%s", name, page)
+		}
+		if got := strings.Count(page, codexField); got != forms {
+			t.Errorf("%s: %d forms but %d carry the codex harness field:\n%s", name, forms, got, page)
+		}
+	}
+
+	for name, panel := range map[string]*signInPanel{
+		"claude running": {Available: true, Token: "t", Running: true, Link: "https://claude.ai/x", AuthState: authBad},
+		"claude idle":    {Available: true, Token: "t", AuthState: authBad},
+	} {
+		page := signInPanelPage(t, panel)
+		if got, forms := strings.Count(page, claudeField), strings.Count(page, "<form "); got != forms {
+			t.Errorf("%s: %d forms but %d carry the claude harness field:\n%s", name, forms, got, page)
+		}
+	}
+}
+
+// TestCodexPanelHasNoClaudeWording: the Codex block has its own words.
+func TestCodexPanelHasNoClaudeWording(t *testing.T) {
+	t.Parallel()
+
+	signedIn := true
+	for name, panel := range map[string]*signInPanel{
+		"waiting":     {Available: true, Token: "t", Harness: harness.Codex, Running: true, DeviceURL: codexTestURL, Code: codexTestCode, AuthState: authBad},
+		"idle":        {Available: true, Token: "t", Harness: harness.Codex, AuthState: authBad},
+		"signed in":   {Available: true, Token: "t", Harness: harness.Codex, SignedIn: &signedIn, AuthState: authOK},
+		"unknown":     {Available: true, Token: "t", Harness: harness.Codex, AuthState: authUnknown},
+		"unavailable": {Harness: harness.Codex, AuthState: authUnknown},
+	} {
+		if page := signInPanelPage(t, panel); strings.Contains(page, "Claude") {
+			t.Errorf("%s: the Codex panel says Claude:\n%s", name, page)
+		}
+	}
+}
+
+// TestCodexSignInViewReadsTheCodexRelay: GET /dashboard/signin/view?harness=codex
+// shows the Codex relay's link and code, asks the Codex relay, and never the
+// Claude one.
+func TestCodexSignInViewReadsTheCodexRelay(t *testing.T) {
+	t.Parallel()
+
+	d := newSignInDoor(t)
+	claudeRelay := &fakeRelay{signedIn: true}
+	codexRelay := &fakeRelay{state: loginrelay.State{
+		Running: true,
+		Device:  &codexauth.Prompt{Kind: codexauth.KindDeviceCode, URL: codexTestURL, Code: codexTestCode},
+	}}
+	d.signins[harness.Claude] = claudeRelay
+	d.signins[harness.Codex] = codexRelay
+	d.authCaches[harness.Codex] = &authCache{}
+
+	w := d.get(t, signInViewPath+"?harness=codex")
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET = %d (%s); want 200", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "<code>"+codexTestCode+"</code>") || !strings.Contains(body, `href="`+codexTestURL+`"`) {
+		t.Errorf("the view did not show the Codex link and code:\n%s", body)
+	}
+	if claudeRelay.callCount() != 0 {
+		t.Errorf("a Codex view asked the Claude relay %d times", claudeRelay.callCount())
+	}
+	if codexRelay.callCount() != 1 {
+		t.Errorf("a Codex view asked the Codex relay %d times; want 1", codexRelay.callCount())
+	}
+
+	for _, bad := range []string{"?harness=other", "?harness=", "?harness=claude&harness=codex"} {
+		if got := d.get(t, signInViewPath+bad).Code; got != http.StatusBadRequest {
+			t.Errorf("GET view%s = %d; want 400", bad, got)
+		}
 	}
 }

@@ -80,6 +80,10 @@ const patternSettings = "GET /settings"
 // handler and not in view.go — the same division fleetView and sessionPageView
 // follow.
 type settingsView struct {
+	// Header is what the header component renders from. Operator stays for the
+	// handlers and tests that read it; the template reads this.
+	Header headerView
+
 	// Operator is the identity layer 1 verified, passed straight to the header
 	// component as the same pointer OperatorFrom returned (FR-020, FR-036). It is
 	// the only thing on this page that comes from the request at all, and it did
@@ -657,6 +661,7 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	shown := shownSection(r.URL.Query().Get(querySection), sections)
 	s.renderPage(w, r, http.StatusOK, "settings", settingsView{
 		Operator:   operator,
+		Header:     s.headerFor(operator),
 		Settings:   rows,
 		Sections:   sections,
 		Shown:      shown,

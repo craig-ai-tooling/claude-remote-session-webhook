@@ -1,0 +1,22 @@
+<header class="masthead">
+<canvas class="rain" aria-hidden="true"></canvas>
+
+<div class="masthead-bar">
+<h1 class="brand"><a class="brand-link" href="/">crswd</a><span class="brand-version">dev</span> <span class="brand-tag">session control</span></h1>
+<p class="quota-label quota-label-unknown" data-quota-label>weekly quota: checking</p>
+<p class="operator" title="operator@example.com">operator@example.com</p>
+<button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>
+<a class="masthead-link" href="/settings">Settings</a>
+</div>
+<meter class="quota-meter" data-quota-meter min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
+</header>
+<dialog class="modal" id="signin-dialog" closedby="any" aria-labelledby="signin-title">
+<div class="modal-head">
+<h2 class="modal-title" id="signin-title">Sign in</h2>
+<button class="modal-close" type="button" command="close" commandfor="signin-dialog" aria-label="Close">×</button>
+</div>
+<p class="modal-outcome" role="status" aria-live="polite"></p>
+<div class="modal-body" data-signin-body>
+<p class="settings-note">This needs JavaScript. Reload this page with scripting enabled, or run <code>claude auth login --claudeai</code> directly on the host.</p>
+</div>
+</dialog>

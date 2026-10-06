@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
@@ -94,6 +95,12 @@ type authCache struct {
 	state   authState
 	fetched time.Time
 	has     bool
+
+	// gen counts invalidations. A refresh records it before asking and stores
+	// its answer only if it is unchanged, so an ask that began before an
+	// invalidate cannot repopulate the cache with what that invalidate meant
+	// to discard. The lock is never held across the external command.
+	gen uint64
 }
 
 // invalidate clears the cache, so the next ask is a fresh one. Called by each
@@ -103,6 +110,7 @@ func (c *authCache) invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.has = false
+	c.gen++
 }
 
 // authStateCached answers from the cache when it is fresh, and asks
@@ -112,19 +120,23 @@ func (c *authCache) invalidate() {
 // now is read from s.clock and not from time.Now, so a test can move the
 // clock without waiting on the wall one (server.go's own reason for that
 // field).
-func (s *Server) authStateCached(ctx context.Context) authState {
-	s.authCache.mu.Lock()
-	defer s.authCache.mu.Unlock()
+func (s *Server) authStateCached(ctx context.Context, h harness.Name) authState {
+	c := s.authCaches[h]
+	if c == nil {
+		return authUnknown
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	now := s.clock.Now()
-	if s.authCache.has && now.Sub(s.authCache.fetched) < authCacheTTL {
-		return s.authCache.state
+	if c.has && now.Sub(c.fetched) < authCacheTTL {
+		return c.state
 	}
 
-	state := s.askAuthState(ctx)
-	s.authCache.state = state
-	s.authCache.fetched = now
-	s.authCache.has = true
+	state := s.askAuthState(ctx, h)
+	c.state = state
+	c.fetched = now
+	c.has = true
 	return state
 }
 
@@ -138,14 +150,24 @@ func (s *Server) authStateCached(ctx context.Context) authState {
 // cached — the two questions look the same and are not: the panel is answering
 // "is this host signed in right now", and the pill is answering "was it,
 // recently enough".
-func (s *Server) refreshAuthCache(ctx context.Context) authState {
-	state := s.askAuthState(ctx)
+func (s *Server) refreshAuthCache(ctx context.Context, h harness.Name) authState {
+	c := s.authCaches[h]
+	if c == nil {
+		return authUnknown
+	}
+	c.mu.Lock()
+	gen := c.gen
+	c.mu.Unlock()
 
-	s.authCache.mu.Lock()
-	s.authCache.state = state
-	s.authCache.fetched = s.clock.Now()
-	s.authCache.has = true
-	s.authCache.mu.Unlock()
+	state := s.askAuthState(ctx, h)
+
+	c.mu.Lock()
+	if c.gen == gen {
+		c.state = state
+		c.fetched = s.clock.Now()
+		c.has = true
+	}
+	c.mu.Unlock()
 
 	return state
 }
@@ -157,12 +179,13 @@ func (s *Server) refreshAuthCache(ctx context.Context) authState {
 // A nil relay is a daemon whose configured start command names nothing
 // runnable (server.go's own comment on the field) — not a fault to report
 // again here, since New already reported it once at construction.
-func (s *Server) askAuthState(ctx context.Context) authState {
-	if s.signin == nil {
+func (s *Server) askAuthState(ctx context.Context, h harness.Name) authState {
+	relay := s.signins[h]
+	if relay == nil {
 		return authUnknown
 	}
 
-	signedIn, err := s.signin.SignedIn(ctx)
+	signedIn, err := relay.SignedIn(ctx)
 	if err != nil {
 		// The same report signInPanelFor always made for this exact failure,
 		// kept to one call site now that there is one place that makes it.
@@ -185,7 +208,12 @@ func (s *Server) askAuthState(ctx context.Context) authState {
 // is for the two embedded assets, so nothing about this answer is cached past
 // the request that asked for it.
 func (s *Server) dashboardAuth(w http.ResponseWriter, r *http.Request) {
-	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context())})
+	h, err := parseHarness(r.URL.Query(), fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
+	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context(), h)})
 }
 
 // ---------------------------------------------------------------- create gate
@@ -218,6 +246,17 @@ var bodySignedOut = []byte(`{"error":"host signed out"}`)
 // is the thing to go and fix.
 var errCreateSignedOut = errors.New("this host is signed out of Claude, so the session was refused")
 
+// errCreateCodexSignedOut is errCreateSignedOut for a Codex create, so the trail
+// says which login the host lost.
+var errCreateCodexSignedOut = errors.New("this host is signed out of Codex, so the session was refused")
+
+func signedOutReason(h harness.Name) error {
+	if h == harness.Codex {
+		return errCreateCodexSignedOut
+	}
+	return errCreateSignedOut
+}
+
 // createRefusedWhileSignedOut reports whether a create must be turned away right
 // now because a session started here would come up on the sign-in screen.
 //
@@ -242,8 +281,26 @@ var errCreateSignedOut = errors.New("this host is signed out of Claude, so the s
 // to a revoked token family, not to a missing binary — and it is the only state
 // where a refusal is certainly right. A host that cannot be asked keeps the
 // backstop it already had, which is the needs-auth card.
-func (s *Server) createRefusedWhileSignedOut(ctx context.Context) bool {
-	return s.authStateCached(ctx) == authBad
+//
+// The answer is the create's own harness's. A host signed out of Codex still
+// starts Claude sessions and the reverse, and harness.Other has no sign-in this
+// daemon can ask about, so it never reads a cache.
+func (s *Server) createRefusedWhileSignedOut(ctx context.Context, h harness.Name) bool {
+	if h == harness.Other {
+		return false
+	}
+	return s.authStateCached(ctx, h) == authBad
+}
+
+// harnessOfStartName is the harness a create naming this start command runs. An
+// unknown name is Claude because the manager refuses it later and the gate has
+// always applied to it.
+func (s *Server) harnessOfStartName(name string) harness.Name {
+	command, ok := s.cfg.StartCommands.Command(name)
+	if !ok {
+		return harness.Claude
+	}
+	return harness.Of(command)
 }
 
 // failSignedOut writes the API door's 503 and records why.
@@ -255,8 +312,8 @@ func (s *Server) createRefusedWhileSignedOut(ctx context.Context) bool {
 // The client that matters is the one this repo already has — lawnmower-route
 // treats any refusal as "leave the item queued" — and a distinguishable status
 // is what lets it say which refusal it hit.
-func (s *Server) failSignedOut(w http.ResponseWriter, r *http.Request) {
-	AuditFrom(r.Context()).Deny(errCreateSignedOut.Error())
+func (s *Server) failSignedOut(w http.ResponseWriter, r *http.Request, h harness.Name) {
+	AuditFrom(r.Context()).Deny(signedOutReason(h).Error())
 
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusServiceUnavailable)

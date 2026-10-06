@@ -1408,29 +1408,38 @@
 })();
 
 /*
- * The header's auth control (spec 015): the pill reading GET /dashboard/auth,
- * and the dialog it opens onto GET /dashboard/signin/view — the sign-in panel
- * that used to be a section of the settings page.
+ * The header's auth controls (spec 015, spec 019): one pill per harness reading
+ * GET /dashboard/auth, and the one dialog they share, which they open onto
+ * GET /dashboard/signin/view — the sign-in panel that used to be a section of
+ * the settings page.
  *
  * Every page carries the header, so this runs on every page, and it is the
  * one control on this dashboard that needs a script to reach its real form at
  * all: `#signin-dialog` ships a static line saying so, and this is what
- * replaces it. Opening the dialog — by a click on the pill, which the
+ * replaces it. Opening the dialog — by a click on a pill, which the
  * declarative `command="show-modal"` (or the invoker fallback above) already
  * handles — only starts the fetch; neither of those mechanisms knows this
  * dialog wants one.
+ *
+ * State is one record per pill, {pill, harness, timer, generation}, so the two
+ * polls never share a timer or a "last answer". The dialog is shared, and so
+ * is the pair of module variables that say whose it is right now:
+ * `activeHarness`, null while it is closed, and `dialogGeneration`, bumped by
+ * every fetch for it. An answer carries the generation it was asked under and
+ * is thrown away when that is no longer the current one, so a slow Claude panel
+ * can never land on top of the Codex one the operator clicked next.
  */
 (() => {
   'use strict';
 
-  const pill = document.querySelector('[data-auth-pill]');
   const dialog = document.getElementById('signin-dialog');
-  if (!pill || !dialog) {
+  const pills = document.querySelectorAll('[data-auth-pill]');
+  if (!dialog || pills.length === 0) {
     return;
   }
   const body = dialog.querySelector('[data-signin-body]');
 
-  // How often the pill polls, and how often the open dialog's own fragment
+  // How often a pill polls, and how often the open dialog's own fragment
   // refreshes while a sign-in is running (D8). The panel's is far shorter
   // because it is the one place an operator is actively watching for a
   // window to draw a link or a delivered code to land — sixty seconds of
@@ -1438,15 +1447,26 @@
   const AUTH_POLL_MS = 60000;
   const PANEL_POLL_MS = 3000;
 
-  // The three words this pill ever shows. Anything GET /dashboard/auth did
+  // data-harness is absent on Claude's pill, which is how every header drawn
+  // before Codex existed still reads.
+  const records = new Map();
+  pills.forEach((pill) => {
+    const harness = pill.dataset.harness || 'claude';
+    records.set(harness, { pill, harness, timer: undefined, generation: 0, lastState: null });
+  });
+
+  // Claude's read keeps the URL it has always had.
+  const authURL = (harness) => (harness === 'claude' ? '/dashboard/auth' : '/dashboard/auth?harness=' + harness);
+
+  // The three words a pill ever shows. Anything GET /dashboard/auth did
   // not answer with one of the other two reads as `unknown` — a fetch that
   // failed outright included, since a daemon that could not be asked is
   // exactly what that word is for.
-  const paintPill = (state) => {
+  const paintPill = (record, state) => {
     const known = state === 'ok' || state === 'bad' ? state : 'unknown';
-    pill.classList.remove('pill-ok', 'pill-bad', 'pill-unknown');
-    pill.classList.add('pill-' + known);
-    pill.textContent = 'auth: ' + known;
+    record.pill.classList.remove('pill-ok', 'pill-bad', 'pill-unknown');
+    record.pill.classList.add('pill-' + known);
+    record.pill.textContent = (record.harness === 'claude' ? 'auth: ' : record.harness + ' auth: ') + known;
   };
 
   /*
@@ -1454,7 +1474,7 @@
    * module has to remember to clear.
    *
    * "Bad on the first answer, or a transition into bad from anything else"
-   * is exactly "state is bad and the last answer this page saw was not" —
+   * is exactly "state is bad and the last answer this pill saw was not" —
    * lastState starts null, so the first answer is a transition by
    * construction. "Do not auto-open again until state leaves bad and comes
    * back" then falls out for free: once lastState is recorded as `bad`, every
@@ -1464,33 +1484,44 @@
    * reliably fire one (measured elsewhere in this file, of the create
    * dialog), and this needs none of it.
    */
-  let lastState = null;
-  const notesTransitionToBad = (state) => {
-    const opens = state === 'bad' && lastState !== 'bad';
-    lastState = state;
+  const notesTransitionToBad = (record, state) => {
+    const opens = state === 'bad' && record.lastState !== 'bad';
+    record.lastState = state;
     return opens;
   };
 
-  const openDialog = () => {
-    if (!dialog.open) {
-      dialog.showModal();
-    }
-    loadPanel();
-  };
+  let activeHarness = null;
+  let dialogGeneration = 0;
+  let panelFetch = null;
+  let panelTimer;
 
   /*
    * The fragment fetch. Guarded on dialog.open at the point the answer
    * arrives rather than at the point it was asked for, because the operator
    * may have closed the dialog while this was in flight — there is then
-   * nowhere to put the answer and no reason to schedule another.
+   * nowhere to put the answer and no reason to schedule another. It is also
+   * guarded on the generation it was asked under: a later click on either
+   * pill, or a form's reload, has bumped it and aborted this fetch besides.
    */
-  let panelTimer;
-  function loadPanel() {
+  function loadPanel(harness) {
     window.clearTimeout(panelTimer);
-    fetch('/dashboard/signin/view', { credentials: 'same-origin', cache: 'no-store' })
+    if (panelFetch) {
+      panelFetch.abort();
+    }
+    panelFetch = new AbortController();
+    activeHarness = harness;
+    dialogGeneration += 1;
+    const generation = dialogGeneration;
+    const record = records.get(harness);
+
+    fetch('/dashboard/signin/view?harness=' + encodeURIComponent(harness), {
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: panelFetch.signal,
+    })
       .then((answer) => (answer.ok ? answer.text() : null))
       .then((markup) => {
-        if (markup == null || !dialog.open || !body) {
+        if (markup == null || generation !== dialogGeneration || !dialog.open || !body) {
           return;
         }
         const fresh = new DOMParser().parseFromString(markup, 'text/html').body.firstElementChild;
@@ -1506,82 +1537,121 @@
         // The pill takes this answer too (D8: "update the pill from
         // data-auth-state") — it is a fresher ask than whatever the 60-second
         // poll last cached, since signin/view never reads that cache at all.
-        paintPill(fresh.dataset.authState);
-        notesTransitionToBad(fresh.dataset.authState);
+        // Only the pill of the harness this fragment is about: the other one
+        // was not asked anything.
+        if (record) {
+          paintPill(record, fresh.dataset.authState);
+          notesTransitionToBad(record, fresh.dataset.authState);
+        }
 
-        if (dialog.open && fresh.dataset.signinRunning === 'true') {
-          panelTimer = window.setTimeout(loadPanel, PANEL_POLL_MS);
+        if (fresh.dataset.signinRunning === 'true') {
+          panelTimer = window.setTimeout(() => loadPanel(harness), PANEL_POLL_MS);
         }
       })
       .catch(() => {
         // Left on screen: whatever the dialog showed before this attempt —
         // the static no-script line, or the last successful fetch — is a
-        // more honest answer than replacing it with nothing.
+        // more honest answer than replacing it with nothing. An abort lands
+        // here too, and is exactly that case.
       });
   }
 
-  // The pill's own poll (D8): on load, then every 60 seconds while this tab
-  // is the one somebody could be looking at, with an immediate ask and a
-  // reset countdown the moment it becomes that tab again.
-  const askAuth = () =>
-    fetch('/dashboard/auth', { credentials: 'same-origin', cache: 'no-store' })
-      .then((answer) => (answer.ok ? answer.json() : null))
-      .then((said) => {
-        const state = said && (said.state === 'ok' || said.state === 'bad') ? said.state : 'unknown';
-        paintPill(state);
-        if (notesTransitionToBad(state)) {
-          openDialog();
-        }
-      })
-      .catch(() => {
-        paintPill('unknown');
-        notesTransitionToBad('unknown');
-      });
+  const openDialog = (harness) => {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    loadPanel(harness);
+  };
 
-  let authTimer;
-  const scheduleAuth = () => {
-    window.clearTimeout(authTimer);
-    authTimer = window.setTimeout(() => {
+  // A closed dialog belongs to nobody, and nothing may refresh it.
+  dialog.addEventListener('close', () => {
+    window.clearTimeout(panelTimer);
+    if (panelFetch) {
+      panelFetch.abort();
+    }
+    activeHarness = null;
+  });
+
+  // A pill's own poll (D8): on load, then every 60 seconds while this tab
+  // is the one somebody could be looking at, with an immediate ask and a
+  // reset countdown the moment it becomes that tab again. The open dialog is
+  // refreshed by a poll only when this pill's harness is the one it is open
+  // on and the answer changed, so a sign-in finishing elsewhere shows here and
+  // the other harness's poll never redraws a panel that is not about it.
+  const askAuth = (record) => {
+    record.generation += 1;
+    const generation = record.generation;
+    return fetch(authURL(record.harness), { credentials: 'same-origin', cache: 'no-store' })
+      .then((answer) => (answer.ok ? answer.json() : null))
+      .then((said) => (said && (said.state === 'ok' || said.state === 'bad') ? said.state : 'unknown'))
+      .catch(() => 'unknown')
+      .then((state) => {
+        if (generation !== record.generation) {
+          return;
+        }
+        const changed = record.lastState !== null && record.lastState !== state;
+        paintPill(record, state);
+        // Claude's pill alone opens the dialog by itself. Codex's is opened
+        // only by a click or by the redirect marker below.
+        if (notesTransitionToBad(record, state) && record.harness === 'claude' && !dialog.open) {
+          openDialog(record.harness);
+        } else if (changed && dialog.open && activeHarness === record.harness) {
+          loadPanel(record.harness);
+        }
+      });
+  };
+
+  const scheduleAuth = (record) => {
+    window.clearTimeout(record.timer);
+    record.timer = window.setTimeout(() => {
       if (document.visibilityState === 'visible') {
-        askAuth().then(scheduleAuth);
+        askAuth(record).then(() => scheduleAuth(record));
       } else {
         // No exec spent on a tab nobody is looking at. The visibilitychange
         // listener below is what resumes the cadence, with an immediate ask
         // of its own, the moment that stops being true.
-        scheduleAuth();
+        scheduleAuth(record);
       }
     }, AUTH_POLL_MS);
   };
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      askAuth().then(scheduleAuth);
+      records.forEach((record) => askAuth(record).then(() => scheduleAuth(record)));
     }
   });
 
   // The click starts the fetch; the platform (or the invoker fallback above,
   // feature-detected there and not repeated here) is what actually opens the
   // dialog this button names.
-  pill.addEventListener('click', loadPanel);
+  records.forEach((record) => record.pill.addEventListener('click', () => loadPanel(record.harness)));
 
   // Exposed so the submit handler (above, in file order and therefore already
   // defined by the time anyone submits anything) can ask this dialog to
   // re-read its own state after one of its forms posts — see the comment
-  // there.
-  window.crswdReloadSignInPanel = loadPanel;
+  // there. It reloads whichever harness the dialog is open on.
+  window.crswdReloadSignInPanel = () => {
+    if (activeHarness) {
+      loadPanel(activeHarness);
+    }
+  };
 
   /*
-   * The no-script fallback for the three action routes' own redirect (D6):
-   * a browser that followed the 303 rather than being intercepted by the
+   * The no-script fallback for the action routes' own redirect (D6): a
+   * browser that followed the 303 rather than being intercepted by the
    * submit handler above lands here carrying the marker, and this is what
    * tells the dashboard to open the dialog it would otherwise have to be
-   * pressed for a second time.
+   * pressed for a second time. `signin=open` is Claude's and always has been;
+   * `signin=codex` is Codex's, honoured only when this page drew a Codex pill.
    */
-  if (new URLSearchParams(window.location.search).get('signin') === 'open') {
-    openDialog();
+  const marker = new URLSearchParams(window.location.search).get('signin');
+  if (marker === 'open') {
+    openDialog('claude');
+  } else if (marker === 'codex' && records.has('codex')) {
+    openDialog('codex');
   }
 
-  askAuth().then(scheduleAuth);
+  records.forEach((record) => askAuth(record).then(() => scheduleAuth(record)));
 })();
 
 /*

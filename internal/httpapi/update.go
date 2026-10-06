@@ -545,6 +545,7 @@ func (s *Server) renderUpdating(w http.ResponseWriter, r *http.Request, version 
 	sections := sectioned(rows, doorFactsOf(s.browser))
 	s.renderPage(w, r, http.StatusOK, "settings", settingsView{
 		Operator:   operator,
+		Header:     s.headerFor(operator),
 		Settings:   rows,
 		Sections:   sections,
 		Shown:      sectionUpdates,

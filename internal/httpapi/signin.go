@@ -39,6 +39,7 @@ import (
 	"net/url"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
@@ -68,6 +69,10 @@ const (
 // the settings page executed this same struct against this same template
 // content, under a heading that page supplied. The dialog supplies its own.
 type signInPanel struct {
+	// Harness is which agent's sign-in this panel is for. The zero value is
+	// Claude, so a panel built without one renders as it always did.
+	Harness harness.Name
+
 	// Available is whether this daemon has a relay at all. False means the
 	// configured start command names nothing runnable, which the panel says
 	// rather than hiding behind a button that would refuse.
@@ -95,6 +100,13 @@ type signInPanel struct {
 	// the template renders as waiting rather than as no link — the two mean
 	// different things to somebody deciding whether to press again.
 	Link string
+
+	// DeviceURL and Code are the Codex device screen (spec 019, D12): the link
+	// the operator opens and the one-time code they type into it. Same rule as
+	// Link: this fragment is the one place either is rendered. Both empty while
+	// the screen is still drawing.
+	DeviceURL string
+	Code      string
 
 	// Token is what this panel's forms carry, minted for this render and this
 	// identity. Empty draws no forms, for the reason the edit form is not drawn
@@ -131,9 +143,10 @@ func (p *signInPanel) SignedInTrue() bool {
 // right now"; the pill is answering "was it, recently enough" — the same
 // underlying fact, asked on two different terms, which is why one ask can
 // answer both without either lying to the other.
-func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperator) *signInPanel {
-	panel := &signInPanel{}
-	if s.signin == nil {
+func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperator, h harness.Name) *signInPanel {
+	panel := &signInPanel{Harness: h}
+	relay := s.signins[h]
+	if relay == nil {
 		// A daemon whose start command names nothing runnable. The panel says so
 		// rather than offering a button that would refuse, which is the same rule
 		// the edit form follows about a field that could not be submitted.
@@ -147,7 +160,7 @@ func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperat
 	// would be handing out a token for a page it is not going to serve.
 	panel.Token, _ = s.mintPageToken(r, operator)
 
-	switch state := s.refreshAuthCache(r.Context()); state {
+	switch state := s.refreshAuthCache(r.Context(), h); state {
 	case authOK:
 		signedIn := true
 		panel.SignedIn = &signedIn
@@ -164,7 +177,7 @@ func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperat
 		panel.AuthState = authUnknown
 	}
 
-	state, err := s.signin.State(r.Context())
+	state, err := relay.State(r.Context())
 	if err != nil {
 		s.report(fmt.Errorf("read the sign-in window: %w", err))
 		return panel
@@ -172,6 +185,10 @@ func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperat
 	panel.Running = state.Running
 	if state.Prompt != nil {
 		panel.Link = state.Prompt.URL
+	}
+	if state.Device != nil {
+		panel.DeviceURL = state.Device.URL
+		panel.Code = state.Device.Code
 	}
 	return panel
 }
@@ -188,9 +205,15 @@ func (s *Server) signInView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h, err := parseHarness(r.URL.Query(), fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
+
 	// No SetSessionID: this fragment is about the daemon's one shared credential
 	// and not about any session.
-	s.renderPage(w, r, http.StatusOK, "signin-panel", s.signInPanelFor(r, operator))
+	s.renderPage(w, r, http.StatusOK, "signin-panel", s.signInPanelFor(r, operator, h))
 }
 
 // fieldCode is the name of the one field the code arrives in.
@@ -216,7 +239,12 @@ var (
 	errSignInBadCode = errors.New("a code was submitted carrying characters a code does not")
 
 	errSignInNotRunning = errors.New("a code was submitted with no sign-in waiting for one")
-	errSignInCancel     = errors.New("the sign-in window could not be ended")
+
+	// errSignInCodeNotTaken is what a Codex code submission is refused with.
+	// Codex's sign-in is the other way round: the operator types the code the
+	// daemon shows into OpenAI's page, so there is nothing to carry back.
+	errSignInCodeNotTaken = errors.New("this sign-in takes no code from the dashboard")
+	errSignInCancel       = errors.New("the sign-in window could not be ended")
 )
 
 // signInFromBrowser is POST /dashboard/signin.
@@ -230,45 +258,50 @@ func (s *Server) signInFromBrowser(w http.ResponseWriter, r *http.Request) {
 		s.refuseBrowser(w)
 		return
 	}
+	h, err := parseHarness(r.PostForm, fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
 
 	// This host's credential may be about to change under any of the three
 	// routes on this door (D7, spec 015), so the header pill's cache is cleared
 	// unconditionally rather than only on the branch that actually touched the
 	// relay: the next ask is one cheap exec, and a stale "ok" surviving a
 	// refused or half-run attempt is the failure worth avoiding.
-	s.authCache.invalidate()
+	s.invalidateAuth(h)
 
 	// The confirming step first, ahead of anything else, which is this door's
 	// ordering rule throughout. A sign-in started by accident is a window holding
 	// a live challenge that nobody meant to create.
 	if r.PostForm.Get(fieldConfirm) != confirmYes {
 		AuditFrom(r.Context()).Deny(errSignInUnconfirmed.Error())
-		s.redirectSignIn(w, r, outcomeSignInUnconfirmed)
+		s.redirectSignIn(w, r, outcomeSignInUnconfirmed, h)
 		return
 	}
 
-	if s.signin == nil {
+	if s.signins[h] == nil {
 		AuditFrom(r.Context()).Deny(errSignInUnwired.Error())
-		s.redirectSignIn(w, r, outcomeSignInRefused)
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
 		return
 	}
 
-	switch err := s.signin.Start(r.Context()); {
+	switch err = s.signins[h].Start(r.Context()); {
 	case errors.Is(err, loginrelay.ErrAlreadyRunning):
 		// Not an error and not a success: the operator asked for something that
 		// is already true, and the reason it is refused rather than restarted is
 		// that restarting abandons a challenge they may be part-way through
 		// answering on their phone.
 		AuditFrom(r.Context()).Deny(errSignInAlready.Error())
-		s.redirectSignIn(w, r, outcomeSignInRunning)
+		s.redirectSignIn(w, r, outcomeSignInRunning, h)
 	case err != nil:
 		// The host's own account of the failure goes to the report channel where
 		// an operator is already reading, never into the record or the redirect.
 		s.report(err)
 		AuditFrom(r.Context()).Deny(errSignInRefused.Error())
-		s.redirectSignIn(w, r, outcomeSignInRefused)
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
 	default:
-		s.redirectSignIn(w, r, outcomeSignInStarted)
+		s.redirectSignIn(w, r, outcomeSignInStarted, h)
 	}
 }
 
@@ -284,11 +317,25 @@ func (s *Server) signInCodeFromBrowser(w http.ResponseWriter, r *http.Request) {
 		s.refuseBrowser(w)
 		return
 	}
-	s.authCache.invalidate()
+	h, err := parseHarness(r.PostForm, fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
+	s.invalidateAuth(h)
 
-	if s.signin == nil {
+	// Codex shows the code and the operator types it into OpenAI's page, so no
+	// route here carries one back. Refused in this file's own convention: the
+	// 303 with the refused outcome, no 409.
+	if h == harness.Codex {
+		AuditFrom(r.Context()).Deny(errSignInCodeNotTaken.Error())
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
+		return
+	}
+
+	if s.signins[h] == nil {
 		AuditFrom(r.Context()).Deny(errSignInUnwired.Error())
-		s.redirectSignIn(w, r, outcomeSignInRefused)
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
 		return
 	}
 
@@ -296,25 +343,25 @@ func (s *Server) signInCodeFromBrowser(w http.ResponseWriter, r *http.Request) {
 	// beside it IS the confirmation — a second one would be a dialog between an
 	// operator and the thing they just typed, and docs/auth-and-sessions.md's
 	// rule is that nothing is auto-submitted, not that everything is asked twice.
-	switch err := s.signin.Deliver(r.Context(), r.PostForm.Get(fieldCode)); {
+	switch err := s.signins[h].Deliver(r.Context(), r.PostForm.Get(fieldCode)); {
 	case errors.Is(err, loginrelay.ErrEmptyCode):
 		AuditFrom(r.Context()).Deny(errSignInNoCode.Error())
-		s.redirectSignIn(w, r, outcomeSignInNoCode)
+		s.redirectSignIn(w, r, outcomeSignInNoCode, h)
 	case errors.Is(err, loginrelay.ErrUnusableCode):
 		AuditFrom(r.Context()).Deny(errSignInBadCode.Error())
-		s.redirectSignIn(w, r, outcomeSignInBadCode)
+		s.redirectSignIn(w, r, outcomeSignInBadCode, h)
 	case errors.Is(err, loginrelay.ErrNotRunning):
 		AuditFrom(r.Context()).Deny(errSignInNotRunning.Error())
-		s.redirectSignIn(w, r, outcomeSignInNotRunning)
+		s.redirectSignIn(w, r, outcomeSignInNotRunning, h)
 	case err != nil:
 		// Reported, not recorded. loginrelay's delivery error is already written
 		// to carry none of the code, and this keeps the trail's account of it to
 		// a sentinel either way.
 		s.report(err)
 		AuditFrom(r.Context()).Deny(errSignInRefused.Error())
-		s.redirectSignIn(w, r, outcomeSignInRefused)
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
 	default:
-		s.redirectSignIn(w, r, outcomeSignInCodeSent)
+		s.redirectSignIn(w, r, outcomeSignInCodeSent, h)
 	}
 }
 
@@ -329,11 +376,16 @@ func (s *Server) signInCancelFromBrowser(w http.ResponseWriter, r *http.Request)
 		s.refuseBrowser(w)
 		return
 	}
-	s.authCache.invalidate()
+	h, err := parseHarness(r.PostForm, fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
+	s.invalidateAuth(h)
 
-	if s.signin == nil {
+	if s.signins[h] == nil {
 		AuditFrom(r.Context()).Deny(errSignInUnwired.Error())
-		s.redirectSignIn(w, r, outcomeSignInRefused)
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
 		return
 	}
 
@@ -342,13 +394,13 @@ func (s *Server) signInCancelFromBrowser(w http.ResponseWriter, r *http.Request)
 	// challenge they can replace by pressing start again, and putting a
 	// confirmation in front of the way out of a flow is how people get stuck in
 	// one.
-	if err := s.signin.Stop(r.Context()); err != nil {
+	if err := s.signins[h].Stop(r.Context()); err != nil {
 		s.report(err)
 		AuditFrom(r.Context()).Deny(errSignInCancel.Error())
-		s.redirectSignIn(w, r, outcomeSignInRefused)
+		s.redirectSignIn(w, r, outcomeSignInRefused, h)
 		return
 	}
-	s.redirectSignIn(w, r, outcomeSignInCancelled)
+	s.redirectSignIn(w, r, outcomeSignInCancelled, h)
 }
 
 // querySignInOpen is the marker a redirect from one of these three routes
@@ -365,6 +417,18 @@ const querySignInOpen = "signin"
 // word once.
 const signInOpenMarker = "open"
 
+// signInOpenCodexMarker is the value a Codex action's redirect carries, so the
+// page reopens the Codex dialog and not the Claude one.
+const signInOpenCodexMarker = "codex"
+
+// invalidateAuth clears one harness's header-pill cache. A harness with no
+// cache has nothing to clear, which is a daemon with no relay for it.
+func (s *Server) invalidateAuth(h harness.Name) {
+	if c := s.authCaches[h]; c != nil {
+		c.invalidate()
+	}
+}
+
 // redirectSignIn is redirectOutcome pointed at the dashboard with the marker
 // above (spec 015). It used to point at a section of the settings page that no
 // longer exists — the sign-in relay's panel moved behind the header's own auth
@@ -372,10 +436,14 @@ const signInOpenMarker = "open"
 // action did" is the dashboard's own outcome banner, the one every other
 // action already renders there, with the marker asking the page to also open
 // the dialog a scripted browser never left.
-func (s *Server) redirectSignIn(w http.ResponseWriter, r *http.Request, code outcome) {
+func (s *Server) redirectSignIn(w http.ResponseWriter, r *http.Request, code outcome, h harness.Name) {
+	marker := signInOpenMarker
+	if h == harness.Codex {
+		marker = signInOpenCodexMarker
+	}
 	to := url.URL{Path: pathFleet, RawQuery: url.Values{
 		queryOutcome:    []string{string(code)},
-		querySignInOpen: []string{signInOpenMarker},
+		querySignInOpen: []string{marker},
 	}.Encode()}
 	http.Redirect(w, r, to.String(), http.StatusSeeOther)
 }

@@ -5,6 +5,7 @@ package httpapi
 // the trail, an outcome, a redirect, or the page it came from.
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
@@ -48,7 +51,7 @@ func newSignInDoor(t *testing.T) *signInDoor {
 	if err != nil {
 		t.Fatalf("build the test relay: %v", err)
 	}
-	d.signin = relay
+	d.signins[harness.Claude] = relay
 	return d
 }
 
@@ -418,5 +421,171 @@ func TestSignInRoutesRefuseWithoutTheGate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// recordingRelay counts what each route asked of it, so a test can say which of
+// two relays a request reached.
+type recordingRelay struct {
+	fakeRelay
+	starts, delivers, stops int
+}
+
+func (r *recordingRelay) Start(context.Context) error           { r.starts++; return nil }
+func (r *recordingRelay) Deliver(context.Context, string) error { r.delivers++; return nil }
+func (r *recordingRelay) Stop(context.Context) error            { r.stops++; return nil }
+
+// newCodexSignInDoor is a door with a recording relay on each harness.
+func newCodexSignInDoor(t *testing.T) (*signInDoor, *recordingRelay, *recordingRelay) {
+	t.Helper()
+
+	d := newSignInDoor(t)
+	claude, codex := &recordingRelay{}, &recordingRelay{}
+	d.signins[harness.Claude] = claude
+	d.signins[harness.Codex] = codex
+	d.authCaches[harness.Codex] = &authCache{}
+	return d, claude, codex
+}
+
+// TestCodexStartReachesOnlyCodexRelay: harness=codex on Start, Cancel and Code
+// touches the Codex relay and never the Claude one.
+func TestCodexStartReachesOnlyCodexRelay(t *testing.T) {
+	t.Parallel()
+
+	d, claude, codex := newCodexSignInDoor(t)
+	codexForm := func(extra url.Values) url.Values {
+		extra.Set(fieldHarness, harnessCodexValue)
+		return d.form(t, extra)
+	}
+
+	if got := outcomeOf(t, d.post(t, pathSignIn, codexForm(url.Values{fieldConfirm: {confirmYes}}))); got != string(outcomeSignInStarted) {
+		t.Errorf("start outcome = %q, want %q", got, outcomeSignInStarted)
+	}
+	if got := outcomeOf(t, d.post(t, pathSignInCancel, codexForm(url.Values{}))); got != string(outcomeSignInCancelled) {
+		t.Errorf("cancel outcome = %q, want %q", got, outcomeSignInCancelled)
+	}
+	if codex.starts != 1 || codex.stops != 1 {
+		t.Errorf("Codex relay saw %d starts and %d stops; want 1 and 1", codex.starts, codex.stops)
+	}
+	if claude.starts+claude.stops+claude.delivers != 0 {
+		t.Errorf("the Claude relay was reached by a Codex request: %+v", claude)
+	}
+
+	// And the other way: no harness field is Claude.
+	if got := outcomeOf(t, d.post(t, pathSignIn, d.form(t, url.Values{fieldConfirm: {confirmYes}}))); got != string(outcomeSignInStarted) {
+		t.Errorf("claude start outcome = %q, want %q", got, outcomeSignInStarted)
+	}
+	if claude.starts != 1 || codex.starts != 1 {
+		t.Errorf("after a Claude start: claude %d, codex %d starts; want 1 and 1", claude.starts, codex.starts)
+	}
+}
+
+// TestCodexRouteWithoutARelayIsRefused: harness=codex on a daemon with no Codex
+// relay is the unwired refusal, not a panic on a nil cache.
+func TestCodexRouteWithoutARelayIsRefused(t *testing.T) {
+	t.Parallel()
+
+	d := newSignInDoor(t)
+	for _, path := range []string{pathSignIn, pathSignInCode, pathSignInCancel} {
+		w := d.post(t, path, d.form(t, url.Values{fieldHarness: {harnessCodexValue}, fieldConfirm: {confirmYes}}))
+		if got := outcomeOf(t, w); got != string(outcomeSignInRefused) {
+			t.Errorf("%s outcome = %q, want %q", path, got, outcomeSignInRefused)
+		}
+	}
+}
+
+// TestCodexCodeRouteRefused: a Codex sign-in takes no code from the dashboard.
+func TestCodexCodeRouteRefused(t *testing.T) {
+	t.Parallel()
+
+	d, claude, codex := newCodexSignInDoor(t)
+	w := d.post(t, pathSignInCode, d.form(t, url.Values{fieldHarness: {harnessCodexValue}, fieldCode: {"anything"}}))
+
+	if got := outcomeOf(t, w); got != string(outcomeSignInRefused) {
+		t.Errorf("outcome = %q, want %q", got, outcomeSignInRefused)
+	}
+	if codex.delivers+claude.delivers != 0 {
+		t.Errorf("a Codex code route delivered something (codex %d, claude %d)", codex.delivers, claude.delivers)
+	}
+	if !strings.Contains(d.sink.String(), errSignInCodeNotTaken.Error()) {
+		t.Errorf("the trail does not record the refusal: %s", d.sink.String())
+	}
+}
+
+// TestCodexRedirectMarker: a Codex action sends the browser back asking for the
+// Codex dialog, a Claude one is unchanged.
+func TestCodexRedirectMarker(t *testing.T) {
+	t.Parallel()
+
+	d, _, _ := newCodexSignInDoor(t)
+	marker := func(extra url.Values) string {
+		w := d.post(t, pathSignIn, d.form(t, extra))
+		to, err := url.Parse(w.Header().Get(headerLocation))
+		if err != nil {
+			t.Fatalf("parse the redirect: %v", err)
+		}
+		return to.Query().Get(querySignInOpen)
+	}
+
+	if got := marker(url.Values{fieldConfirm: {confirmYes}, fieldHarness: {harnessCodexValue}}); got != signInOpenCodexMarker {
+		t.Errorf("Codex marker = %q, want %q", got, signInOpenCodexMarker)
+	}
+	if got := marker(url.Values{fieldConfirm: {confirmYes}}); got != signInOpenMarker {
+		t.Errorf("Claude marker = %q, want %q", got, signInOpenMarker)
+	}
+}
+
+// TestSignInHarnessDuplicateRefused: a repeated, empty or unknown harness is a
+// 400 on every route and reaches no relay.
+func TestSignInHarnessDuplicateRefused(t *testing.T) {
+	t.Parallel()
+
+	d, claude, codex := newCodexSignInDoor(t)
+	for name, values := range map[string][]string{
+		"repeated": {"claude", "codex"},
+		"empty":    {""},
+		"unknown":  {"other"},
+	} {
+		for _, path := range []string{pathSignIn, pathSignInCode, pathSignInCancel} {
+			form := d.form(t, url.Values{fieldConfirm: {confirmYes}})
+			form[fieldHarness] = values
+			if got := d.post(t, path, form).Code; got != http.StatusBadRequest {
+				t.Errorf("%s %s = %d; want 400", name, path, got)
+			}
+		}
+	}
+	if claude.starts+claude.stops+claude.delivers+codex.starts+codex.stops+codex.delivers != 0 {
+		t.Errorf("a refused harness reached a relay: claude %+v codex %+v", claude, codex)
+	}
+}
+
+// TestCodexCodeNeverAudited: the one-time code shown in the panel is in no
+// audit record, redirect or log line the three routes and the view produce.
+func TestCodexCodeNeverAudited(t *testing.T) {
+	t.Parallel()
+
+	d, _, codex := newCodexSignInDoor(t)
+	codex.state = loginrelay.State{
+		Running: true,
+		Device:  &codexauth.Prompt{Kind: codexauth.KindDeviceCode, URL: codexTestURL, Code: codexTestCode},
+	}
+
+	view := d.get(t, signInViewPath+"?harness=codex")
+	if !strings.Contains(view.Body.String(), codexTestCode) {
+		t.Fatalf("the view did not show the code, so this test proves nothing:\n%s", view.Body.String())
+	}
+
+	var locations []string
+	for _, path := range []string{pathSignIn, pathSignInCode, pathSignInCancel} {
+		w := d.post(t, path, d.form(t, url.Values{fieldHarness: {harnessCodexValue}, fieldConfirm: {confirmYes}, fieldCode: {codexTestCode}}))
+		locations = append(locations, w.Header().Get(headerLocation), w.Body.String())
+	}
+	for _, loc := range locations {
+		if strings.Contains(loc, codexTestCode) {
+			t.Errorf("the code is in a redirect or response: %s", loc)
+		}
+	}
+	if trail := d.sink.String(); strings.Contains(trail, codexTestCode) || strings.Contains(trail, codexTestURL) {
+		t.Errorf("the code or link is in the audit trail:\n%s", trail)
 	}
 }

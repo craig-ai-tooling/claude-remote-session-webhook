@@ -280,6 +280,41 @@ Rules:
   and stays on that session's own pill. Folding the two together is explicitly
   out of scope (spec 015).
 
+### The second auth pill and `headerView` (spec 019)
+
+The header executes against a `headerView{Operator, CodexConfigured}`, built by
+`(*Server).headerFor(operator)`. Every page view (`fleetView`, `sessionPageView`,
+`settingsView`, `notFoundView`) carries a `Header` and its template passes
+`.Header` to the partial; no page builds the struct by hand. The template set
+has no function map, so a value the header needs arrives as a field here.
+
+Rules:
+- **`CodexConfigured` is true when a Codex relay exists**, read from the relay
+  map rather than the configuration: a pill with no relay behind it would poll a
+  route that answers `unknown` forever.
+- **The Codex pill is a second `<button class="pill pill-unknown" data-auth-pill
+  data-harness="codex">`**, directly after Claude's, reading `codex auth:
+  checking`. It is a button for the same reason Claude's is, so
+  `TestHeaderHasExactlyTwoAnchors` is unchanged. No new CSS class.
+- **Without Codex the header is byte-identical to the one before spec 019.** The
+  `{{ if }}` sits inside the line break so no whitespace is added.
+- **Claude's pill carries no `data-harness`.** A missing attribute means
+  `claude`, which is how a page drawn by an older template still works.
+- **Per-pill state contract.** The script keeps one record per pill:
+  `{pill, harness, timer, generation, lastState}`. Each polls its own URL
+  (`/dashboard/auth`, `/dashboard/auth?harness=codex`) on the cadence the Claude
+  pill always had, and writes its own words: `auth: ok` and `codex auth: ok`,
+  with `bad`, `unknown` and `checking` the same way. Text on every state, never
+  colour alone.
+- **One dialog serves both pills.** A click sets the module's `activeHarness`
+  and loads `GET /dashboard/signin/view?harness=<h>`. Each load bumps a dialog
+  generation and aborts the fetch in flight, and an answer for a superseded
+  generation is discarded, so a slow Claude panel cannot draw over a Codex one.
+  A poll that changes its pill's state reloads the open panel only when that
+  pill's harness is the active one.
+- **A session's own `needs-auth` still stays on that session's pill.** Neither
+  header pill folds it in.
+
 ### The weekly-quota bar (spec 016)
 
 A `<p class="quota-label">` in `.masthead-bar` right after the brand, plus a

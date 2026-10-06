@@ -20,9 +20,30 @@ package httpapi
 // this viewer does not own can fail to be here.
 
 import (
+	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 )
+
+// headerView is what the header component renders from: the operator layer 1
+// verified, and whether a Codex entry is configured, which is the one thing
+// that adds a second auth pill. It is a struct because the template set has no
+// function map, so a value the header needs has to arrive as a field.
+type headerView struct {
+	// Operator is the same pointer OperatorFrom returned (FR-020, FR-036).
+	Operator *access.VerifiedOperator
+
+	// CodexConfigured is true when a Codex relay exists, so a daemon with no
+	// Codex entry renders the header it always did (FR-022).
+	CodexConfigured bool
+}
+
+// headerFor builds the header's parameters. It reads the relay map rather than
+// the configuration because the relay is what the pill's script will ask, and a
+// pill with nothing behind it would poll a route that answers unknown forever.
+func (s *Server) headerFor(op *access.VerifiedOperator) headerView {
+	return headerView{Operator: op, CodexConfigured: s.signins[harness.Codex] != nil}
+}
 
 // sessionView is one session as the card renders it — the projection
 // data-model.md names, built per render rather than stored, so it cannot drift

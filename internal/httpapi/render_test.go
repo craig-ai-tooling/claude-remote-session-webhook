@@ -75,6 +75,7 @@ func TestEmbeddedTemplatesRenderTheFleetPage(t *testing.T) {
 	var page strings.Builder
 	if err := newTestServer(t, loopbackListen).templates.ExecuteTemplate(&page, "dashboard", fleetView{
 		Operator: &access.VerifiedOperator{Email: testOperatorEmail, Owner: auth.CallerOperator},
+		Header:   headerView{Operator: &access.VerifiedOperator{Email: testOperatorEmail, Owner: auth.CallerOperator}},
 		Empty:    emptyView{Title: emptyFleetTitle, Body: emptyFleetBody},
 	}); err != nil {
 		t.Fatalf("execute the dashboard template: %v", err)

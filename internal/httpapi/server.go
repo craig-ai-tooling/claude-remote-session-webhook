@@ -38,6 +38,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/quota"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
@@ -120,7 +121,10 @@ type Server struct {
 	// credential, on the same terms releases does and for the same reason: the
 	// header's auth pill polls this every 60 seconds from every open tab, and
 	// each ask is a subprocess exec (authstatus.go, spec 015).
-	authCache authCache
+	//
+	// One per harness (spec 019, D13). Built eagerly and never added to after
+	// Listen, so the map needs no lock; each entry keeps its own.
+	authCaches map[harness.Name]*authCache
 
 	// quotaCachePath is where quota-axi's own cache lives, resolved once at
 	// construction the same way quota-axi resolves it itself (quota.DefaultCachePath).
@@ -298,7 +302,9 @@ type Server struct {
 	// server whose auth cache needs to count how many times SignedIn really ran,
 	// without shelling out to a real `claude` to do it. *loginrelay.Relay
 	// satisfies it unchanged.
-	signin signInRelay
+	//
+	// One per harness; an absent or nil entry is a harness with no relay.
+	signins map[harness.Name]signInRelay
 
 	// registered records what was actually handed to the mux, which is not the
 	// same claim as the routes table above. See Routes.
@@ -382,12 +388,28 @@ func New(cfg *config.Config) (*Server, error) {
 	// writes the operator's ~/.claude.json.
 	srv.sessions.SetClaudeConfig(session.ClaudeConfigFile(sessionEnv))
 	srv.sessions.SetCodexHome(session.CodexHome(sessionEnv))
-	if startCommand, named := cfg.StartCommands.Command(config.DefaultStartCommandName); named {
+	// Only a default command that runs Claude gets the Claude relay: it types
+	// `claude auth login`, which a Codex default has no business receiving.
+	if startCommand, named := cfg.StartCommands.Command(config.DefaultStartCommandName); named && harness.Of(startCommand) == harness.Claude {
 		relay, err := loginrelay.New(tmux, startCommand, relayWorkDir(cfg), sessionEnv)
 		if err != nil {
 			srv.report(fmt.Errorf("the sign-in relay is unavailable on this host: %w", err))
 		} else {
-			srv.signin = relay
+			srv.signins[harness.Claude] = relay
+		}
+	}
+	// The Codex relay, on the same terms and from the same session environment, so
+	// the credential it checks is the one a Codex session reads. codexOffered also
+	// checks the binary, so an entry named codex that runs something else gets no
+	// relay. The cache is wired with it: authStateCached reads an absent one as
+	// unknown and never creates one lazily.
+	if codexCommand, offered := srv.codexOffered(); offered {
+		relay, err := loginrelay.NewCodex(tmux, codexCommand, relayWorkDir(cfg), sessionEnv)
+		if err != nil {
+			srv.report(fmt.Errorf("the Codex sign-in relay is unavailable on this host: %w", err))
+		} else {
+			srv.signins[harness.Codex] = relay
+			srv.authCaches[harness.Codex] = &authCache{}
 		}
 	}
 	// A Config with no default start command is not reported, because loading one
@@ -709,6 +731,8 @@ func newServer(
 		clock:          systemClock{},
 		report:         reportToStderr,
 		quotaCachePath: quotaCachePath,
+		signins:        map[harness.Name]signInRelay{},
+		authCaches:     map[harness.Name]*authCache{harness.Claude: {}},
 	}
 
 	// The Server, not the mux. ServeHTTP refuses a non-clean path before the mux

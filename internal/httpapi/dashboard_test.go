@@ -26,6 +26,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
@@ -2059,6 +2060,106 @@ func TestTheFleetGridDoesNotYetCheckPanesForALogin(t *testing.T) {
 
 	if !strings.Contains(card, ">"+string(session.DisplayRunning)+"<") {
 		t.Errorf("the fleet grid's card no longer reads %q for a session needing a login — if the grid now checks panes, update this test to expect %q instead:\n%s", session.DisplayRunning, session.DisplayNeedsAuth, card)
+	}
+}
+
+// codexPane reads a pane captured from a real Codex process, kept beside the
+// detector that is tested against the same bytes.
+func codexPane(t *testing.T, name string) string {
+	t.Helper()
+	//nolint:gosec // G304: the path is this helper's own literal, joined under testdata.
+	body, err := os.ReadFile(filepath.Join("..", "codexauth", "testdata", name))
+	if err != nil {
+		t.Fatalf("read the Codex golden pane: %v", err)
+	}
+	return string(body)
+}
+
+// codexNeedsAuthCard plants a Codex session whose pane holds pane and returns
+// the card its own page draws.
+func codexNeedsAuthCard(t *testing.T, pane string) string {
+	t.Helper()
+
+	f := newFleet(t)
+	f.fixture.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --yolo",
+	}))
+	live, _ := f.fixture.plant(t, session.Session{Name: "a codex session", WorkDir: f.fixture.repo, StartCommand: "codex"})
+	f.fixture.tmux.SetPane(live.TmuxName(), pane)
+
+	return cardFor(t, f.viewOf(t, live.ID).Body.String(), live.ID)
+}
+
+// TestCodexSignedOutPaneRendersNeedsAuth is FR-018 for the first screen a
+// signed-out Codex shows.
+//
+// **Must fail when** a Codex session on its sign-in menu reads running: the
+// harness is up and the pane is live, while the session can do no work.
+func TestCodexSignedOutPaneRendersNeedsAuth(t *testing.T) {
+	t.Parallel()
+
+	card := codexNeedsAuthCard(t, codexPane(t, "signed-out.pane"))
+
+	if !strings.Contains(card, ">"+string(session.DisplayNeedsAuth)+"<") {
+		t.Errorf("the Codex card does not show %q on the signed-out screen:\n%s", session.DisplayNeedsAuth, card)
+	}
+	if !strings.Contains(card, "pill-"+string(session.DisplayNeedsAuth)) {
+		t.Errorf("the pill carries no pill-%s class:\n%s", session.DisplayNeedsAuth, card)
+	}
+}
+
+// TestCodexDevicePaneRendersNeedsAuth is FR-018 for the device-code screen, and
+// FR-019 for the card: the one-time code and its link never reach it.
+//
+// **Must fail when** the device-code screen is not recognised for Codex, or the
+// card carries the code or the URL the detector read.
+func TestCodexDevicePaneRendersNeedsAuth(t *testing.T) {
+	t.Parallel()
+
+	card := codexNeedsAuthCard(t, codexPane(t, "device-code-tui.pane"))
+
+	if !strings.Contains(card, ">"+string(session.DisplayNeedsAuth)+"<") {
+		t.Errorf("the Codex card does not show %q on the device-code screen:\n%s", session.DisplayNeedsAuth, card)
+	}
+	for _, secret := range []string{"ABCD-EFGH1", "auth.openai.com"} {
+		if strings.Contains(card, secret) {
+			t.Errorf("the card carries %q from the device-code screen:\n%s", secret, card)
+		}
+	}
+}
+
+// TestNeedsAuthIsPerHarness pins which detector each harness consults.
+//
+// **Must fail when** a Claude session reads needs-auth off a Codex screen (or
+// the reverse), or Other stops checking both.
+func TestNeedsAuthIsPerHarness(t *testing.T) {
+	t.Parallel()
+
+	live := session.Session{Name: "s"}
+	now := time.Now()
+	codexScreen := codexPane(t, "signed-out.pane")
+
+	for _, tc := range []struct {
+		name string
+		h    harness.Name
+		pane string
+		want session.DisplayState
+	}{
+		{"codex on a codex screen", harness.Codex, codexScreen, session.DisplayNeedsAuth},
+		{"codex on a claude screen", harness.Codex, deviceCodeScreenFixture, session.DisplayRunning},
+		{"claude on a claude screen", harness.Claude, deviceCodeScreenFixture, session.DisplayNeedsAuth},
+		{"claude on a codex screen", harness.Claude, codexScreen, session.DisplayRunning},
+		{"other on a claude screen", harness.Other, deviceCodeScreenFixture, session.DisplayNeedsAuth},
+		{"other on a codex screen", harness.Other, codexScreen, session.DisplayNeedsAuth},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, _ := effectiveDisplayState(live, now, tc.pane, tc.h)
+			if got != tc.want {
+				t.Errorf("effectiveDisplayState = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

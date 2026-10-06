@@ -800,8 +800,9 @@ planning time). T015 needs one; this task defines it once.
   `Code = ""`. Device-code wins when both match.
 - **Edge cases**: URL wrapped across lines is not expected (the URL is 36 characters); missing URL →
   `URL = ""` and still detected; a pane quoting the phrase inside a code block (session reading this
-  repo) → reuse `claudeauth`'s unquoted check approach (`claudeauth.go:211-232`) by copying the
-  function, not importing it.
+  repo) → copy three items from `internal/claudeauth/claudeauth.go` into `codexauth.go`, not import
+  them: `const quotes = "\"'`"` (`:~202`), `containsUnquoted` (`:~211-229`) and `flatten` (`:~234`).
+  Rename nothing; use them to test the two Codex phrases the same way `DetectPrompt` there tests its own.
 - **Mirror**: `internal/claudeauth/claudeauth.go` structure and tests.
 - **Tests**: each fixture → expected Kind/URL/Code; `TestPromptStringOmitsCode`; quoted-phrase pane → not detected.
 - **Acceptance**: `go test ./internal/codexauth/...` passes.
@@ -849,66 +850,93 @@ planning time). T015 needs one; this task defines it once.
 
 A pure refactor: behaviour is identical and every commit stays green.
 
-- **Files**: `internal/httpapi/server.go` (`signin` field `:296`, wiring `:373-388`),
-  `internal/httpapi/authstatus.go` (`authCache` `:92-176`), `internal/httpapi/signin.go`,
+- **Files**: `internal/httpapi/server.go` (`authCache` field `:~123`, `signin` field `:~301`, wiring
+  `:~384-391`), `internal/httpapi/authstatus.go` (`authStateCached`, `refreshAuthCache`,
+  `askAuthState`, `dashboardAuth`, `:~108-190`), `internal/httpapi/signin.go` (uses `:~136,150,167,239,250,256,287,289,299,332,334,345`),
   `internal/httpapi/authstatus_test.go`, `internal/httpapi/signin_test.go`,
   `internal/httpapi/signinview_test.go`, `internal/httpapi/executionmode_test.go`.
-- **Interface**:
+- **Interface**: `Server` fields are read-only after `Listen`, so there is no mutex on the maps and no
+  lazy creation. Build them eagerly:
   ```go
-  // server.go
-  signin map[harness.Name]signInRelay   // nil map = no relay for any harness
-  authCaches map[harness.Name]*authCache // replaces the single cache field
-  func (s *Server) signInFor(h harness.Name) signInRelay        // nil when absent
-  func (s *Server) setSignIn(h harness.Name, r signInRelay)       // allocates the map on first use
-  func (s *Server) authCacheFor(h harness.Name) *authCache        // creates on first use, under s.mu (the mutex the cache uses today)
+  // server.go: replace `signin signInRelay` and `authCache authCache`
+  signins    map[harness.Name]signInRelay // absent or nil entry = no relay for that harness
+  authCaches map[harness.Name]*authCache  // each authCache keeps its own mu, as today
   ```
-  Every existing read of `s.signin` becomes `s.signInFor(harness.Claude)`; every write
-  (`srv.signin = x`) becomes `srv.setSignIn(harness.Claude, x)`; every `s.signin == nil` check
-  becomes `s.signInFor(harness.Claude) == nil`. The single cache becomes `s.authCacheFor(harness.Claude)`.
-  Find every site with `grep -rn '\.signin\b' internal/httpapi` and `grep -rn 'authCache' internal/httpapi`
-  (at planning time: `authstatus.go`, `server.go`, `signin.go`, and the four test files above).
-- **Edge cases**: a nil relay in tests (`executionmode_test.go:59-74`) still reads as nil.
-- **Tests**: no new behaviour; `TestSignInForDefaultsToNil`, `TestAuthCacheForIsPerHarness` (two
-  harnesses get distinct caches; the same harness twice gets the same pointer).
+  `NewWith` allocates `signins: map[harness.Name]signInRelay{}` and
+  `authCaches: map[harness.Name]*authCache{harness.Claude: {}}`. `New` writes
+  `srv.signins[harness.Claude] = relay` where it writes `srv.signin = relay` today (`:~390`). T022b adds
+  the Codex entries in `New`, before it returns (before `Listen`).
+  `authStateCached`, `refreshAuthCache` and `askAuthState` each gain a first-after-ctx parameter
+  `h harness.Name`: `authStateCached(ctx, h)`, `refreshAuthCache(ctx, h)`, `askAuthState(ctx, h)`.
+  Inside them, `c := s.authCaches[h]` replaces `s.authCache`; `s.signins[h]` replaces `s.signin`.
+  `authStateCached` and `refreshAuthCache` return `authUnknown` when `c == nil`; `askAuthState`
+  returns `authUnknown` when `s.signins[h] == nil` (as it does for a nil relay today).
+  Callers to update, all passing `harness.Claude` in this task: `signin.go:~150`
+  (`s.refreshAuthCache`), `authstatus.go:~188` (`dashboardAuth` calls `authStateCached`),
+  `authstatus.go:~246` (`createRefusedWhileSignedOut` calls `authStateCached`),
+  `authstatus_test.go:~284` (`f.authStateCached(context.Background())`).
+  `s.authCache.invalidate()` (`signin.go:~239,287,332`) becomes `s.authCaches[harness.Claude].invalidate()`.
+  Every `s.signin == nil` becomes `s.signins[harness.Claude] == nil`; every `s.signin.X(` becomes
+  `s.signins[harness.Claude].X(`. Test edits: `f.signin = relay` becomes
+  `f.signins[harness.Claude] = relay`; `srv.signin != nil` / `== nil` (`executionmode_test.go:~59,74`)
+  becomes `srv.signins[harness.Claude] != nil` / `== nil`; `d.authCache.state/fetched/has`
+  (`signinview_test.go:~241-243`) becomes `d.authCaches[harness.Claude].state/fetched/has`.
+  Find every site with `grep -rn '\.signin\b\|\.authCache\b\|authStateCached\|refreshAuthCache\|askAuthState' internal/httpapi`.
+- **Edge cases**: an absent relay in tests still reads as nil.
+- **Tests**: no new behaviour; `TestSignInsDefaultToNil` (a `NewWith` server has no relay for
+  either harness), `TestAuthCachesHaveClaudeEntry` (`NewWith` server: Claude cache non-nil, Codex nil).
 - **Acceptance**: `go test ./internal/httpapi/...` passes with only the mechanical edits above in
   existing tests.
 - **Depends**: T021.
-- **Guardrails**: no route, response or audit record changes in this task.
+- **Guardrails**: no route, response or audit record changes in this task; no new mutex.
 
 ### T022b — Codex relay wiring and the auth status route
 
-- **Files**: `internal/httpapi/server.go` (wiring), `internal/httpapi/authstatus.go`
-  (`GET /dashboard/auth` handler), `internal/httpapi/authstatus_test.go`.
-- **Interface**: in `httpapi.New`, after the Claude relay is wired: when
-  `cfg.StartCommands.Command("codex")` exists and `harness.Of(cmd) == harness.Codex`,
+- **Files**: `internal/httpapi/server.go` (wiring, in `New`), `internal/httpapi/authstatus.go`
+  (`dashboardAuth` `:~187`), `internal/httpapi/authstatus_test.go`.
+- **Interface**: in `httpapi.New`, after the Claude relay is wired and before `New` returns: when
+  `cmd, ok := srv.codexOffered()` (`view.go:~382`, exists from T014) is true,
   `relay, err := loginrelay.NewCodex(tmux, cmd, relayWorkDir(cfg), sessionEnv)`; error →
-  `srv.report(...)` exactly as the Claude relay's error path; else `srv.setSignIn(harness.Codex, relay)`.
-  `GET /dashboard/auth`: `h, err := parseHarness(r.URL.Query(), "harness")`; err → 400 with the
-  route's existing bad-request handling; `s.signInFor(h) == nil` → `{"state":"unknown"}`; else the
-  existing logic over `s.authCacheFor(h)` and `s.signInFor(h)`.
+  `srv.report(fmt.Errorf("the Codex sign-in relay is unavailable on this host: %w", err))`; else
+  `srv.signins[harness.Codex] = relay` and `srv.authCaches[harness.Codex] = &authCache{}`.
+  Tests that need a Codex relay on a `NewWith` server set both of those two map entries themselves.
+  `GET /dashboard/auth`: `h, err := parseHarness(r.URL.Query(), "harness")`; `err != nil` →
+  `s.rejectBadRequest(w, r, errHarnessParam); return` (`rejectBadRequest` is in `decode.go:~160`;
+  `errHarnessParam` already exists in `harnessparam.go:~26` from T014, do not redefine it);
+  then `s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context(), h)})`.
+  An absent relay already yields `{"state":"unknown"}` through `askAuthState`.
 - **Edge cases**: no `harness` query → byte-identical JSON to today; `harness=codex` with no Codex
   configured → `{"state":"unknown"}`; `harness=codex&harness=claude` → 400.
 - **Tests**: `TestDashboardAuthHarnessParam` (table: absent, claude, codex configured, codex not
   configured, duplicate, unknown), `TestDashboardAuthDefaultUnchanged`.
 - **Acceptance**: `go test ./internal/httpapi/... -run DashboardAuth` passes.
-- **Depends**: T022a, T014 (`parseHarness`).
+- **Depends**: T022a, T014 (`parseHarness`, `errHarnessParam`).
 - **Guardrails**: wiring stays in `New`, after the kubernetes-mode return, never in `NewWith`.
 
 ### T022c — Per-harness create gate
 
-- **Files**: `internal/httpapi/authstatus.go` (`createRefusedWhileSignedOut` `:245`,
-  `errCreateSignedOut` `:219`), `internal/httpapi/actions.go` (`:514`), `internal/httpapi/sessions.go`
-  (signed create gate call; `grep -n 'createRefusedWhileSignedOut' internal/httpapi/sessions.go`),
+- **Files**: `internal/httpapi/authstatus.go` (`errCreateSignedOut` `:~219`,
+  `createRefusedWhileSignedOut` `:~245`, `failSignedOut` `:~258`), `internal/httpapi/actions.go`
+  (browser gate `:~543`), `internal/httpapi/sessions.go` (API gate `:~443`),
   `internal/httpapi/authstatus_test.go`.
 - **Interface**:
   ```go
   var errCreateCodexSignedOut = errors.New("this host is signed out of Codex, so the session was refused")
-  func (s *Server) createRefusedWhileSignedOut(ctx context.Context, h harness.Name) bool
+  func (s *Server) createRefusedWhileSignedOut(ctx context.Context, h harness.Name) bool // authStateCached(ctx, h) == authBad
+  func (s *Server) failSignedOut(w http.ResponseWriter, r *http.Request, h harness.Name)
+  func (s *Server) harnessOfStartName(name string) harness.Name
   ```
-  Both create paths compute `h := harness.Of(command)` from the resolved start command (the browser
-  path after T014's harness resolution; the signed path from `cfg.StartCommands.Command(req.StartCommand)`)
-  and call the gate with it. The denial reason is `errCreateSignedOut` for Claude and
-  `errCreateCodexSignedOut` for Codex; `Other` is never gated.
+  `failSignedOut` records `errCreateCodexSignedOut` for `harness.Codex` and `errCreateSignedOut`
+  otherwise; the 503 and `bodySignedOut` stay as they are. `harnessOfStartName(name)`: empty name
+  means `config.DefaultStartCommandName`; `cmd, ok := s.cfg.StartCommands.Command(name)`; `!ok` →
+  `harness.Claude` (an unknown name is refused later by the manager, and the gate applies to it today);
+  else `harness.Of(cmd)`.
+  Callers, the only three: `actions.go:~543` (browser: `h := s.harnessOfStartName(startCommand)`, with
+  `startCommand` the variable set at `:~512-523`; `AuditFrom(...).Deny` there uses
+  `errCreateCodexSignedOut` when `h == harness.Codex`, else `errCreateSignedOut`),
+  `sessions.go:~443` (API: `h := s.harnessOfStartName(req.StartCommand)`) and its `failSignedOut` call
+  at `:~444` (pass `h`). `harness.Other` is never gated: `createRefusedWhileSignedOut` returns false
+  for it without reading the cache.
 - **Tests**: `TestCreateCodexGatedOnCodexAuth`, `TestCreateClaudeNotGatedOnCodex`,
   `TestCreateOtherNeverGated`, existing gate tests unedited apart from the added argument.
 - **Acceptance**: `go test ./internal/httpapi/...` passes.
@@ -917,7 +945,8 @@ A pure refactor: behaviour is identical and every commit stays green.
 
 ### T023 — `needs-auth` for Codex panes
 
-- **Files**: `internal/httpapi/dashboard.go` (`effectiveDisplayState` `:513-523`), `internal/httpapi/dashboard_test.go`.
+- **Files**: `internal/httpapi/dashboard.go` (`effectiveDisplayState` `:~548-578`; the
+  `claudeauth.DetectPrompt` check is at `:~558`), `internal/httpapi/dashboard_test.go`.
 - **Interface**: for harness Codex, `codexauth.DetectPrompt(paneText)` found → `session.DisplayNeedsAuth`;
   Claude keeps `claudeauth.DetectPrompt`; Other checks both.
 - **Tests**: `TestCodexSignedOutPaneRendersNeedsAuth` (F4 fixture), `TestCodexDevicePaneRendersNeedsAuth`
@@ -929,51 +958,57 @@ A pure refactor: behaviour is identical and every commit stays green.
 
 ### T024 — Sign-in routes and panel for Codex
 
-- **Files**: `internal/httpapi/signin.go` (routes `:47-55`, handlers), `internal/httpapi/signinview.go`
-  (or wherever `signInPanelFor` lives — grep `func signInPanelFor`), `web/templates/partials/signin-panel.html`,
-  `internal/audit/audit.go` (no new actions; add a `harness` detail only if the audit record type has
-  a detail field — grep `Detail`), `internal/httpapi/signinview_test.go`.
+- **Files**: `internal/httpapi/signin.go` (routes `:~47-55`, handlers, `signInPanel` struct `:~68`,
+  `signInPanelFor` `:~134`, `redirectSignIn` `:~375`), `web/templates/partials/signin-panel.html`,
+  `internal/httpapi/signinview_test.go`, `internal/httpapi/signin_test.go`. `internal/audit/audit.go`
+  is not touched (no new actions, no audit detail field).
 - **Interface**: each sign-in POST and `GET /dashboard/signin/view` read the harness with
-  `parseHarness` (T014) from `r.PostForm` / `r.URL.Query()`; error → 400. The panel model gains
-  `Harness harness.Name`, `Code string`, `DeviceURL string`. Every form the panel renders carries
-  `<input type="hidden" name="harness" value="{{ .Harness }}">` (Claude's forms too, value `claude`,
-  so a Codex panel's Start or Cancel can never reach the Claude relay). For Codex the template renders
-  the link (`rel="noopener noreferrer"`, same as Claude's), the code in a `<code>` element, a waiting
-  line, and no code form.
+  `h, err := parseHarness(r.PostForm, "harness")` (`r.URL.Query()` for the GET); `err != nil` →
+  `s.rejectBadRequest(w, r, errHarnessParam); return` (`errHarnessParam` exists from T014, do not
+  redefine). Handlers then use `s.signins[h]` and `s.authCaches[h]` in place of the Claude entries.
+  The `signInPanel` struct gains `Harness harness.Name`, `Code string`, `DeviceURL string`. Every form
+  the panel renders carries `<input type="hidden" name="harness" value="{{ .Harness }}">` (Claude's
+  forms too, value `claude`, so a Codex panel's Start or Cancel can never reach the Claude relay).
+  `signin-panel.html` branches on `.Harness`: the Claude block is unchanged; the Codex block is a
+  separate wording block with its own Codex device-code text (no occurrence of the word "Claude"
+  inside it): the link (`rel="noopener noreferrer"`, same attributes as Claude's), the code in a
+  `<code>` element, a waiting line, and no code form.
   `POST /dashboard/signin/code` with `harness=codex`: no 409 path exists; keep this file's
   convention, `AuditFrom(ctx).Deny(errSignInCodeNotTaken.Error())` (new sentinel
   `errSignInCodeNotTaken = errors.New("this sign-in takes no code from the dashboard")`) then
-  `s.redirectSignIn(w, r, outcomeSignInRefused)`.
-  Redirect marker: `redirectSignIn` (`signin.go:354` area, `querySignInOpen`/`signInOpenMarker`)
-  writes `signin=open` for Claude (unchanged) and `signin=codex` for Codex; add
-  `const signInOpenCodexMarker = "codex"` and pass the harness into `redirectSignIn`.
+  `s.redirectSignIn(w, r, outcomeSignInRefused, h)`.
+  Redirect marker: `redirectSignIn(w, r, code, h)` (`signin.go:~375`; `querySignInOpen`,
+  `signInOpenMarker`) writes `signin=open` for Claude (unchanged) and `signin=codex` for Codex; add
+  `const signInOpenCodexMarker = "codex"`. Update every `s.redirectSignIn(` call in `signin.go`.
 - **Edge cases**: the code never appears in the audit record, a redirect URL or a log line (assert by
   scanning the test audit sink for `ABCD-EFGH1`).
-- **Mirror**: spec 015's panel and its no-leak tests (`signinview_test.go:177`).
+- **Mirror**: spec 015's panel and its no-leak tests (`signinview_test.go:~177`).
 - **Tests**: `TestCodexPanelShowsLinkAndCode`, `TestCodexPanelHasNoCodeForm`,
   `TestCodexPanelFormsCarryHarness` (every `<form>` in the Codex panel has the hidden field with
-  value `codex`), `TestCodexStartReachesOnlyCodexRelay` (two fake relays; POST start with
-  `harness=codex` calls only the Codex fake), `TestCodexCodeRouteRefused` (303 with the refused
-  outcome), `TestCodexRedirectMarker` (`signin=codex`), `TestSignInHarnessDuplicateRefused`,
-  `TestCodexCodeNeverAudited`.
-- **Acceptance**: `go test ./internal/httpapi/... -run SignIn` passes.
+  value `codex`), `TestCodexPanelHasNoClaudeWording`, `TestCodexStartReachesOnlyCodexRelay` (two fake
+  relays; POST start with `harness=codex` calls only the Codex fake), `TestCodexCodeRouteRefused`
+  (303 with the refused outcome), `TestCodexRedirectMarker` (`signin=codex`),
+  `TestSignInHarnessDuplicateRefused`, `TestCodexCodeNeverAudited`.
+- **Acceptance**: `go test ./internal/httpapi/... -run 'SignIn|Codex'` passes.
 - **Depends**: T022c.
 - **Guardrails**: Claude's panel markup changes only by the added hidden field; its redirect marker
-  stays `signin=open`.
+  stays `signin=open`. No new CSS class: the Codex block reuses classes already in `crswd.css`
+  (the stylesheet/markup parity test must pass unedited).
 
 ### T025 — Header view, Codex pill and script
 
 - **Files**: `internal/httpapi/view.go` (new `headerView`), `web/templates/partials/header.html`,
-  `web/templates/dashboard.html`, `web/templates/session.html`, `web/templates/settings.html`,
-  `web/templates/not-found.html`, `internal/httpapi/dashboard.go` (`fleetView` `:101`,
-  `sessionPageView` `:156`, their construction sites), `internal/httpapi/settings.go`
-  (`settingsView` `:84`), `internal/httpapi/browser.go` (`notFoundView` `:201`),
-  `internal/httpapi/restart.go` (`:208`), `internal/httpapi/update.go` (`:547`),
+  `web/templates/dashboard.html` (`:~37`), `web/templates/session.html` (`:~34`),
+  `web/templates/settings.html` (`:~70`), `web/templates/not-found.html` (`:~34`),
+  `internal/httpapi/dashboard.go` (`fleetView` `:~102`, `sessionPageView` `:~146`, constructions
+  `:~316` and `:~666`), `internal/httpapi/settings.go` (`settingsView` `:~82`, construction `:~658`),
+  `internal/httpapi/browser.go` (`notFoundView` `:~200`, construction `:~257`),
+  `internal/httpapi/restart.go` (`:~207`), `internal/httpapi/update.go` (`:~546`),
   `internal/httpapi/render_test.go`, `internal/httpapi/partials_test.go`, `web/static/crswd.js`
-  (`:1384-1557`), `web/static/crswd.css`.
+  (auth module `:~1405-1585`), `web/static/crswd.css`.
   The construction sites are every match of
   `grep -rn 'fleetView{\|sessionPageView{\|settingsView{\|notFoundView{' internal/httpapi`
-  (the files above at planning time).
+  (non-test: the files above at planning time).
 - **Interface**:
   ```go
   // view.go
@@ -981,14 +1016,24 @@ A pure refactor: behaviour is identical and every commit stays green.
       Operator        *access.VerifiedOperator
       CodexConfigured bool
   }
-  func (s *Server) headerFor(op *access.VerifiedOperator) headerView // CodexConfigured = s.signInFor(harness.Codex) != nil
+  func (s *Server) headerFor(op *access.VerifiedOperator) headerView // CodexConfigured = s.signins[harness.Codex] != nil
   ```
   Each of the four view types gains `Header headerView`; every construction site that sets
   `Operator: x` also sets `Header: s.headerFor(x)` (the `Operator` field stays). The four page
   templates change `{{ template "header" .Operator }}` to `{{ template "header" .Header }}`.
-  `header.html` changes `.Email` to `.Operator.Email` (both occurrences at `:91`), and adds, when
+  `header.html` changes `.Email` to `.Operator.Email` (both occurrences at `:~91`), and adds, when
   `.CodexConfigured`, a second `<button … data-auth-pill data-harness="codex">codex auth: checking</button>`
   beside the existing pill (copy the existing pill's attributes and classes).
+- **Test edits (required, the header template now takes a `headerView`)**: a zero `headerView` has a
+  nil `.Operator`, and `.Operator.Email` on nil panics, so:
+  - the four `renderComponent(t, "header", &access.VerifiedOperator{…})` calls in `partials_test.go`
+    (`:~1044`, `:~1056`, `:~1130`, `:~3175`) become
+    `renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{…}})`;
+  - every view construction in tests must set `Header` to match its `Operator`:
+    `render_test.go:~76` (`fleetView`), `partials_test.go:~1085`, `:~1162`, `:~1181`, `:~1484`
+    (`sessionPageView`/`fleetView`), `:~3418` (`settingsView`), `:~3423` (`notFoundView`), `:~3893`
+    (`settingsView`), each with `Header: headerView{Operator: <the same operator>}`. Find the full
+    set with the grep above over `*_test.go`.
 - **Script contract** (crswd.js auth module): one state record per pill,
   `{pill, harness, timer, generation}`, where `harness` is the pill's `data-harness` or `"claude"`
   when absent. Each record polls on its own timer, fetching `/dashboard/auth` with no query for
@@ -1053,45 +1098,57 @@ A pure refactor: behaviour is identical and every commit stays green.
 
 ### T031 — Route `?harness=codex`
 
-- **Files**: `internal/httpapi/quotastatus.go` (`dashboardQuota` `:84`), `internal/httpapi/quotastatus_test.go`.
-- **Interface**: `h, err := parseHarness(r.URL.Query(), "harness")` (T014); err → 400.
-  `harness.Claude` → `ReadProvider(path,"claude","seven_day")` (today); `harness.Codex` →
-  `ReadProvider(path,"codex","weekly")`. Response shape unchanged.
+- **Files**: `internal/httpapi/quotastatus.go` (`readQuota` `:~68`, `dashboardQuota` `:~84`),
+  `internal/httpapi/quotastatus_test.go`.
+- **Interface**: `readQuota` gains the harness: `readQuota(h harness.Name)`; `harness.Claude` →
+  `quota.ReadProvider(s.quotaCachePath, "claude", "seven_day")` (today), `harness.Codex` →
+  `quota.ReadProvider(s.quotaCachePath, "codex", "weekly")`. In `dashboardQuota`:
+  `h, err := parseHarness(r.URL.Query(), "harness")`; `err != nil` →
+  `s.rejectBadRequest(w, r, errHarnessParam); return` (`rejectBadRequest` is in `decode.go:~160`;
+  `errHarnessParam` exists in `harnessparam.go:~26` from T014, do not redefine); then
+  `s.readQuota(h)`. Response shape unchanged.
 - **Tests**: `TestDashboardQuotaCodex`, `TestDashboardQuotaHarnessInvalid` (unknown and duplicate),
-  existing tests unedited.
+  existing tests unedited apart from `readQuota` call sites.
 - **Acceptance**: `go test ./internal/httpapi/... -run Quota` passes.
 - **Depends**: T030.
 
 ### T032 — Codex meter in the header
 
-- **Files**: `web/templates/partials/header.html` (`:90-95`), `web/static/crswd.js` (`:1561-1670`),
-  `web/static/crswd.css`, `internal/httpapi/partials_test.go`.
-- **Interface**: each meter and its label sit in one keyed wrapper, and the script finds the label
-  only inside its own wrapper:
+- **Files**: `web/templates/partials/header.html` (label `:~90`, meter `:~95`),
+  `web/static/crswd.js` (quota module `:~1588-1680`), `internal/httpapi/partials_test.go`,
+  `internal/httpapi/quotastatus_test.go`. No `crswd.css` change and no new CSS class.
+- **Interface**: no wrapper element. In `header.html` the label is a `<p>` inside `.masthead-bar` and
+  the meter is its sibling after the bar, so each is keyed on its own. Add `data-harness="claude"` to
+  today's label and today's meter, otherwise unchanged. When `.CodexConfigured`, add a Codex label
+  right after the Claude label and a Codex meter right after the Claude meter, each rendered with
+  `hidden`:
   ```html
-  <span class="quota" data-quota data-harness="claude">  <!-- wraps today's meter and label unchanged -->
-    <meter data-quota-meter …></meter> <span data-quota-label>…</span>
-  </span>
-  <span class="quota" data-quota data-harness="codex" hidden>   <!-- only when .CodexConfigured; starts hidden -->
-    <meter data-quota-meter aria-label="Weekly Codex quota used" …></meter>
-    <span data-quota-label>codex quota: checking</span>
-  </span>
+  <p class="quota-label quota-label-unknown" data-quota-label data-harness="codex" hidden>codex quota: checking</p>
+  <meter class="quota-meter" data-quota-meter data-harness="codex" min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Codex quota used" hidden></meter>
   ```
-  Copy today's meter and label element attributes into the Claude wrapper unchanged. The module
-  iterates `document.querySelectorAll('[data-quota]')`, and for each wrapper `w` uses
-  `w.querySelector('[data-quota-meter]')` and `w.querySelector('[data-quota-label]')`; it fetches
-  `/dashboard/quota` with no query for `claude` and `?harness=codex` for codex. Label text
-  `Codex weekly N% used`. Codex visibility rule (NC-1, Craig 2026-10-06): the Codex wrapper is
-  rendered with `hidden`; the script sets `w.hidden = false` only when the response carries a
-  `weekly` window, and sets `w.hidden = true` on any unknown, error or missing-window response. The
-  Claude wrapper never gets `hidden` and keeps today's unknown text.
-- **Tests**: `TestHeaderCodexMeterStartsHidden` (the codex wrapper carries `hidden`),
-  `TestQuotaScriptHidesCodexWithoutWindow` (served `crswd.js` sets `hidden = true` on the
-  unknown branch for the codex wrapper only), `TestHeaderCodexMeterWhenConfigured`, `TestHeaderMeterWrappedWithoutCodex` (the Claude
-  meter and label are inside one `data-quota` wrapper; their own attributes unchanged),
-  `TestQuotaScriptFetchesPerHarness` (served `crswd.js` uses `querySelectorAll('[data-quota]')`).
+  The script (crswd.js quota module) runs the existing ask-and-paint code once per harness in
+  `['claude', 'codex']`. For each, `meter = document.querySelector('[data-quota-meter][data-harness="' + h + '"]')`
+  and `label = document.querySelector('[data-quota-label][data-harness="' + h + '"]')`; a harness whose
+  `meter` or `label` is missing is skipped. Keep the variable names `meter` and `label` and keep
+  today's lines `meter.hidden = true` and `meter.hidden = false` and the literal
+  `fetch('/dashboard/quota'` for Claude (asserted by `quotastatus_test.go:~265,286-291`); Codex fetches
+  `fetch('/dashboard/quota?harness=codex'` with the same options object (`credentials: 'same-origin'`,
+  `cache: 'no-store'`). Label text for Codex: `Codex weekly N% used`. Codex visibility rule (NC-1,
+  Craig 10/6/26): the Codex label and meter are rendered `hidden`; after each Codex paint the script
+  runs `label.hidden = meter.hidden`, so both show together only when the response carries a `weekly`
+  window, and both are hidden on any unknown, error or missing-window response. The Claude label is
+  never hidden and keeps today's unknown text.
+  If T025's `TestHeaderUnchangedWithoutCodex` compares against a literal header string, update that
+  string by adding `data-harness="claude"` to the two Claude elements (the only allowed edit to it).
+- **Tests**: `TestHeaderCodexMeterStartsHidden` (the Codex label and meter each carry `hidden` and
+  `data-harness="codex"`), `TestQuotaScriptHidesCodexWithoutWindow` (served `crswd.js` contains
+  `label.hidden = meter.hidden`), `TestHeaderCodexMeterWhenConfigured`,
+  `TestHeaderMeterUnchangedWithoutCodex` (no Codex element rendered; the Claude label and meter differ
+  from before only by `data-harness="claude"`), `TestQuotaScriptFetchesPerHarness` (served `crswd.js`
+  contains `fetch('/dashboard/quota?harness=codex'` and `[data-quota-label][data-harness=`).
 - **Acceptance**: `go test ./internal/httpapi/... -run 'Header|Quota'` passes.
 - **Depends**: T031.
+- **Guardrails**: existing `quotastatus_test.go` script assertions pass unedited.
 
 ### T033 — Docs and gate
 

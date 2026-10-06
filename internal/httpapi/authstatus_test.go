@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
@@ -110,7 +112,7 @@ func TestAuthStatusStates(t *testing.T) {
 			t.Parallel()
 
 			f := newFleet(t)
-			f.signin = tc.relay
+			f.signins[harness.Claude] = tc.relay
 
 			if got := authAnswer(t, f.open(t, authPath)); got.State != tc.want {
 				t.Errorf("GET %s = %q; want %q", authPath, got.State, tc.want)
@@ -135,7 +137,7 @@ func TestAuthStatusNeverCarriesTheSignInLink(t *testing.T) {
 	const link = "https://claude.ai/oauth/authorize?code_challenge=test-only-pkce-canary"
 
 	f := newFleet(t)
-	f.signin = &fakeRelay{
+	f.signins[harness.Claude] = &fakeRelay{
 		signedIn: false,
 		state: loginrelay.State{
 			Running: true,
@@ -227,7 +229,7 @@ func TestAuthCacheServesWithinTTL(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{signedIn: true}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	authAnswer(t, f.open(t, authPath))
@@ -245,7 +247,7 @@ func TestAuthCacheAsksAgainAfterTTL(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{signedIn: true}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	authAnswer(t, f.open(t, authPath))
@@ -272,7 +274,7 @@ func TestAuthCacheSharesOneExecAmongConcurrentCallers(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{signedIn: true}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	const n = 20
@@ -281,7 +283,7 @@ func TestAuthCacheSharesOneExecAmongConcurrentCallers(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			f.authStateCached(context.Background())
+			f.authStateCached(context.Background(), harness.Claude)
 		}()
 	}
 	wg.Wait()
@@ -300,7 +302,7 @@ func TestAuthCacheCachesCouldNotAskToo(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{err: errors.New("exec failed")}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	authAnswer(t, f.open(t, authPath))
@@ -331,7 +333,7 @@ func TestTheThreeSignInPostsInvalidateTheAuthCache(t *testing.T) {
 
 			d := newSignInDoor(t)
 			relay := &fakeRelay{signedIn: true}
-			d.signin = relay
+			d.signins[harness.Claude] = relay
 			d.clock = fixedClock{at: testTime}
 
 			if got := authAnswer(t, d.get(t, authPath)); got.State != authOK {
@@ -379,7 +381,7 @@ func TestSignedOutRefusesTheCreateOnTheAPIDoor(t *testing.T) {
 	t.Parallel()
 
 	s := newAuditedServer(t)
-	s.signin = &fakeRelay{signedIn: false}
+	s.signins[harness.Claude] = &fakeRelay{signedIn: false}
 
 	before := len(s.fixture.tmux.Calls())
 	got := postSessions(t, s, createBody(s.fixture))
@@ -412,7 +414,7 @@ func TestSignedOutRefusalNeverCarriesTheAccount(t *testing.T) {
 	t.Parallel()
 
 	s := newAuditedServer(t)
-	s.signin = &fakeRelay{signedIn: false}
+	s.signins[harness.Claude] = &fakeRelay{signedIn: false}
 
 	body := postSessions(t, s, createBody(s.fixture)).answer.Body.String()
 	for _, leak := range []string{"@", "claude auth", "loggedIn", "oauth", "subscription"} {
@@ -430,7 +432,7 @@ func TestSignedInStillCreates(t *testing.T) {
 	t.Parallel()
 
 	s := newAuditedServer(t)
-	s.signin = &fakeRelay{signedIn: true}
+	s.signins[harness.Claude] = &fakeRelay{signedIn: true}
 
 	if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
 		t.Fatalf("create on a signed-in host = %d (%q); want %d",
@@ -470,7 +472,7 @@ func TestOnlyADefinitiveNoRefusesTheCreate(t *testing.T) {
 			t.Parallel()
 
 			s := newAuditedServer(t)
-			s.signin = relay
+			s.signins[harness.Claude] = relay
 
 			if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
 				t.Fatalf("create = %d (%q); want %d — only a definitive signed-out refuses",
@@ -490,7 +492,7 @@ func TestSignedOutRefusesTheCreateOnTheBrowserDoor(t *testing.T) {
 	t.Parallel()
 
 	c := newCreator(t)
-	c.signin = &fakeRelay{signedIn: false}
+	c.signins[harness.Claude] = &fakeRelay{signedIn: false}
 
 	before := len(c.fixture.tmux.Calls())
 	w := c.post(t, c.wellFormed(t))
@@ -542,7 +544,7 @@ func TestBothDoorsShareOneAnswerAboutThisHost(t *testing.T) {
 
 	c := newCreator(t)
 	relay := &fakeRelay{signedIn: false}
-	c.signin = relay
+	c.signins[harness.Claude] = relay
 
 	if got := outcomeOf(t, c.post(t, c.wellFormed(t))); got != string(outcomeSignedOut) {
 		t.Fatalf("browser create = %q; want %q", got, outcomeSignedOut)
@@ -553,5 +555,391 @@ func TestBothDoorsShareOneAnswerAboutThisHost(t *testing.T) {
 	}
 	if n := relay.callCount(); n != 1 {
 		t.Errorf("SignedIn ran %d times for two creates; want 1 — both doors share one window", n)
+	}
+}
+
+// TestSignInsDefaultToNil: a server built by NewWith has no relay for any
+// harness. Relays are wired in New only, so no test server ever opens a tmux
+// window on the developer's own host.
+//
+// **Must fail when** NewWith wires a relay for either harness.
+func TestSignInsDefaultToNil(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	for _, h := range []harness.Name{harness.Claude, harness.Codex} {
+		if f.signins[h] != nil {
+			t.Errorf("signins[%s] = %T; want nil on a NewWith server", h, f.signins[h])
+		}
+	}
+}
+
+// TestAuthCachesHaveClaudeEntry: the Claude cache exists from construction and
+// the Codex one does not until a later task wires it, because authStateCached
+// treats an absent cache as unknown rather than creating one lazily.
+//
+// **Must fail when** the Claude cache is missing or a Codex cache appears early.
+func TestAuthCachesHaveClaudeEntry(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	if f.authCaches[harness.Claude] == nil {
+		t.Error("authCaches[claude] is nil; the existing pill would read unknown forever")
+	}
+	if f.authCaches[harness.Codex] != nil {
+		t.Error("authCaches[codex] is non-nil on a NewWith server; T022b owns that wiring")
+	}
+	if got := f.authStateCached(context.Background(), harness.Codex); got != authUnknown {
+		t.Errorf("authStateCached(codex) = %q; want %q for an absent cache", got, authUnknown)
+	}
+}
+
+// TestDashboardAuthHarnessParam: GET /dashboard/auth answers for the harness the
+// query names, and refuses a value it does not accept rather than reading it as
+// Claude.
+//
+// **Must fail when** the route ignores the harness parameter, answers Claude's
+// cache for harness=codex, or lets a repeated or unknown value through.
+func TestDashboardAuthHarnessParam(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		query      string
+		codexRelay signInRelay
+		wantCode   int
+		want       authState
+	}{
+		"absent is claude":     {"", &fakeRelay{signedIn: false}, http.StatusOK, authOK},
+		"claude":               {"?harness=claude", &fakeRelay{signedIn: false}, http.StatusOK, authOK},
+		"codex signed in":      {"?harness=codex", &fakeRelay{signedIn: true}, http.StatusOK, authOK},
+		"codex signed out":     {"?harness=codex", &fakeRelay{signedIn: false}, http.StatusOK, authBad},
+		"codex not configured": {"?harness=codex", nil, http.StatusOK, authUnknown},
+		"duplicate":            {"?harness=codex&harness=claude", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+		"unknown":              {"?harness=gemini", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+		"empty value":          {"?harness=", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFleet(t)
+			// Claude is signed in and Codex is whatever the row says, so an answer
+			// read from the wrong harness's cache shows as the wrong state.
+			f.signins[harness.Claude] = &fakeRelay{signedIn: true}
+			if tc.codexRelay != nil {
+				f.signins[harness.Codex] = tc.codexRelay
+				f.authCaches[harness.Codex] = &authCache{}
+			}
+
+			w := f.open(t, authPath+tc.query)
+			if w.Code != tc.wantCode {
+				t.Fatalf("GET %s%s = %d (%s); want %d", authPath, tc.query, w.Code, w.Body.String(), tc.wantCode)
+			}
+			if tc.wantCode != http.StatusOK {
+				return
+			}
+			if got := authAnswer(t, w); got.State != tc.want {
+				t.Errorf("GET %s%s = %q; want %q", authPath, tc.query, got.State, tc.want)
+			}
+		})
+	}
+}
+
+// TestDashboardAuthDefaultUnchanged: a request with no harness query is
+// byte-identical to the one the pill has always made, and to harness=claude.
+//
+// **Must fail when** the default body changes shape or differs from the explicit
+// Claude one.
+func TestDashboardAuthDefaultUnchanged(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.signins[harness.Claude] = &fakeRelay{signedIn: true}
+
+	bare := f.open(t, authPath)
+	explicit := f.open(t, authPath+"?harness=claude")
+
+	if got, want := strings.TrimSpace(bare.Body.String()), `{"state":"ok"}`; got != want {
+		t.Errorf("GET %s body = %q; want %q", authPath, got, want)
+	}
+	if bare.Body.String() != explicit.Body.String() {
+		t.Errorf("bare body %q differs from harness=claude body %q", bare.Body.String(), explicit.Body.String())
+	}
+}
+
+// TestNewWiresCodexRelayOnlyWhenOffered: New builds the Codex relay and its cache
+// exactly when the config names a command called codex that runs Codex. A
+// NewWith server never has one, so this drives New.
+//
+// **Must fail when** New leaves the Codex entries unwired for a daemon that
+// offers Codex, or wires them for one that does not.
+func TestNewWiresCodexRelayOnlyWhenOffered(t *testing.T) {
+	t.Parallel()
+
+	const claudeCommand = "claude --dangerously-skip-permissions"
+	tests := map[string]struct {
+		commands map[string]string
+		want     bool
+	}{
+		"codex offered": {map[string]string{
+			config.DefaultStartCommandName: claudeCommand,
+			"codex":                        "/usr/local/bin/codex --yolo",
+		}, true},
+		"codex absent": {map[string]string{
+			config.DefaultStartCommandName: claudeCommand,
+		}, false},
+		"codex name runs another binary": {map[string]string{
+			config.DefaultStartCommandName: claudeCommand,
+			"codex":                        claudeCommand,
+		}, false},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := testConfig(loopbackListen)
+			cfg.StartCommands = config.NewStartCommands(tc.commands)
+			srv, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New = _, %v; want a server", err)
+			}
+			if got := srv.signins[harness.Codex] != nil; got != tc.want {
+				t.Errorf("signins[codex] wired = %v; want %v", got, tc.want)
+			}
+			if got := srv.authCaches[harness.Codex] != nil; got != tc.want {
+				t.Errorf("authCaches[codex] wired = %v; want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// ------------------------------------------- the create gate, per harness (T022c)
+
+// signedOutCodexHost is a daemon that offers Codex, with Claude's and Codex's
+// answers set independently so a test can tell which cache a create read.
+func signedOutCodexHost(s *testServer, claudeIn, codexIn bool) (claude, codex *fakeRelay) {
+	s.offersCodex("codex --no-alt-screen")
+	claude = &fakeRelay{signedIn: claudeIn}
+	codex = &fakeRelay{signedIn: codexIn}
+	s.signins[harness.Claude] = claude
+	s.signins[harness.Codex] = codex
+	s.authCaches[harness.Codex] = &authCache{}
+	return claude, codex
+}
+
+func codexCreateBody(s *testServer) []byte {
+	return []byte(`{"name":"refactor-auth","work_dir":"` + s.fixture.repo + `","start_command":"codex"}`)
+}
+
+// **Must fail when** a Codex create is gated on Claude's cache, or not gated.
+func TestCreateCodexGatedOnCodexAuth(t *testing.T) {
+	t.Parallel()
+
+	t.Run("API door", func(t *testing.T) {
+		t.Parallel()
+
+		s := newAuditedServer(t)
+		signedOutCodexHost(s, true, false)
+
+		before := len(s.fixture.tmux.Calls())
+		got := postSessions(t, s, codexCreateBody(s))
+
+		if got.answer.Code != http.StatusServiceUnavailable {
+			t.Fatalf("codex create on a Codex-signed-out host = %d (%q); want %d",
+				got.answer.Code, got.answer.Body, http.StatusServiceUnavailable)
+		}
+		if b := got.answer.Body.String(); b != string(bodySignedOut) {
+			t.Errorf("body = %q; want %q", b, bodySignedOut)
+		}
+		if extra := s.fixture.tmux.Calls()[before:]; len(extra) != 0 {
+			t.Errorf("the refused create ran %v; want no tmux command", extra)
+		}
+		if trail := s.sink.String(); !strings.Contains(trail, errCreateCodexSignedOut.Error()) {
+			t.Errorf("the trail lacks %q:\n%s", errCreateCodexSignedOut, trail)
+		}
+	})
+
+	t.Run("browser door", func(t *testing.T) {
+		t.Parallel()
+
+		c := newCreator(t)
+		signedOutCodexHost(c.testServer, true, false)
+
+		w := c.post(t, c.codexCreate(t, "codex"))
+
+		if got := outcomeOf(t, w); got != string(outcomeSignedOut) {
+			t.Fatalf("outcome = %q; want %q", got, outcomeSignedOut)
+		}
+		if calls := c.fixture.tmux.Calls(); len(calls) != 0 {
+			t.Errorf("the refused create ran %v; want no tmux command", calls)
+		}
+		if n := len(c.owned()); n != 0 {
+			t.Errorf("the store holds %d session(s); want none", n)
+		}
+		if trail := c.sink.String(); !strings.Contains(trail, errCreateCodexSignedOut.Error()) {
+			t.Errorf("the trail lacks %q:\n%s", errCreateCodexSignedOut, trail)
+		}
+	})
+}
+
+// **Must fail when** one harness's signed-out answer gates the other's creates.
+func TestCreateClaudeNotGatedOnCodex(t *testing.T) {
+	t.Parallel()
+
+	t.Run("claude create, codex signed out", func(t *testing.T) {
+		t.Parallel()
+
+		s := newAuditedServer(t)
+		signedOutCodexHost(s, true, false)
+
+		if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
+			t.Fatalf("claude create = %d (%q); want %d", got.answer.Code, got.answer.Body, http.StatusCreated)
+		}
+	})
+
+	t.Run("codex create, claude signed out", func(t *testing.T) {
+		t.Parallel()
+
+		s := newAuditedServer(t)
+		signedOutCodexHost(s, false, true)
+
+		if got := postSessions(t, s, codexCreateBody(s)); got.answer.Code != http.StatusCreated {
+			t.Fatalf("codex create = %d (%q); want %d", got.answer.Code, got.answer.Body, http.StatusCreated)
+		}
+	})
+}
+
+// **Must fail when** harness.Other reads a cache.
+func TestCreateOtherNeverGated(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	claude, codex := signedOutCodexHost(s, false, false)
+
+	if s.createRefusedWhileSignedOut(context.Background(), harness.Other) {
+		t.Error("createRefusedWhileSignedOut(Other) = true; want false")
+	}
+	if n := claude.callCount() + codex.callCount(); n != 0 {
+		t.Errorf("the gate asked a relay %d time(s) for harness.Other; want 0", n)
+	}
+}
+
+// harnessOfStartName resolves the name a create carries to the harness it runs.
+func TestHarnessOfStartName(t *testing.T) {
+	t.Parallel()
+
+	s := newAuditedServer(t)
+	s.cfg.StartCommands = config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --no-alt-screen",
+		"plain":                        "bash",
+	})
+
+	tests := map[string]harness.Name{
+		"":        harness.Claude,
+		"default": harness.Claude,
+		"codex":   harness.Codex,
+		"plain":   harness.Other,
+		"unknown": harness.Claude,
+	}
+	for name, want := range tests {
+		if got := s.harnessOfStartName(name); got != want {
+			t.Errorf("harnessOfStartName(%q) = %q; want %q", name, got, want)
+		}
+	}
+}
+
+// blockingRelay holds SignedIn until released, so a test can run an invalidate
+// while a refresh is waiting on the external command.
+type blockingRelay struct {
+	fakeRelay
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingRelay) SignedIn(ctx context.Context) (bool, error) {
+	close(b.entered)
+	<-b.release
+	return b.fakeRelay.SignedIn(ctx)
+}
+
+// TestRefreshDoesNotRepopulateAfterInvalidate: a refresh whose ask began before
+// an invalidate must not store its answer afterwards.
+//
+// **Must fail when** refreshAuthCache stores without checking the generation.
+func TestRefreshDoesNotRepopulateAfterInvalidate(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	relay := &blockingRelay{
+		fakeRelay: fakeRelay{signedIn: true},
+		entered:   make(chan struct{}),
+		release:   make(chan struct{}),
+	}
+	f.signins[harness.Claude] = relay
+	f.clock = fixedClock{at: testTime}
+
+	done := make(chan authState)
+	go func() { done <- f.refreshAuthCache(context.Background(), harness.Claude) }()
+	<-relay.entered
+
+	f.authCaches[harness.Claude].invalidate()
+	close(relay.release)
+
+	if got := <-done; got != authOK {
+		t.Errorf("the refresh answered %q to its own caller; want %q", got, authOK)
+	}
+	c := f.authCaches[harness.Claude]
+	c.mu.Lock()
+	has := c.has
+	c.mu.Unlock()
+	if has {
+		t.Error("a refresh that began before an invalidate repopulated the cache after it")
+	}
+}
+
+// TestNewDoesNotWireTheClaudeRelayForACodexDefault: a default start command that
+// runs Codex gets no Claude relay, so the Claude panel is unavailable, while a
+// configured codex entry still gets its own relay.
+//
+// **Must fail when** New wires the default command as the Claude relay without
+// checking which harness it runs.
+func TestNewDoesNotWireTheClaudeRelayForACodexDefault(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		commands  map[string]string
+		wantCodex bool
+	}{
+		"default is codex, no codex entry": {map[string]string{
+			config.DefaultStartCommandName: "/usr/local/bin/codex --yolo",
+		}, false},
+		"default is codex, codex entry": {map[string]string{
+			config.DefaultStartCommandName: "/usr/local/bin/codex --yolo",
+			"codex":                        "/usr/local/bin/codex --yolo",
+		}, true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := testConfig(loopbackListen)
+			cfg.StartCommands = config.NewStartCommands(tc.commands)
+			srv, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New = _, %v; want a server", err)
+			}
+			if srv.signins[harness.Claude] != nil {
+				t.Errorf("signins[claude] = %T; want nil for a Codex default command", srv.signins[harness.Claude])
+			}
+			if got := srv.authStateCached(context.Background(), harness.Claude); got != authUnknown {
+				t.Errorf("Claude auth state = %q; want %q (panel unavailable)", got, authUnknown)
+			}
+			if got := srv.signins[harness.Codex] != nil; got != tc.wantCodex {
+				t.Errorf("signins[codex] wired = %v; want %v", got, tc.wantCodex)
+			}
+		})
 	}
 }

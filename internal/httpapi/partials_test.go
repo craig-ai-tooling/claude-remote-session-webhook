@@ -1041,7 +1041,7 @@ func TestTheHeaderShowsTheIdentityLayerOneVerified(t *testing.T) {
 	t.Parallel()
 
 	const address = "operator@example.com"
-	got := renderComponent(t, "header", &access.VerifiedOperator{Email: address})
+	got := renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: address}})
 
 	if !strings.Contains(got, address) {
 		t.Errorf("the header does not show the verified operator:\n%s", got)
@@ -1053,7 +1053,7 @@ func TestTheHeaderShowsTheIdentityLayerOneVerified(t *testing.T) {
 	// The edge wrote this address inside a signature, so escaping it is defence
 	// in depth rather than the control — but it is the control for everything
 	// else on the page, and a template with one exception is one someone copies.
-	hostile := renderComponent(t, "header", &access.VerifiedOperator{Email: `<script>alert(1)</script>`})
+	hostile := renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: `<script>alert(1)</script>`}})
 	if strings.Contains(strings.ToLower(hostile), "<script") {
 		t.Errorf("the header rendered an address as markup:\n%s", hostile)
 	}
@@ -1084,6 +1084,7 @@ func TestTheHeaderIsTheRouteBackToTheFleet(t *testing.T) {
 		"the fleet page": renderedFleet(t),
 		"the single-session page": renderComponent(t, "session", sessionPageView{
 			Operator: &access.VerifiedOperator{Email: "operator@example.com"},
+			Header:   headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}},
 			Session:  card,
 			Pane:     paneView{ID: card.ID, Text: "$ go test ./..."},
 		}),
@@ -1127,7 +1128,7 @@ func TestTheRainCarriesNoInformationAndStaysOffReadingContent(t *testing.T) {
 	}
 
 	permitted := map[string]string{
-		"the header":      renderComponent(t, "header", &access.VerifiedOperator{Email: "operator@example.com"}),
+		"the header":      renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}}),
 		"the empty state": renderComponent(t, "empty", emptyView{Title: "No sessions running", Body: "Nothing is executing on this host right now."}),
 	}
 	for name, markup := range permitted {
@@ -1161,6 +1162,7 @@ func renderedFleet(t *testing.T) string {
 
 	return renderComponent(t, "dashboard", fleetView{
 		Operator: &access.VerifiedOperator{Email: "operator@example.com"},
+		Header:   headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}},
 		Summary:  []stateCount{{State: session.DisplayRunning, Count: 1}},
 		Sessions: []sessionView{actionableCard()},
 		Empty:    emptyView{Title: "No sessions running", Body: "Nothing is executing on this host right now."},
@@ -1180,6 +1182,7 @@ func renderedSessionPage(t *testing.T, card sessionView) string {
 
 	return renderComponent(t, "session", sessionPageView{
 		Operator: &access.VerifiedOperator{Email: "operator@example.com"},
+		Header:   headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}},
 		Session:  card,
 		Pane:     paneView{ID: card.ID, Text: "$ go test ./..."},
 	})
@@ -1483,6 +1486,7 @@ func TestTheFleetNamesTheStreamAndTheCardItRefetches(t *testing.T) {
 	// page already opens.
 	if session := renderComponent(t, "session", sessionPageView{
 		Operator: &access.VerifiedOperator{Email: "operator@example.com"},
+		Header:   headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}},
 		Session:  view,
 		Pane:     paneView{ID: view.ID, Text: "$ go test ./..."},
 	}); strings.Contains(session, "data-fleet-stream") {
@@ -3172,7 +3176,7 @@ var brandHeading = regexp.MustCompile(`(?s)<h1[^>]*\bclass="brand"[^>]*>(.*?)</h
 func renderedHeader(t *testing.T) string {
 	t.Helper()
 
-	return renderComponent(t, "header", &access.VerifiedOperator{Email: "operator@example.com"})
+	return renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}})
 }
 
 // mastheadOf is the header out of some rendered markup, and it fails rather than
@@ -3417,11 +3421,13 @@ func renderedPages(t *testing.T) map[string]string {
 		"session":   renderedSessionPage(t, actionableCard()),
 		"settings": renderComponent(t, "settings", settingsView{
 			Operator:   operator,
+			Header:     headerView{Operator: operator},
 			Settings:   []settingRow{{Key: "listen", Value: loopbackListen, Source: "default"}},
 			ConfigFile: "/home/operator/.config/crswd/crswd.conf",
 		}),
 		"not-found": renderComponent(t, "not-found", notFoundView{
 			Operator: operator,
+			Header:   headerView{Operator: operator},
 			Message:  emptyView{Title: notFoundTitle, Body: notFoundBody},
 		}),
 		// Against no data at all, which is what loginPage passes it: nothing on
@@ -3892,6 +3898,7 @@ func TestTheSettingsMenuIsStillLinks(t *testing.T) {
 
 	page := renderComponent(t, "settings", settingsView{
 		Operator: &access.VerifiedOperator{Email: "operator@example.com"},
+		Header:   headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}},
 		Shown:    "General",
 		Sections: []settingSection{
 			{Title: "Network", Settings: []settingRow{{Key: "listen", Value: loopbackListen, Source: "default"}}},
