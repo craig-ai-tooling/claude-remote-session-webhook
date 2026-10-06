@@ -28,6 +28,7 @@ import (
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
@@ -555,7 +556,7 @@ func effectiveDisplayState(live session.Session, now time.Time, paneText string,
 	// This one runs first because it is the more specific: `needs-auth` names
 	// the remedy, where `blocked` or `unknown` would report a host-wide
 	// credential problem as one session waiting on a keystroke.
-	if _, ok := claudeauth.DetectPrompt(paneText); ok {
+	if paneNeedsAuth(paneText, h) {
 		// The prompt itself is dropped. It carries the sign-in URL, which is a
 		// one-shot PKCE challenge, and docs/auth-and-sessions.md forbids
 		// rendering it back into the page or storing it anywhere; a card says
@@ -576,6 +577,24 @@ func effectiveDisplayState(live session.Session, now time.Time, paneText string,
 		// file exists to fix.
 		return session.DisplayUnknown, ""
 	}
+}
+
+// paneNeedsAuth asks the detector that belongs to the session's harness. Other
+// checks both: a command the daemon cannot name may still be either program.
+func paneNeedsAuth(paneText string, h harness.Name) bool {
+	switch h {
+	case harness.Claude:
+		_, ok := claudeauth.DetectPrompt(paneText)
+		return ok
+	case harness.Codex:
+		_, ok := codexauth.DetectPrompt(paneText)
+		return ok
+	}
+	if _, ok := claudeauth.DetectPrompt(paneText); ok {
+		return true
+	}
+	_, ok := codexauth.DetectPrompt(paneText)
+	return ok
 }
 
 // sessionPage serves GET /sessions/{id}/view (contracts/dashboard.md): one

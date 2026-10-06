@@ -55,6 +55,15 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: the `Other` branch is covered by calling the predicate directly, not by a create through a plain-command start entry.
 - Left: T023 to T026.
 
+## Iteration 6 (T023, 10/6/26)
+
+- `effectiveDisplayState` now asks `paneNeedsAuth(paneText, h)`: Claude uses `claudeauth.DetectPrompt`, Codex uses `codexauth.DetectPrompt`, Other checks both. The prompt is still dropped, so the card never carries the code or URL.
+- Tests written first (`TestCodexSignedOutPaneRendersNeedsAuth`, `TestCodexDevicePaneRendersNeedsAuth`, `TestNeedsAuthIsPerHarness`); three subtests failed before the change, then all passed. They read the F3 and F4 panes straight from `internal/codexauth/testdata`.
+- Learned: before the change a Codex session on the signed-out screen read `unknown`, and a Claude screen under a Codex session read `needs-auth`. Both are fixed by the split.
+- Not run: `-tags tmux`, `-tags quickstart`, `k8s/` checks (task touched none of them).
+- Not fixed: the fleet grid still captures no panes, so a Codex session needing sign-in reads `running` there until its own page is opened. Same scope cut as Claude (`TestTheFleetGridDoesNotYetCheckPanesForALogin`).
+- Left: T024 to T026.
+
 ## NEEDS CLARIFICATION
 
 (none yet)
