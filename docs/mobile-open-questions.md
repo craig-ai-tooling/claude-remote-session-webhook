@@ -3,7 +3,7 @@
 > Loaded when: changing anything the 780px breakpoint or the `(pointer: coarse)`
 > block touches, or closing out milestone 7.
 
-Three questions about the mobile sweep that **nothing in this repository can
+Five questions about the mobile sweep that **nothing in this repository can
 answer**. Nothing here renders CSS and nothing here has a thumb. Every task in
 milestone 7 lands green, and green proves a declaration exists in the parsed
 stylesheet — not that a page is usable on a phone.
@@ -145,6 +145,33 @@ That is a `web/templates/settings.html` change — **specced, deliberately not
 built**. It was priced against the scrolling row in
 `specs/007-make-it-work-on-a-phone/research.md` R8 and lost; a bad answer here is
 what would change that.
+
+---
+
+## Q4 — Does the key bar reach every key in portrait, without horizontal scroll?
+
+**Status: UNANSWERED.**
+
+Spec 018 adds a row of twelve key buttons under the pane. Whether they all fit a
+portrait phone without a sideways swipe is a question about a thumb, not about the
+markup.
+
+**How it gets answered:** open a session on a phone in portrait and press each key.
+
+**Fallback if the answer is bad:** the key bar becomes a second `<details>` ("More
+keys") holding the arrows, PageUp/PageDown and Backspace, with Enter, Esc, Ctrl-C, Tab
+and Shift-Tab left visible.
+
+## Q5 — With the soft keyboard up, are the textarea and Send still on screen?
+
+**Status: UNANSWERED.**
+
+The input panel is sticky at the bottom of the page. A soft keyboard takes half the
+viewport, and whether the textarea and Send survive that is a question about a device.
+
+**How it gets answered:** focus the textarea on a phone and check that both are visible.
+
+**Fallback if the answer is bad:** move the input panel above the pane.
 
 ---
 
