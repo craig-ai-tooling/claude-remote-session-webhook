@@ -74,7 +74,7 @@ The loop may create or edit these paths and no others:
 ## Tasks
 
 - [x] **T001** Create every session with `history-limit 5000` (chain in `argvNew`, `HistoryLimit` const, three argv expectations updated). Done when `go test -tags tmux ./internal/tmuxctl -run FiveThousand` and `go test ./internal/tmuxctl ./internal/session` pass.
-- [ ] **T002** Add `PasteBracketed` to `Controller`, `Fake`, `Exec`, plus `ArgvPasteBracketed`. Done when `go test -tags tmux ./internal/tmuxctl -run Bracketed` passes and removing `-p` fails it.
+- [x] **T002** Add `PasteBracketed` to `Controller`, `Fake`, `Exec`, plus `ArgvPasteBracketed`. Done when `go test -tags tmux ./internal/tmuxctl -run Bracketed` passes and removing `-p` fails it.
 - [ ] **T003** Add `CaptureHistory` (`-S -5000 -E -1`, refuse past 5000 lines or 4 MiB with `ErrHistoryTooLarge`) and `Fake.SetHistory`. Done when `go test -tags tmux ./internal/tmuxctl -run History` and `go test ./internal/tmuxctl` pass.
 - [ ] **T004** Add `session.Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes` and three sentinels in a new input file. Done when `go test ./internal/session -run 'Key|Typed'` passes.
 - [ ] **T005** Add `Manager.Type` (Touch, bracketed paste, optional Enter) and `Manager.PressKey`. Done when `go test ./internal/session -run 'Type|PressKey'` passes.

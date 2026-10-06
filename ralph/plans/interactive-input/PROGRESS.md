@@ -94,3 +94,21 @@ added `TestTmuxNewSessionKeepsFiveThousandLinesOfHistory`.
 - Next iteration: `GOFLAGS=-buildvcs=false` and `GOLANGCI_LINT_CACHE` are set by the loop.
   `$(...)` and `$?` in a Bash command are refused by the sandbox, so reading env vars in
   the shell is not possible; run the tools directly.
+
+## Iteration 4: T002 (2026-10-06)
+
+Added `PasteBracketed` to `Controller`, `Fake` (`OpPasteBracketed`, `argvPasteBufferBracketed`),
+`Exec` and `ArgvPasteBracketed`, with the argv, fake, exec and real-tmux tests the task names.
+
+- Guard proven: with `"-p"` removed from `argvPasteBufferBracketed`,
+  `TestFakeRecordsExactArgv`, `TestExecPasteBracketedKeepsCallerTextOffTheCommandLine` and
+  `TestTmuxPasteBracketedWrapsTheText` all FAILED. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint
+  2.12.2 (0 issues), `go test -tags tmux ./internal/tmuxctl/...`, no `go.sum`.
+- Next iteration: the task's tmux test as written ("wait until CapturePane contains
+  `cat -v`") is racy. The typed command line contains `cat -v` before the shell has run
+  `printf` and `stty`, so the paste arrives unbracketed and the test times out. The test
+  now types `...; echo READY; cat -v` and waits for a pane line equal to `READY`. Stable
+  over `-count=5`.
+- The sandbox refuses ad-hoc multi-statement tmux commands in Bash. To debug a tmux test,
+  add a temporary `t.Logf` of the pane and remove it.
