@@ -48,6 +48,9 @@ var spelledOutcomes = []outcome{
 	"signin-started", "signin-running", "signin-code-sent",
 	"signin-no-code", "signin-bad-code", "signin-not-running",
 	"signin-cancelled", "signin-unconfirmed", "signin-refused",
+	// Typed input and the key bar (spec 018).
+	"type-empty", "type-invalid", "type-too-long", "type-failed",
+	"key-unknown", "key-failed", "input-limited",
 }
 
 // TestEveryOutcomeThisPackageSpellsHasASentence is the other half of FR-022: the

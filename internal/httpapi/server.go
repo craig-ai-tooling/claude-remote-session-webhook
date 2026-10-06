@@ -205,6 +205,11 @@ type Server struct {
 	// never be the nil a route was registered in front of.
 	logins *limiter[loginSource]
 
+	// inputs is the per-operator budget for typed text and key presses (spec 018,
+	// research R5), shared by both routes so one cannot be used to spend around
+	// the other. Built in newServer, not passed in, like logins.
+	inputs *limiter[auth.CallerID]
+
 	// streams is the bound on how many output streams may be open at once
 	// (FR-034e). One per server for the reason there is one create limiter: two
 	// would be two independent counts of the same connections, which is a cap
@@ -662,6 +667,11 @@ func newServer(
 		return nil, fmt.Errorf("httpapi: build the sign-in rate limiter: %w", err)
 	}
 
+	inputs, err := newLimiter[auth.CallerID]("input", inputRatePerMin, systemClock{})
+	if err != nil {
+		return nil, fmt.Errorf("httpapi: build the input rate limiter: %w", err)
+	}
+
 	// Resolved once, here, rather than per request (quotastatus.go, spec 016).
 	// Not fatal on failure: a daemon that could not work out its own cache
 	// directory still serves every other route, and the quota route answers
@@ -690,6 +700,7 @@ func newServer(
 		sessions:       sessions,
 		creates:        creates,
 		logins:         logins,
+		inputs:         inputs,
 		streams:        streams,
 		closing:        make(chan struct{}),
 		panes:          newPanes(),
