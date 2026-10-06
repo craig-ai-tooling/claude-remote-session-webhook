@@ -97,3 +97,67 @@ func (s *Server) typeFromBrowser(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// patternDashboardKey is the route that presses one key from a closed list.
+const patternDashboardKey = "POST /dashboard/sessions/{" + pathValueID + "}/key"
+
+const fieldKey = "key"
+
+var errKeyRefused = errors.New("the key could not be delivered")
+
+// keyFromBrowser is POST /dashboard/sessions/{id}/key. It is typeFromBrowser with a
+// key name in place of text, and it spends the same budget: one operator's typing
+// and key presses are one stream of input.
+//
+// The posted name goes to session.ParseKey and nowhere else, so a tmux key name is
+// never reachable from a caller's string.
+func (s *Server) keyFromBrowser(w http.ResponseWriter, r *http.Request) {
+	operator, ok := OperatorFrom(r.Context())
+	if !ok {
+		AuditFrom(r.Context()).Deny(errDashboardNoOperator.Error())
+		s.refuseBrowser(w)
+		return
+	}
+
+	id := r.PathValue(pathValueID)
+	if !routableID(id) {
+		AuditFrom(r.Context()).Deny(errScopeNoRoute.Error())
+		s.renderNotFound(w, r, operator)
+		return
+	}
+
+	if !s.inputs.allow(operator.Owner) {
+		AuditFrom(r.Context()).Deny(errInputRateExceeded.Error())
+		s.redirectOutcome(w, r, outcomeInputLimited)
+		return
+	}
+
+	key, err := session.ParseKey(r.PostForm.Get(fieldKey))
+	if err != nil {
+		AuditFrom(r.Context()).Deny(err.Error())
+		s.redirectOutcome(w, r, outcomeKeyUnknown)
+		return
+	}
+
+	live, err := s.sessions.View(id, operator.Owner)
+	if err != nil {
+		AuditFrom(r.Context()).Deny(resolveReason(err).Error())
+		s.notFoundAction(w)
+		return
+	}
+	AuditFrom(r.Context()).SetSessionID(live.ID)
+
+	if err := s.sessions.PressKey(r.Context(), live, key); err != nil {
+		switch {
+		case errors.Is(err, session.ErrSessionNotFound), errors.Is(err, session.ErrSessionDead):
+			AuditFrom(r.Context()).Deny(resolveReason(err).Error())
+			s.notFoundAction(w)
+		default:
+			AuditFrom(r.Context()).Deny(errKeyRefused.Error())
+			s.redirectOutcome(w, r, outcomeKeyFailed)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

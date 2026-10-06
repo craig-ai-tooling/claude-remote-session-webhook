@@ -264,6 +264,168 @@ func TestTypeSpendsTheInputBudget(t *testing.T) {
 	}
 }
 
+// pressed posts one form at the key route as the browser this daemon rendered the
+// page for.
+func (ty *typer) pressed(t *testing.T, id, key string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	form := ty.asked(t)
+	if key != absent {
+		form.Set(fieldKey, key)
+	}
+	return ty.send(t, http.MethodPost, "/dashboard/sessions/"+id+"/key", secFetchSiteSameOrigin, form)
+}
+
+func TestKeySendsEachAllowlistedKey(t *testing.T) {
+	t.Parallel()
+
+	for _, k := range session.Keys() {
+		t.Run(string(k), func(t *testing.T) {
+			t.Parallel()
+
+			ty := newTyper(t)
+			live := ty.live(t)
+
+			w := ty.pressed(t, live.ID, string(k))
+
+			if w.Code != http.StatusNoContent {
+				t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNoContent)
+			}
+			if got := w.Body.String(); got != "" {
+				t.Errorf("body = %q; want none", got)
+			}
+			if ops := ty.ops(); len(ops) != 1 || ops[0] != tmuxctl.OpSendKeys {
+				t.Fatalf("host operations = %v; want one SendKeys", ops)
+			}
+		})
+	}
+}
+
+func TestKeyRefusesAnythingElse(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []string{"Escape", "C-c", "q", "", "enter;"} {
+		t.Run("key="+key, func(t *testing.T) {
+			t.Parallel()
+
+			ty := newTyper(t)
+			live := ty.live(t)
+
+			w := ty.pressed(t, live.ID, key)
+
+			wantOutcome(t, w, outcomeKeyUnknown)
+			if ty.reachedTheHost() {
+				t.Fatal("a refused key reached the host")
+			}
+		})
+	}
+}
+
+// keyRoute is the key route in the shape refusalShapes drives; like typeRoute it
+// stays out of mutatingRoutes() because its success is a 204.
+func keyRoute() mutatingRoute {
+	return mutatingRoute{
+		name:          patternDashboardKey,
+		path:          func(id string) string { return "/dashboard/sessions/" + id + "/key" },
+		namesASession: true,
+		fields: func(t *testing.T, _ *refuser) url.Values {
+			t.Helper()
+
+			form := url.Values{}
+			form.Set(fieldKey, string(session.KeyEscape))
+			return form
+		},
+	}
+}
+
+func TestKeyRefusesLikeEveryAction(t *testing.T) {
+	t.Parallel()
+
+	route := keyRoute()
+	for _, c := range refusalShapes() {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := newRefuser(t)
+			w := r.send(t, route, c.vary(t, r, r.wellFormed(t, r.mine(t).ID)))
+
+			if w.Code >= http.StatusMultipleChoices && w.Code < http.StatusBadRequest {
+				t.Fatalf("the refusal was answered %d to %q; a refusal is never a redirect",
+					w.Code, w.Header().Get(headerLocation))
+			}
+			if got := w.Header().Get(headerLocation); got != "" {
+				t.Errorf("the refusal carried %s: %q; want none", headerLocation, got)
+			}
+			if w.Code != c.status {
+				t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), c.status)
+			}
+			if got := w.Body.String(); got != c.body {
+				t.Errorf("body\n%s\nwant\n%s", got, c.body)
+			}
+			for _, call := range r.fixture.tmux.Calls() {
+				if call.Op == tmuxctl.OpPasteBracketed || call.Op == tmuxctl.OpSendKeys {
+					t.Fatalf("a refused request reached the host: %s", call.Op)
+				}
+			}
+		})
+	}
+
+	t.Run("a request nothing refuses is answered 204", func(t *testing.T) {
+		t.Parallel()
+
+		r := newRefuser(t)
+		w := r.send(t, route, r.wellFormed(t, r.mine(t).ID))
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNoContent)
+		}
+	})
+}
+
+func TestKeyAndTypeShareOneBudget(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+
+	for i := 1; i <= 120; i++ {
+		if w := ty.pressed(t, live.ID, string(session.KeyTab)); w.Code != http.StatusNoContent {
+			t.Fatalf("key %d = %d (%s); want %d", i, w.Code, w.Body.String(), http.StatusNoContent)
+		}
+	}
+	delivered := len(ty.ops())
+
+	w := ty.typed(t, live.ID, "x", absent)
+
+	wantOutcome(t, w, outcomeInputLimited)
+	if got := len(ty.ops()); got != delivered {
+		t.Fatalf("the refused type made %d host calls; want none", got-delivered)
+	}
+}
+
+func TestKeyAuditsNoKeyName(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+
+	w := ty.pressed(t, live.ID, string(session.KeyEscape))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNoContent)
+	}
+
+	rec := ty.only(t)
+	if got, want := rec["action"], string(audit.ActionDashboardKey); got != want {
+		t.Errorf("action = %v; want %v", got, want)
+	}
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("re-encode the audit record %v: %v", rec, err)
+	}
+	if strings.Contains(string(raw), string(session.KeyEscape)) {
+		t.Errorf("the record carries the key name: %s", raw)
+	}
+}
+
 func TestTypeAuditsNoText(t *testing.T) {
 	t.Parallel()
 
