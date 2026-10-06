@@ -38,4 +38,4 @@ tasks.md narrows this further.
 - [x] **T030** quota.ReadProvider. Done when `go test ./internal/quota/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T030.
 - [x] **T031** Quota route harness parameter. Done when `go test ./internal/httpapi/... -run Quota` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T031.
 - [x] **T032** Codex meter in the header. Done when `go test ./internal/httpapi/... -run 'Header|Quota'` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T032.
-- [ ] **T033** Docs and the full gate. Done when `go test -tags quickstart ./cmd/crswd` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T033.
+- [x] **T033** Docs and the full gate. Done when `go test -tags quickstart ./cmd/crswd` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T033.

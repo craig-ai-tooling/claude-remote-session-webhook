@@ -78,3 +78,7 @@ holds.
 **Assumptions**: no new configuration key — the path is derived the way
 quota-axi derives it; a cache read is cheap enough to repeat per request,
 unlike the auth pill's exec-backed cache.
+
+**Note, 10/6/26 (spec 019):** `GET /dashboard/quota` also accepts `?harness=codex`,
+which reads the `codex` provider's `weekly` window from the same cache. Absent, the
+route is unchanged. No FR above was edited.

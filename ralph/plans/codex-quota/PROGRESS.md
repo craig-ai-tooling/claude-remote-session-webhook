@@ -43,3 +43,12 @@ Notebook for `ralph/plans/codex-quota`. Each iteration appends below.
 - Two edits outside the task's Files line, both forced by the new attribute: `internal/httpapi/testdata/header_no_codex.golden.html` gained `data-harness="claude"` on the two Claude elements (the edit the task allows for T025's golden), and `codexPill` in `header_test.go` is now `data-auth-pill data-harness="codex"`, because the old value `data-harness="codex"` also matches the new Codex label and meter and `TestHeaderCodexPillWhenConfigured` counts exactly one.
 - Ran gofmt, build, vet, test, golangci-lint: all clean. tmux, quickstart and k8s checks not applicable. Not run in a browser: the script is asserted by bytes only, as the existing suite does.
 - Left: T033.
+
+## Iteration 5 (T033, 10/6/26)
+
+- `docs/components.md`: new "The second meter (spec 019)" subsection under the weekly-quota bar (data-harness pair, `?harness=codex`, hidden until a reading, `label.hidden = meter.hidden`, no new CSS class). `specs/016-weekly-quota-bar/spec.md`: dated note that `?harness=` exists, no FR edits.
+- Ran gofmt, build, vet, test, golangci-lint, `go test -tags quickstart ./cmd/crswd`: all clean. tmux and k8s checks not applicable.
+- Finding, not fixed: `crswd.css` has no rule specific to the Codex meter. Both meters are `display:block` full-width and the Codex one is only shown when a reading exists, so how the two stack along the header's bottom edge was not checked in a browser. Needs a look.
+- Left: nothing.
+
+RALPH_COMPLETE
