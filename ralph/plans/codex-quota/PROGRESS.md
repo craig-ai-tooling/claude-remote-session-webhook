@@ -27,3 +27,11 @@ Notebook for `ralph/plans/codex-quota`. Each iteration appends below.
 - `ErrInvalidPercent` text still says "seven_day"; left as is, T030 did not name it.
 - Ran gofmt, build, vet, test, golangci-lint: all clean. tmux, quickstart and k8s checks not applicable.
 - Left: T031 onward.
+
+## Iteration 3 (T031, 10/6/26)
+
+- `readQuota` now takes a `harness.Name`: codex reads provider `codex` window `weekly`, anything else reads `claude`/`seven_day`. `dashboardQuota` parses `?harness=` with `parseHarness` and answers 400 via `rejectBadRequest(errHarnessParam)` on an unknown, empty or repeated value. Response shape unchanged.
+- Added `TestDashboardQuotaCodex`, `TestDashboardQuotaCodexMissingIsUnknown`, `TestDashboardQuotaHarnessInvalid`. They failed before the change (codex returned Claude's value, bad values returned 200) and pass after. No existing test needed editing.
+- Ran gofmt, build, vet, test, golangci-lint: all clean. tmux, quickstart and k8s checks not applicable.
+- Note: `go -C` is refused by the approval allowlist in this session; bare `go` commands from the worktree work.
+- Left: T032, T033.

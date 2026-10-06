@@ -132,6 +132,80 @@ func TestQuotaStatusReportsTheWeeklyWindow(t *testing.T) {
 	}
 }
 
+// quotaCacheBoth carries a claude seven_day window and a codex weekly window
+// with different percentages, so a route that reads the wrong provider cannot
+// pass by coincidence.
+const quotaCacheBoth = `{"generatedAt":"2026-08-02T18:00:00Z","schemaVersion":2,"providers":[` +
+	`{"provider":"claude","windows":[{"id":"seven_day","kind":"weekly","percentUsed":64,"resetsAt":"2026-08-04T04:00:00+00:00"}],` +
+	`"state":{"status":"fresh","stale":false,"refreshedAt":"2026-08-02T19:00:00Z"}},` +
+	`{"provider":"codex","windows":[{"id":"five_hour","kind":"session","percentUsed":7},` +
+	`{"id":"weekly","kind":"weekly","percentUsed":42,"resetsAt":"2026-08-05T04:00:00+00:00"}],` +
+	`"state":{"status":"fresh","stale":false,"refreshedAt":"2026-08-02T19:00:00Z"}}]}`
+
+// TestDashboardQuotaCodex must fail when ?harness=codex is ignored (the
+// answer would be Claude's 64) or reads the codex five_hour window.
+func TestDashboardQuotaCodex(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.quotaCachePath = writeQuotaCache(t, quotaCacheBoth)
+	f.clock = fixedClock{at: testTime}
+
+	got := quotaAnswer(t, f.open(t, quotaPath+"?harness=codex"))
+	if got.State != quotaOK {
+		t.Fatalf("state = %q; want %q", got.State, quotaOK)
+	}
+	if got.PercentUsed == nil || *got.PercentUsed != 42 {
+		t.Errorf("percentUsed = %v; want the codex weekly 42", got.PercentUsed)
+	}
+	if got.ResetsAt == nil || *got.ResetsAt != "2026-08-05T04:00:00+00:00" {
+		t.Errorf("resetsAt = %v; want the codex weekly window's own", got.ResetsAt)
+	}
+
+	claude := quotaAnswer(t, f.open(t, quotaPath))
+	if claude.PercentUsed == nil || *claude.PercentUsed != 64 {
+		t.Errorf("no harness param: percentUsed = %v; want the claude 64", claude.PercentUsed)
+	}
+}
+
+// TestDashboardQuotaCodexMissingIsUnknown must fail when a cache with no codex
+// provider answers anything but unknown for ?harness=codex.
+func TestDashboardQuotaCodexMissingIsUnknown(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.quotaCachePath = writeQuotaCache(t, quotaCacheOK)
+
+	got := quotaAnswer(t, f.open(t, quotaPath+"?harness=codex"))
+	if got.State != quotaUnknown || got.PercentUsed != nil {
+		t.Errorf("answer = %+v; want unknown with no value fields", got)
+	}
+}
+
+// TestDashboardQuotaHarnessInvalid must fail when an unknown or repeated
+// harness value is answered with 200 instead of a 400.
+func TestDashboardQuotaHarnessInvalid(t *testing.T) {
+	t.Parallel()
+
+	for name, query := range map[string]string{
+		"unknown":   "?harness=gemini",
+		"empty":     "?harness=",
+		"duplicate": "?harness=codex&harness=claude",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFleet(t)
+			f.quotaCachePath = writeQuotaCache(t, quotaCacheBoth)
+
+			w := f.open(t, quotaPath+query)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("GET %s%s = %d; want %d", quotaPath, query, w.Code, http.StatusBadRequest)
+			}
+		})
+	}
+}
+
 // TestQuotaStatusIsStaleByQuotaAxisFlag is D4's first OR clause: quota-axi
 // calling its own reading stale must reach the browser as stale even when the
 // timestamp alone would read as fresh.
