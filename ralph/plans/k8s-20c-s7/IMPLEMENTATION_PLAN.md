@@ -34,6 +34,8 @@ A diff outside this list is rejected.
 
 - `internal/config/config.go` (T1 only: the switch and its comment)
 - `cmd/crswd/hostswitch_test.go` (new, T1)
+- `cmd/crswd/main_test.go` (T3: the nested-module skip in `parseTheDaemon` only; see PROGRESS.md "Operator decision")
+- `k8s/cmd/crswd/stdout_test.go` (new, T3)
 - `internal/httpapi/cluster.go`, `internal/httpapi/cluster_test.go` (new, T2; T3 may add `Server.PodRecord` to `cluster.go`)
 - `k8s/cmd/crswd/` (new: `main.go`, `daemon.go`, `reconcile.go`, `main_test.go`, `daemon_test.go`)
 - `k8s/go.mod`, `k8s/go.sum` (only if `go -C k8s mod tidy` changes them)
@@ -50,7 +52,7 @@ A diff outside this list is rejected.
 - `ralph/plans/k8s-20c-s7/`
 
 Never touch: the root `go.mod`, a root `go.sum`, `AGENTS.md`, `docs/security.md`,
-`.github/`, `.claude/`, `cmd/crswd/` except the one new test, `internal/session/`,
+`.github/`, `.claude/`, `cmd/crswd/` except the one new test and the T3 `parseTheDaemon` skip, `internal/session/`,
 `internal/sessionpod/sessionpod.go`, `k8s/internal/podctl/`, `k8s/internal/reconcile/`.
 
 ## Design
