@@ -19,3 +19,11 @@ Notebook for `ralph/plans/codex-quota`. Each iteration appends below.
 
 (none yet)
 - Operator (CS, 2026-10-06): ran both quota-axi commands and measured the endpoints; M19 rewritten with the result. T034 done.
+
+## Iteration 2 (T030, 10/6/26)
+
+- Added `quota.ReadProvider(path, provider, window)`, `ErrNoProvider`, `ErrNoWindow`. `Read` now calls it with `claude`/`seven_day`. The old sentinel names are aliases, so existing callers and tests are untouched.
+- Tests `TestReadProviderCodexWeekly` and `TestReadProviderMissing` failed to compile before the change and pass after.
+- `ErrInvalidPercent` text still says "seven_day"; left as is, T030 did not name it.
+- Ran gofmt, build, vet, test, golangci-lint: all clean. tmux, quickstart and k8s checks not applicable.
+- Left: T031 onward.

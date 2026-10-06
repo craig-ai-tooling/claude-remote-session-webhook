@@ -240,3 +240,47 @@ func TestDefaultCachePathFallsBackToDotCache(t *testing.T) {
 		t.Errorf("DefaultCachePath() = %q; want %q — the same fallback quota-axi's own cacheDirPath() uses", got, want)
 	}
 }
+
+const codexCache = `{"generatedAt":"2026-10-06T18:00:00.000Z","schemaVersion":2,"providers":[` +
+	`{"provider":"claude","windows":[{"id":"seven_day","percentUsed":10}],"state":{"stale":false,"refreshedAt":"2026-10-06T17:00:00.000Z"}},` +
+	`{"provider":"codex","windows":[` +
+	`{"id":"five_hour","kind":"session","percentUsed":7},` +
+	`{"id":"weekly","kind":"weekly","percentUsed":42,"resetsAt":"2026-10-10T04:00:00+00:00"}` +
+	`],"state":{"stale":true,"refreshedAt":"2026-10-06T17:30:00.000Z"}}]}`
+
+// TestReadProviderCodexWeekly must fail when ReadProvider does not exist or
+// reads the claude provider's window instead of the codex one.
+func TestReadProviderCodexWeekly(t *testing.T) {
+	t.Parallel()
+
+	got, err := quota.ReadProvider(cacheWith(t, codexCache), "codex", "weekly")
+	if err != nil {
+		t.Fatalf("ReadProvider codex weekly: %v", err)
+	}
+	if got.PercentUsed != 42 {
+		t.Errorf("PercentUsed = %d; want 42", got.PercentUsed)
+	}
+	if got.ResetsAt != "2026-10-10T04:00:00+00:00" {
+		t.Errorf("ResetsAt = %q; want the codex weekly window's own", got.ResetsAt)
+	}
+	if got.RefreshedAtRaw != "2026-10-06T17:30:00.000Z" {
+		t.Errorf("RefreshedAtRaw = %q; want the codex provider's refreshedAt", got.RefreshedAtRaw)
+	}
+	if !got.Stale {
+		t.Errorf("Stale = false; the codex provider's state.stale is true")
+	}
+}
+
+// TestReadProviderMissing must fail when a missing provider or window is not
+// the matching sentinel.
+func TestReadProviderMissing(t *testing.T) {
+	t.Parallel()
+
+	path := cacheWith(t, codexCache)
+	if _, err := quota.ReadProvider(path, "grok", "weekly"); !errors.Is(err, quota.ErrNoProvider) {
+		t.Errorf("missing provider: err = %v; want ErrNoProvider", err)
+	}
+	if _, err := quota.ReadProvider(path, "codex", "seven_day"); !errors.Is(err, quota.ErrNoWindow) {
+		t.Errorf("missing window: err = %v; want ErrNoWindow", err)
+	}
+}

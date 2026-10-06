@@ -35,7 +35,7 @@ tasks.md narrows this further.
 ## Tasks
 
 - [x] **T034** Spike: why quota-axi says auth_required for Codex. Done when `grep -n '^| M19 ' specs/019-codex-runtime/research.md` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T034.
-- [ ] **T030** quota.ReadProvider. Done when `go test ./internal/quota/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T030.
+- [x] **T030** quota.ReadProvider. Done when `go test ./internal/quota/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T030.
 - [ ] **T031** Quota route harness parameter. Done when `go test ./internal/httpapi/... -run Quota` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T031.
 - [ ] **T032** Codex meter in the header. Done when `go test ./internal/httpapi/... -run 'Header|Quota'` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T032.
 - [ ] **T033** Docs and the full gate. Done when `go test -tags quickstart ./cmd/crswd` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T033.
