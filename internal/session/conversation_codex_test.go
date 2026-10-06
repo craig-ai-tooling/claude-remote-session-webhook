@@ -286,7 +286,7 @@ func readCodexMetaAt(path string) (id, cwd string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
-	defer f.Close() //nolint:errcheck // read-only
+	defer f.Close() //nolint:errcheck,gosec // read-only
 	return readCodexMeta(f)
 }
 
@@ -294,7 +294,7 @@ func readCodexMetaAt(path string) (id, cwd string, ok bool) {
 func codexRollout(root, path string) bool {
 	f, ok := openCodexRollout(root, path)
 	if ok {
-		_ = f.Close()
+		f.Close() //nolint:errcheck,gosec // read-only
 	}
 	return ok
 }
@@ -557,7 +557,7 @@ func TestOpenCodexRolloutLeafSwappedAfterOpen(t *testing.T) {
 		}
 	})
 	if ok {
-		defer f.Close() //nolint:errcheck // read-only
+		defer f.Close() //nolint:errcheck,gosec // read-only
 		if gotID, _, _ := readCodexMeta(f); gotID == codexTestID(9) {
 			t.Fatal("the rollout read was the swapped-in outside file")
 		}

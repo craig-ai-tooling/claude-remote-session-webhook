@@ -38,7 +38,8 @@ func codexConversations(sessionsDir, workDir string) []Conversation {
 	examined := 0
 
 	// A walk that runs out of its entry budget keeps what it has found.
-	_ = walkCodexRollouts(sessionsDir, func(day string, e os.DirEntry, nameID string) bool {
+	//nolint:errcheck,gosec // ErrDiscoveryBounds here means "stop", and the partial list is the answer.
+	walkCodexRollouts(sessionsDir, func(day string, e os.DirEntry, nameID string) bool {
 		if examined >= codexScanLimit {
 			return true
 		}
@@ -49,7 +50,7 @@ func codexConversations(sessionsDir, workDir string) []Conversation {
 			return false
 		}
 		id, cwd, ok := readCodexMeta(f)
-		_ = f.Close()
+		f.Close() //nolint:errcheck,gosec // read-only
 		if !ok || id != nameID || !isConversationID(id) || cwd != workDir {
 			return false
 		}
@@ -109,7 +110,7 @@ func readCodexDir(dir string, budget *int, keep func(os.DirEntry)) error {
 	if err != nil {
 		return nil //nolint:nilerr // an unreadable directory has nothing to list
 	}
-	defer f.Close() //nolint:errcheck // read-only
+	defer f.Close() //nolint:errcheck,gosec // read-only
 	for {
 		entries, err := f.ReadDir(codexReadChunk)
 		for _, e := range entries {
@@ -251,7 +252,7 @@ func openCodexRolloutHook(sessionsDir, path string, afterOpen func()) (*os.File,
 	if codexDescriptorInside(f, sessionsDir, path) {
 		return f, true
 	}
-	_ = f.Close()
+	f.Close() //nolint:errcheck,gosec // read-only
 	return nil, false
 }
 

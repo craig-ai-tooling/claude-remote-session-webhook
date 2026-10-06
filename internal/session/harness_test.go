@@ -718,7 +718,9 @@ func TestSessionOperationsWaitForTheLifecycleLock(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				_ = op(f, sess)
+				if err := op(f, sess); err != nil {
+					t.Logf("%s returned %v", name, err)
+				}
 			}()
 			held := blockedWithin(done)
 			unlock()
