@@ -64,6 +64,17 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: the fleet grid still captures no panes, so a Codex session needing sign-in reads `running` there until its own page is opened. Same scope cut as Claude (`TestTheFleetGridDoesNotYetCheckPanesForALogin`).
 - Left: T024 to T026.
 
+## Iteration 7 (T024, 10/6/26)
+
+- `signin.go`: the three POST routes and `GET /dashboard/signin/view` read the harness with `parseHarness`; a bad value gets `rejectBadRequest(errHarnessParam)` before any relay or cache is touched. Handlers use `s.signins[h]`; a new `invalidateAuth(h)` guards the nil Codex cache.
+- `signInPanel` gained `Harness`, `DeviceURL`, `Code`. `signInPanelFor` takes `h` and fills the Codex fields from `State.Device`.
+- `POST /dashboard/signin/code` with `harness=codex` records `errSignInCodeNotTaken` and redirects with the refused outcome (no 409). `redirectSignIn(w, r, code, h)` writes `signin=codex` for Codex, `signin=open` for Claude.
+- `signin-panel.html`: separate Codex block (link, `<code>` code, waiting line, cancel/start forms, no code form, no "Claude"). Every form in both blocks carries the hidden `harness` field. No new CSS class.
+- Tests written first (nine Codex/SignIn tests plus two extras: `TestCodexRouteWithoutARelayIsRefused`, `TestCodexPanelWaitsWhileTheScreenDraws`, `TestCodexSignInViewReadsTheCodexRelay`); they failed to compile before the change, then passed. No existing test needed editing.
+- Not run: `-tags tmux`, `-tags quickstart`, `k8s/` checks (task touched none of them).
+- Not fixed: `crswd.js` still fetches `/dashboard/signin/view` with no harness and does not read `signin=codex`, so the Codex dialog has no way to open from the browser yet. T025 does that.
+- Left: T025 to T026.
+
 ## NEEDS CLARIFICATION
 
 (none yet)

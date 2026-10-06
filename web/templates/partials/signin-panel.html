@@ -28,7 +28,42 @@
   vocabulary docs/components.md exists to prevent.
 */}}<div data-auth-state="{{ .AuthState }}" data-signin-running="{{ if .Running }}true{{ else }}false{{ end }}">
 
-{{ if not .Available }}<p class="settings-note">This host has no sign-in relay. The configured start command names no runnable program, so there is nothing for this daemon to run <code>auth login</code> with. Fix <code>start_command</code> and restart.</p>{{ else }}
+{{ if eq .Harness "codex" }}{{/*
+  Codex's own block (spec 019, D12). A separate block rather than branches
+  inside Claude's because the flow differs in kind: Codex shows a link and a
+  one-time code and the operator types the code into OpenAI's page, so this
+  block has no code form and nothing for the daemon to carry back. Its words
+  are its own and never say the other product's name. Same classes as the
+  Claude block, no new ones, and the same rel on the link.
+*/}}{{ if not .Available }}<p class="settings-note">This host has no Codex sign-in relay. The configured <code>codex</code> start command names no runnable program, so there is nothing for this daemon to run <code>login</code> with. Fix it and restart.</p>{{ else }}
+
+{{ if eq .SignedIn nil }}<p class="settings-note">This daemon could not ask whether Codex is signed in on this host. That is a fault on the host rather than an answer, so check the daemon's own output.</p>
+{{ else if .SignedInTrue }}<p class="settings-note">Codex <strong>is signed in</strong> on this host. Every Codex session shares this one login, so there is nothing to do here unless it stops working.</p>
+{{ else }}<p class="settings-note">Codex is <strong>not signed in</strong> on this host. Every Codex session shares this one login, so none of them can make a request until it is. Press the button below to start one.</p>{{ end }}
+
+{{ if .Running }}{{ if and .DeviceURL .Code }}<p class="settings-note">Open this link, sign in, and enter the one-time code below on that page. Nothing needs to be pasted back here.</p>
+<p class="signin-link"><a href="{{ .DeviceURL }}" rel="noopener noreferrer" target="_blank">Open the Codex sign-in</a></p>
+<p class="settings-note">One-time code: <code>{{ .Code }}</code></p>
+{{ else }}<p class="settings-note">A sign-in is starting. The link and code appear here once Codex has drawn them. Reload this page in a moment.</p>{{ end }}
+<p class="settings-note">Waiting for the sign-in to finish. The header updates by itself once it does.</p>
+
+{{ if .Token }}<form method="post" action="/dashboard/signin/cancel">
+<input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<input type="hidden" name="harness" value="{{ .Harness }}">
+<button class="button" type="submit">Cancel this sign-in</button>
+<p class="update-caution">Ends the sign-in window on the host. The code it is waiting for stops working, and nothing on this host is signed in or out by pressing it.</p>
+</form>{{ end }}
+
+{{ else }}{{ if .Token }}<form method="post" action="/dashboard/signin">
+<input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<input type="hidden" name="harness" value="{{ .Harness }}">
+<input type="hidden" name="confirm" value="yes">
+<button class="button" type="submit">Start a sign-in</button>
+<p class="update-caution">Runs Codex's own device-code login in a window of its own on this host. It touches none of your sessions, and nothing changes until you enter the code it shows on OpenAI's page.</p>
+</form>{{ end }}{{ end }}
+
+{{ end }}
+{{ else }}{{ if not .Available }}<p class="settings-note">This host has no sign-in relay. The configured start command names no runnable program, so there is nothing for this daemon to run <code>auth login</code> with. Fix <code>start_command</code> and restart.</p>{{ else }}
 
 {{/*
   What this host's credential is, asked of the CLI rather than read off a screen.
@@ -55,6 +90,7 @@
 
 {{ if .Token }}<form method="post" action="/dashboard/signin/code">
 <input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<input type="hidden" name="harness" value="claude">
 <label class="field-label" for="signin-code">Code from the sign-in page</label>
 {{/*
   autocomplete, autocapitalize and spellcheck are all off. This is a credential
@@ -66,16 +102,18 @@
 
 <form method="post" action="/dashboard/signin/cancel">
 <input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<input type="hidden" name="harness" value="claude">
 <button class="button" type="submit">Cancel this sign-in</button>
 <p class="update-caution">Ends the sign-in window on the host. The code it is waiting for stops working, and nothing on this host is signed in or out by pressing it.</p>
 </form>{{ end }}
 
 {{ else }}{{ if .Token }}<form method="post" action="/dashboard/signin">
 <input type="hidden" name="crsw_page_token" value="{{ .Token }}">
+<input type="hidden" name="harness" value="claude">
 <input type="hidden" name="confirm" value="yes">
 <button class="button" type="submit">Start a sign-in</button>
 <p class="update-caution">Runs Claude Code's own login in a window of its own on this host. It touches none of your sessions — it cannot, it is not one — and nothing changes until you paste back a code.</p>
 </form>{{ end }}{{ end }}
 
-{{ end }}
+{{ end }}{{ end }}
 </div>
