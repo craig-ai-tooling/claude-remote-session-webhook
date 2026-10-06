@@ -22,3 +22,11 @@ app.kubernetes.io/component: {{ .component }}
 app.kubernetes.io/part-of: crswd
 helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end -}}
+
+{{/* Refuses the installs FR-009, FR-010 and FR-013 forbid. Included once, from daemon.yaml. */}}
+{{- define "crswd.validate" -}}
+{{- if eq (include "crswd.reconcilerNamespace" .) .Release.Namespace -}}
+{{- fail (printf "reconciler.namespace %q equals the release namespace: the daemon holds pods/exec there and the reconciler creates the session pods there. Use a different namespace (the default is <release namespace>-reconciler)" .Release.Namespace) -}}
+{{- end -}}
+{{- $_ := required "sessionNode is required: the node that holds the ReadWriteOnce claim, so every session pod runs on it (--set sessionNode=<node>)" .Values.sessionNode -}}
+{{- end -}}

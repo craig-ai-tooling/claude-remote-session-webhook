@@ -118,15 +118,23 @@ Values:
 | `sharedSecret.existingSecret` | none, required | HMAC secret for the API |
 | `dashboardPassword.existingSecret` | none | the password door, no Access |
 | `startCommands` | Claude Code and `codex` | `CRSW_START_COMMANDS`, both runtimes (FR-021) |
-| `sessionNode` | none | the amd64 node that holds the claim |
+| `sessionNode` | none, required | the amd64 node that holds the claim; every session pod runs there |
 | `claudeCredentials.secretName`, `codexAuth.secretName` | `claude-credentials`, `codex-auth` | per-namespace logins (FR-022) |
 | `allowedRoots` | `/work` | `CRSW_ALLOWED_ROOTS` |
 | `maxSessions` | `10` | `CRSW_MAX_SESSIONS` |
 | `storage.storageClassName`, `storage.size` | `linstor-replicated`, `50Gi` | the claim `crswd-sessions` |
 | `nodeSelector`, `tolerations` | none, the DRBD lost-quorum toleration | daemon pod placement |
 | `service.enabled`, `service.port` | `false`, `8765` | ClusterIP Service, and the listener moves to `0.0.0.0` |
-| `access.teamDomain`, `access.aud`, `access.allowedEmails` | none | the Cloudflare Access door |
-| `cloudflared.enabled`, `cloudflared.image`, `cloudflared.tokenSecret` | `false`, pinned image, none | tunnel sidecar over loopback |
+| `access.teamDomain`, `access.aud`, `access.allowedEmailsSecret.name`, `access.allowedEmailsSecret.key` | none | the Cloudflare Access door; the allow list is read from an existing Secret, never a literal value |
+| `cloudflared.enabled`, `cloudflared.image`, `cloudflared.tokenSecret` | `false`, image pinned by digest, none | tunnel sidecar over loopback |
+
+`reconciler.namespace` must differ from the release namespace, and `sessionNode` must be set;
+the chart fails at render time otherwise.
+
+To bump cloudflared, look up the digest of the new tag with
+`docker buildx imagetools inspect docker.io/cloudflare/cloudflared:<tag>`, then set
+`cloudflared.image` to `docker.io/cloudflare/cloudflared@sha256:<digest>` in
+`deploy/chart/values.yaml` and keep the tag in the comment beside it.
 
 `service.enabled` fails at render time unless `access.teamDomain` or
 `dashboardPassword.existingSecret` is set, because the daemon refuses a non-loopback listener
@@ -135,7 +143,7 @@ with no browser door.
 ```
 kubectl create namespace crswd
 kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
-helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret
+helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode=<node>
 helm upgrade crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --reuse-values
 helm uninstall crswd -n crswd
 ```

@@ -1,3 +1,4 @@
+{{- include "crswd.validate" . }}
 {{- $_ := required "sharedSecret.existingSecret is required (a Secret with key secret: openssl rand -hex 32)" .Values.sharedSecret.existingSecret }}
 {{- if and .Values.service.enabled (not .Values.access.teamDomain) (not .Values.dashboardPassword.existingSecret) }}{{ fail "service.enabled needs a browser door: set access.* or dashboardPassword.existingSecret" }}{{- end }}
 apiVersion: apps/v1
@@ -67,7 +68,10 @@ spec:
             - name: CRSW_ACCESS_AUD
               value: {{ .Values.access.aud | quote }}
             - name: CRSW_ACCESS_ALLOWED_EMAILS
-              value: {{ .Values.access.allowedEmails | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "access.allowedEmailsSecret.name is required with access.teamDomain: the allow list is a secret and comes from an existing Secret" .Values.access.allowedEmailsSecret.name | quote }}
+                  key: {{ required "access.allowedEmailsSecret.key is required with access.teamDomain" .Values.access.allowedEmailsSecret.key | quote }}
             {{- end }}
         {{- if .Values.cloudflared.enabled }}
         - name: cloudflared

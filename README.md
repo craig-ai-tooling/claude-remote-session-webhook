@@ -416,7 +416,7 @@ and `helm` 3.
 ```bash
 kubectl create namespace crswd
 kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
-helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret
+helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode=<node>
 kubectl -n crswd port-forward deploy/crswd 8765
 ```
 
@@ -428,7 +428,7 @@ adds a ClusterIP Service, and the chart refuses it unless a browser door is conf
 - **Both runtimes are on by default.** `startCommands` offers a Claude Code entry and a
   `codex` entry. Codex in a pod signs in with the namespace's own `codex-auth` Secret, never a
   copy of a host's `~/.codex/auth.json`.
-- **`sessionNode`** is the amd64 node that holds the claim. The session image is amd64 only
+- **`sessionNode`** is required: the amd64 node that holds the claim. The session image is amd64 only
   and the claim is `ReadWriteOnce`, so every session pod runs there.
 - **Upgrade** with `helm upgrade`. The dashboard's Update button is off in this mode.
 - **Uninstall** with `helm uninstall`. The `crswd-sessions` claim is kept, so every conversation

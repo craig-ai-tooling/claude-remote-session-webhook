@@ -13,7 +13,7 @@ sharedSecret:
 dashboardPassword:
   existingSecret: "" # optional: a Secret with key "password"; the browser door without Access
 startCommands: "default=claude --dangerously-skip-permissions,codex=/usr/local/bin/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust" # both runtimes, one entry each
-sessionNode: ""      # the node that holds the claim (RWO) and is amd64; FR-008 sets lm-amd64-1
+sessionNode: ""      # required: the amd64 node that holds the claim (RWO); every session pod runs there (FR-010)
 claudeCredentials:
   secretName: claude-credentials # the namespace's Claude Code sign-in Secret
 codexAuth:
@@ -34,8 +34,10 @@ service:
 access:
   teamDomain: ""     # Cloudflare Access team domain; setting it selects the Access door
   aud: ""            # the Access application audience tag
-  allowedEmails: ""  # comma-separated addresses the Access door admits
+  allowedEmailsSecret: # a Secret holding the comma-separated addresses the Access door admits; required with teamDomain
+    name: ""
+    key: ""
 cloudflared:
   enabled: false     # run a cloudflared sidecar beside the daemon
-  image: docker.io/cloudflare/cloudflared:2026.10.0 # the sidecar image
+  image: docker.io/cloudflare/cloudflared@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07 # 2026.10.0; the sidecar image, bump per docs/k8s-mode.md
   tokenSecret: ""    # a Secret with key "token"
