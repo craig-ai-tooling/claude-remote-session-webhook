@@ -18,3 +18,4 @@ Notebook for `ralph/plans/codex-quota`. Each iteration appends below.
 ## NEEDS CLARIFICATION
 
 (none yet)
+BLOCKED: T034 needs `quota-axi --provider codex --full` and `quota-axi auth`, and this session is refused approval to run quota-axi; run both by hand or allow them, then edit the M19 row in place
