@@ -1,13 +1,18 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 )
 
 const (
@@ -47,6 +52,106 @@ func writeRollout(t *testing.T, root, day, stamp, nameID, content string) string
 		t.Fatal(err)
 	}
 	return p
+}
+
+// plantCodexRollout lays a one-line rollout for id under home/sessions, in the
+// directory layout Codex writes, and returns its path.
+func plantCodexRollout(t *testing.T, home, id, cwd string) string {
+	t.Helper()
+	return writeRollout(t, filepath.Join(home, "sessions"), "2026/10/06", "2026-10-06T00-11-13", id, codexMetaLine(t, id, cwd, 0))
+}
+
+func TestConversationsForDispatch(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	home := t.TempDir()
+	f.mgr.SetCodexHome(home)
+	id := codexTestID(7)
+	plantCodexRollout(t, home, id, f.repo())
+
+	tests := []struct {
+		name string
+		h    harness.Name
+		want int
+	}{
+		{"codex reads rollouts", harness.Codex, 1},
+		{"claude reads its own history, none planted", harness.Claude, 0},
+		{"other has no conversations", harness.Other, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := f.mgr.ConversationsFor(tc.h, f.repo())
+			if len(got) != tc.want {
+				t.Fatalf("ConversationsFor(%q) returned %d conversations, want %d", tc.h, len(got), tc.want)
+			}
+			if tc.h == harness.Codex && got[0].ID != id {
+				t.Errorf("ConversationsFor(codex) ID = %q, want %q", got[0].ID, id)
+			}
+		})
+	}
+
+	t.Run("codex with no home", func(t *testing.T) {
+		t.Parallel()
+		bare := newManagerFixture(t)
+		if got := bare.mgr.ConversationsFor(harness.Codex, bare.repo()); got != nil {
+			t.Errorf("ConversationsFor(codex) with no codex home = %v, want nil", got)
+		}
+	})
+}
+
+func TestContinueOtherRefusedEarly(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	f.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: claudeStartCommand,
+		"shell":                        "bash",
+	}))
+	req := f.request()
+	req.StartCommand = "shell"
+	s, _ := mustCreate(t, f, req)
+	before := len(f.tmux.Calls())
+
+	_, err := f.mgr.Continue(context.Background(), *s, harnessTestConversation)
+	if !errors.Is(err, ErrInvalidResume) {
+		t.Fatalf("Continue() error = %v, want ErrInvalidResume", err)
+	}
+	if got := f.tmux.Calls()[before:]; len(got) != 0 {
+		t.Errorf("Continue() made %d tmux calls on a session that cannot resume, want 0", len(got))
+	}
+	stored, getErr := f.store.Get(s.ID, s.Owner)
+	if getErr != nil {
+		t.Fatalf("Get() unexpected error: %v", getErr)
+	}
+	if stored.ConversationID != s.ConversationID {
+		t.Errorf("store ConversationID = %q, want %q", stored.ConversationID, s.ConversationID)
+	}
+}
+
+func TestContinueCodexChecksCodexTranscript(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	f.mgr.SetCodexHome(t.TempDir())
+	before := len(f.tmux.Calls())
+
+	// A Claude transcript for the same identifier must not satisfy a Codex session.
+	_, err := f.mgr.Continue(context.Background(), *s, harnessTestConversation)
+	if !errors.Is(err, ErrInvalidResume) {
+		t.Fatalf("Continue() error = %v, want ErrInvalidResume with no rollout on disk", err)
+	}
+	if got := f.tmux.Calls()[before:]; len(got) != 0 {
+		t.Errorf("Continue() made %d tmux calls with no transcript, want 0", len(got))
+	}
+	if f.mgr.hasTranscriptFor(*s, harnessTestConversation) {
+		t.Error("hasTranscriptFor() true with no rollout")
+	}
+	plantCodexRollout(t, f.mgr.codexHome, harnessTestConversation, s.WorkDir)
+	if !f.mgr.hasTranscriptFor(*s, harnessTestConversation) {
+		t.Error("hasTranscriptFor() false with a rollout planted")
+	}
 }
 
 func TestCodexConversations(t *testing.T) {

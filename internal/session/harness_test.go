@@ -456,7 +456,9 @@ func continueFixture(t *testing.T) (managerFixture, *Session, *Journal) {
 	f.mgr.sleep = noSleep
 	j := tempJournal(t)
 	f.mgr.SetJournal(j)
-	conversationHome(t, s.WorkDir, map[string]time.Time{harnessTestConversation + ".jsonl": {}})
+	home := t.TempDir()
+	f.mgr.SetCodexHome(home)
+	plantCodexRollout(t, home, harnessTestConversation, s.WorkDir)
 	return f, s, j
 }
 

@@ -195,7 +195,7 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 	if sess.ConversationID == "" {
 		return s.giveUp(sess, reasonNoConversation)
 	}
-	if !s.mgr.HasTranscript(sess.ConversationID, sess.WorkDir) {
+	if !s.mgr.hasTranscriptFor(sess, sess.ConversationID) {
 		return s.giveUp(sess, reasonNoTranscript)
 	}
 	// The cap covers a recreate, which adds a shell to the host. A revive in

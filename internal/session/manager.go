@@ -2562,6 +2562,12 @@ func (m *Manager) releaseRestart(id string) {
 // Written after, the same crash leaves a session running a conversation nothing
 // has recorded.
 func (m *Manager) Continue(ctx context.Context, s Session, conversationID string) (Session, error) {
+	// Before any store, option, journal or pane change: a harness with no resume
+	// flag has nothing to continue into, and finding that out after the quit
+	// would already have interrupted a working pane.
+	if harness.For(m.specOf(s).Name).ResumeArgs == nil {
+		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, ErrInvalidResume)
+	}
 	// Validated before anything else, because the value is caller-supplied and
 	// its next stop is a command line typed into a live shell. ResumeLatest no
 	// longer exists, so "latest" fails here exactly as any other unrecognised
@@ -2590,7 +2596,7 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 	// Resuming an identifier with no transcript behind it does not fail — it
 	// starts something that is not the conversation the operator asked for, which
 	// is worse than refusing.
-	if !m.HasTranscript(checked, s.WorkDir) {
+	if !m.hasTranscriptFor(s, checked) {
 		return Session{}, fmt.Errorf("continue session %s: %w: there is no such conversation on this host", s.ID, ErrInvalidResume)
 	}
 

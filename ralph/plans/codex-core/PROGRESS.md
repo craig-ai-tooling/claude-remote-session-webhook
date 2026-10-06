@@ -147,3 +147,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Also for the retry: `TestConversationsForDispatch`'s Claude row must use `f.repo()` as the work dir, not `/work/proj`, because `Conversations` resolves the directory against the approved roots and `/work/proj` is outside them. That is inside T010b's Files and needs no decision.
 
 - Operator (CS, 2026-10-06): T010b may edit `continueFixture` in `internal/session/harness_test.go` as suggested (Codex rollout via `plantCodexRollout`). T010b unblocked.
+
+## Iteration 17 (T010b)
+
+- Wrote `TestConversationsForDispatch`, `TestContinueOtherRefusedEarly` and `TestContinueCodexChecksCodexTranscript` first, plus the `plantCodexRollout` helper in `conversation_codex_test.go`; they failed to compile on the old code. Then added `Manager.ConversationsFor` and `hasTranscriptFor` (exhaustive switches, no Claude fall-through) in `conversation.go`, replaced the calls in `supervisor.go` and `Continue`, and put the `ResumeArgs == nil` guard first in `Continue`, ahead of any store, option, journal or pane change.
+- `continueFixture` (`harness_test.go`) now plants a Codex rollout through `plantCodexRollout`, per the operator decision; the two T009 Continue tests pass on it.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Nothing outside the session package calls `ConversationsFor` yet; T014/T015 consume it. `Conversations` and `HasTranscript` are unchanged.
+- Left: T011 onward. No findings unfixed.

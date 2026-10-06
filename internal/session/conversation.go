@@ -282,6 +282,41 @@ func projectDirFor(workDir string) string {
 	}, workDir)
 }
 
+// ConversationsFor lists the conversations the host holds for workDir under
+// one harness. The switch names every harness and falls through to nothing: a
+// harness added later must say where its history lives, because defaulting to
+// Claude's directory would list another tool's conversations as resumable.
+func (m *Manager) ConversationsFor(h harness.Name, workDir string) []Conversation {
+	switch h {
+	case harness.Claude:
+		return m.Conversations(workDir)
+	case harness.Codex:
+		if m.codexHome == "" {
+			return nil
+		}
+		return codexConversations(filepath.Join(m.codexHome, "sessions"), workDir)
+	case harness.Other:
+		return nil
+	default:
+		return nil
+	}
+}
+
+// hasTranscriptFor asks the session's own harness whether the conversation is
+// still on the host, for the same reason ConversationsFor does.
+func (m *Manager) hasTranscriptFor(s Session, id string) bool {
+	switch m.specOf(s).Name {
+	case harness.Claude:
+		return m.HasTranscript(id, s.WorkDir)
+	case harness.Codex:
+		return m.codexHome != "" && codexHasTranscript(filepath.Join(m.codexHome, "sessions"), id, s.WorkDir)
+	case harness.Other:
+		return false
+	default:
+		return false
+	}
+}
+
 // HasTranscript reports whether a conversation this daemon recorded still has a
 // transcript on the host (spec 012, FR-014).
 //
