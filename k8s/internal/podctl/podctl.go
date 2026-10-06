@@ -14,6 +14,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/api/v1alpha1"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/sessionpod"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/agentsession"
 	"k8s.io/client-go/kubernetes"
 )
@@ -54,6 +55,8 @@ type Config struct {
 	StreamIdle   time.Duration
 	Now          func() time.Time
 }
+
+var _ tmuxctl.Controller = (*Controller)(nil)
 
 // Controller implements tmuxctl.Controller over pod exec.
 type Controller struct {

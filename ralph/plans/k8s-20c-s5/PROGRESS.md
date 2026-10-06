@@ -130,3 +130,13 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - Behaviour: the replay writes only options whose annotation exists (owner, name, workdir, start, lifetime, conversation, binary, width), then `@crswd-managed` last. Any failure on one pod (pod get, exec, parse, replay, second list) leaves that row as the annotation base row with `LivenessUnknown`; only `sessions.List` fails `List`. Repair runs only when the base row is managed. A Running pod being deleted is not asked.
 - For T10: `seqList` and `listRow`/`annotations` helpers are in `list_test.go`; `r.setOptions()` and `r.listCalls()` hang off `rig` there.
 - Nothing noticed to fix.
+
+## T10: podctl CodexConversation, HasTranscript, Controller assertion
+
+- Added `k8s/internal/podctl/inpod.go` (both methods) and `inpod_test.go`; `var _ tmuxctl.Controller = (*Controller)(nil)` is in `podctl.go`.
+- Failing first: `go test . -run 'CodexConversation|HasTranscript'` in `k8s/internal/podctl` failed by not compiling: `r.c.CodexConversation undefined (type *Controller has no field or method CodexConversation)`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Behaviour: `CodexConversation` empty stdout is `"", nil`; a non-UUID is an error that does not carry the value; `HasTranscript` exit 0 true, exit 1 `false, nil`, any other exit or a transport error is `false, err`.
+- For S7: the pod's `crswd codex-conversation <name>` runs `sessionpod.CodexConversation(ctx, <real exec>, name, "/proc", session.CodexHome(os.Environ()))`, and `crswd has-transcript <name> <harness> <id> <workdir>` runs `sessionpod.HasTranscript(harness.Name(h), id, workdir, os.Environ())`, exiting 0 when true and 1 when false. Wire `mgr.SetCodexConversationFinder(func(ctx, s) { return ctl.CodexConversation(ctx, s.TmuxName()) })`.
+- Sandbox note: an absolute `go -C <path>` is refused; use `go -C k8s ...` from the repo root. A stray `cd` into a subdirectory breaks the allowlist for later commands.
+- Nothing noticed to fix.
