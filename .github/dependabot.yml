@@ -30,3 +30,18 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+
+  # The cluster module carries client-go by design (spec 017, decision 1
+  # option A); the root list above stays stdlib-only. Dependabot fails on a
+  # directory that does not exist, so this lands with k8s/go.mod.
+  - package-ecosystem: gomod
+    directory: "/k8s"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
