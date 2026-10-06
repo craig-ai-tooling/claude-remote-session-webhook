@@ -29,7 +29,7 @@ Take the topmost open task. One per iteration.
 - [x] T4: Namespaces, ServiceAccounts and RBAC templates per Design §4. Verify: `helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s` exits 0 and `go test -run ChartRBAC ./deploy/chart -v` passes.
 - [x] T5: The claim, the two Deployments, the optional Service and the optional cloudflared sidecar per Design §5. Verify: `helm lint deploy/chart --set sharedSecret.existingSecret=s` exits 0, `helm template t deploy/chart -n crswd` exits non-zero, and `go test ./deploy/chart -v` passes.
 - [x] T6: CI renders the chart, and a workflow publishes images and the chart, per Design §6. Verify: `grep -c 'helm lint deploy/chart' .github/workflows/ci.yml` prints `1` and `grep -c 'packages: write' .github/workflows/images.yml` prints `1`.
-- [ ] T7: README "Install on Kubernetes" and the Helm section of `docs/k8s-mode.md` per Design §7. Verify: `go test ./internal/release/ ./internal/config/` exits 0 and `grep -c '^## Install on Kubernetes' README.md` prints `1`.
+- [x] T7: README "Install on Kubernetes" and the Helm section of `docs/k8s-mode.md` per Design §7. Verify: `go test ./internal/release/ ./internal/config/` exits 0 and `grep -c '^## Install on Kubernetes' README.md` prints `1`.
 - [ ] T8: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && helm lint deploy/chart` exits 0.
 
 ## Files touched

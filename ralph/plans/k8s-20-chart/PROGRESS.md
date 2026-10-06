@@ -161,3 +161,16 @@ Next iteration would waste time on:
 
 Noticed, not fixed: `images.yml` builds the session image's `crswd` from the same `-X main.version`
 build as the daemon, so session pods report the same version as the daemon. Intended, not a problem.
+
+## Iteration 7 (T7, README and docs/k8s-mode.md)
+
+Done: README gains `## Install on Kubernetes` directly before `## The two doors`, plus one sentence at the top of `## Install` pointing at it. `docs/k8s-mode.md` gains `## Install with Helm` (Secrets table, values table, install/upgrade/uninstall) after the hand-install section, and the "until the chart exists" line now links to it.
+
+Failing first: `grep -c "^## Install on Kubernetes" README.md` printed `0` before the edit. After: prints `1`, and `go test ./internal/release/ ./internal/config/` exits 0 (the README tests needed no change).
+
+Next iteration would waste time on:
+- T8 is the last task: run each command in VALIDATION_CONTRACT.md, record each result here, then append `RALPH_COMPLETE`. Read VALIDATION_CONTRACT.md first.
+- `isms` asks for approval in the loop sandbox, so the new prose was not run through it. It avoids em-dashes and the banned sentence shapes by hand.
+- Gate steps 1 to 9 passed. Quickstart passed with 127.0.0.1:8765 free.
+
+Noticed, not fixed: the values table in docs/k8s-mode.md restates values.yaml by hand, so it can drift. No test covers it.
