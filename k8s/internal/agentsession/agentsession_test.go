@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/nctiggy/claude-remote-session-webhook/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -184,7 +186,11 @@ func TestUpdateStatusLeavesSpecAndAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := v1alpha1.AgentSessionStatus{Phase: v1alpha1.PhaseRunning, Reason: "up", Conversation: "c1"}
-	if err := c.UpdateStatus(ctx, "crswd-x", st); err != nil {
+	read, _, err := c.Get(ctx, "crswd-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.UpdateStatus(ctx, read, st); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 	got, _, err := c.Get(ctx, "crswd-x")
@@ -207,7 +213,11 @@ func TestUpdateChangesAnnotationsNotSpec(t *testing.T) {
 	if _, err := c.Create(ctx, in); err != nil {
 		t.Fatal(err)
 	}
-	err := c.Update(ctx, "crswd-x", func(o *v1alpha1.AgentSession) {
+	read, _, err := c.Get(ctx, "crswd-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = c.Update(ctx, read, func(o *v1alpha1.AgentSession) {
 		o.Metadata.Annotations["added"] = "yes"
 		o.Spec.Owner = "someone-else" // must never reach the server
 	})
@@ -229,10 +239,11 @@ func TestUpdateChangesAnnotationsNotSpec(t *testing.T) {
 func TestUpdateMissingIsError(t *testing.T) {
 	t.Parallel()
 	c := newClient(t)
-	if err := c.Update(context.Background(), "nope", func(*v1alpha1.AgentSession) {}); err == nil {
+	ghost := v1alpha1.AgentSession{Metadata: v1alpha1.ObjectMeta{Name: "nope"}}
+	if _, err := c.Update(context.Background(), ghost, func(*v1alpha1.AgentSession) {}); err == nil {
 		t.Fatal("Update of a missing object returned nil")
 	}
-	if err := c.UpdateStatus(context.Background(), "nope", v1alpha1.AgentSessionStatus{}); err == nil {
+	if err := c.UpdateStatus(context.Background(), ghost, v1alpha1.AgentSessionStatus{}); err == nil {
 		t.Fatal("UpdateStatus of a missing object returned nil")
 	}
 }
@@ -259,5 +270,41 @@ func TestDeletionTimestampSurvivesConversion(t *testing.T) {
 	}
 	if meta, _ := plain.Object["metadata"].(map[string]any); meta["deletionTimestamp"] != nil {
 		t.Fatal("an unset deletionTimestamp was written")
+	}
+}
+
+// A write computed from one object must never land on another.
+func TestWritesRefuseAnotherUIDOrVersion(t *testing.T) {
+	t.Parallel()
+	c := newClient(t)
+	ctx := context.Background()
+	in := sample("crswd-x")
+	in.Metadata.UID = "uid-b"
+	in.Metadata.ResourceVersion = "7"
+	if _, err := c.Create(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	for name, from := range map[string]v1alpha1.ObjectMeta{
+		"other uid":     {Name: "crswd-x", UID: "uid-a", ResourceVersion: "7"},
+		"other version": {Name: "crswd-x", UID: "uid-b", ResourceVersion: "6"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			st := v1alpha1.AgentSessionStatus{Phase: v1alpha1.PhaseRunning}
+			if err := c.UpdateStatus(ctx, v1alpha1.AgentSession{Metadata: from}, st); !apierrors.IsConflict(err) {
+				t.Errorf("UpdateStatus err = %v, want a conflict", err)
+			}
+			_, err := c.Update(ctx, v1alpha1.AgentSession{Metadata: from}, func(o *v1alpha1.AgentSession) { o.Metadata.Annotations["x"] = "y" })
+			if !apierrors.IsConflict(err) {
+				t.Errorf("Update err = %v, want a conflict", err)
+			}
+			got, _, err := c.Get(ctx, "crswd-x")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Status != (v1alpha1.AgentSessionStatus{}) || got.Metadata.Annotations["x"] != "" {
+				t.Errorf("a refused write changed the object: %+v", got)
+			}
+		})
 	}
 }

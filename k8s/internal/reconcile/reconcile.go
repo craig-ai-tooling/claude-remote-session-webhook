@@ -58,7 +58,7 @@ func (r *Reconciler) setStatus(ctx context.Context, obj v1alpha1.AgentSession, p
 	if want == obj.Status {
 		return nil
 	}
-	return r.sessions.UpdateStatus(ctx, obj.Metadata.Name, want)
+	return r.sessions.UpdateStatus(ctx, obj, want)
 }
 
 // ReconcileOne drives one object toward one pod. The first matching rule wins.
@@ -179,7 +179,7 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 		if err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("reconcile: delete pod %s: %w", name, err)
 		}
-		err = r.sessions.Update(ctx, name, func(o *v1alpha1.AgentSession) {
+		obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
 			if o.Metadata.Annotations == nil {
 				o.Metadata.Annotations = map[string]string{}
 			}
@@ -191,7 +191,8 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 		return r.setStatus(ctx, obj, v1alpha1.PhaseReviving, "")
 	case corev1.PodRunning:
 		if counted {
-			err := r.sessions.Update(ctx, name, func(o *v1alpha1.AgentSession) {
+			var err error
+			obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
 				delete(o.Metadata.Annotations, AnnotationRecreates)
 			})
 			if err != nil {

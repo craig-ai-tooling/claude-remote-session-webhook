@@ -9,6 +9,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/agentsession"
 	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/kube"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	"k8s.io/client-go/informers"
@@ -91,12 +92,23 @@ func (r *Reconciler) Run(ctx context.Context) error {
 		if quit {
 			return ctx.Err()
 		}
-		if err := r.ReconcileOne(ctx, name); err != nil {
-			queue.AddRateLimited(name)
-		} else {
-			queue.Forget(name)
-		}
+		finish(queue, name, r.ReconcileOne(ctx, name))
 		queue.Done(name)
+	}
+}
+
+// finish requeues name after a pass. A conflict means another writer got there
+// first, which is routine and not a failure: it is requeued at once and does not
+// grow the backoff. Anything else backs off.
+func finish(q workqueue.TypedRateLimitingInterface[string], name string, err error) {
+	switch {
+	case err == nil:
+		q.Forget(name)
+	case apierrors.IsConflict(err):
+		q.Forget(name)
+		q.Add(name)
+	default:
+		q.AddRateLimited(name)
 	}
 }
 
