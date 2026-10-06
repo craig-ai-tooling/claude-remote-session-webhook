@@ -470,14 +470,9 @@ func TestDeliverTrimsTheWhitespaceAPhonePasteCarries(t *testing.T) {
 
 // codexBin writes a fake codex at an absolute path under t.TempDir(), which is
 // not on PATH, that prints out and exits with code.
-func codexBin(t *testing.T, out string, code int) string {
-	t.Helper()
-	return codexBinTo(t, out, code, "")
-}
-
-// codexBinTo is codexBin with a choice of stream: redirect "" is stdout, ">&2"
-// is stderr, where the real `codex login status` prints "Not logged in".
-func codexBinTo(t *testing.T, out string, code int, redirect string) string {
+// codexBin writes a fake codex. redirect "" prints on stdout, ">&2" on stderr,
+// where the real `codex login status` prints "Not logged in".
+func codexBin(t *testing.T, out string, code int, redirect string) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "codex")
@@ -656,7 +651,7 @@ func TestCodexSignedIn(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			r := newCodexRelay(t, tmuxctl.NewFake(), codexBinTo(t, tc.out, tc.code, tc.to))
+			r := newCodexRelay(t, tmuxctl.NewFake(), codexBin(t, tc.out, tc.code, tc.to))
 			got, err := r.SignedIn(context.Background())
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
