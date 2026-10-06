@@ -294,3 +294,82 @@ func TestPressKeyRefusesAnUnknownKey(t *testing.T) {
 		t.Errorf("a refused key moved the record: %+v, want %+v", after, stored)
 	}
 }
+
+func TestHistoryStripsEscapes(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	f.tmux.SetHistory(s.TmuxName(), "\x1b[31mred\x1b[0m\n")
+
+	got, err := f.mgr.History(context.Background(), *s)
+	if err != nil {
+		t.Fatalf("History() unexpected error: %v", err)
+	}
+	if got.Text != "red\n" {
+		t.Errorf("History() text = %q, want %q", got.Text, "red\n")
+	}
+	if !got.At.Equal(f.now) {
+		t.Errorf("History() at = %v, want %v", got.At, f.now)
+	}
+}
+
+func TestHistoryDoesNotRecordTheDriving(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	stored := mustStored(t, f, s.ID)
+
+	mgr := f.managerAt(t, f.store, f.now.Add(time.Hour))
+	if _, err := mgr.History(context.Background(), *s); err != nil {
+		t.Fatalf("History() unexpected error: %v", err)
+	}
+	if after := mustStored(t, f, s.ID); after != stored {
+		t.Errorf("reading history moved the record: %+v, want %+v", after, stored)
+	}
+}
+
+func TestHistoryPassesTheBoundThrough(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	f.tmux.FailOp(tmuxctl.OpCaptureHistory, tmuxctl.ErrHistoryTooLarge)
+
+	if _, err := f.mgr.History(context.Background(), *s); !errors.Is(err, tmuxctl.ErrHistoryTooLarge) {
+		t.Fatalf("History() = %v, want ErrHistoryTooLarge", err)
+	}
+	// mustStored fails the test if the record is gone.
+	mustStored(t, f, s.ID)
+}
+
+func TestHistoryRefusesWhatItCannotRead(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	live, _ := mustCreate(t, f, f.request())
+	dead := *live
+	dead.State = StateDead
+
+	cases := map[string]struct {
+		session Session
+		want    error
+	}{
+		"a dead session":      {dead, ErrSessionDead},
+		"a record with no id": {Session{Owner: auth.CallerOperator, State: StateStarting}, ErrSessionNotFound},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			before := len(f.tmux.Calls())
+			if _, err := f.mgr.History(context.Background(), c.session); !errors.Is(err, c.want) {
+				t.Fatalf("History() = %v, want %v", err, c.want)
+			}
+			if after := len(f.tmux.Calls()); after != before {
+				t.Errorf("the refused History ran %v", f.tmux.Calls()[before:after])
+			}
+		})
+	}
+}

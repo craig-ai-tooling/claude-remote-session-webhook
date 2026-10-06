@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"unicode/utf8"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
 // Key is a symbolic key name from the closed set the session page offers.
@@ -128,6 +130,25 @@ func (m *Manager) PressKey(ctx context.Context, s Session, key Key) error {
 		return fmt.Errorf("press a key in session %s: %w", s.ID, err)
 	}
 	return nil
+}
+
+// History returns the session's tmux scrollback, excluding the visible screen,
+// stripped. Reading is not driving, so the record is not touched (FR-011).
+//
+// A failure is returned as it is and never handed to unreadable: a refusal for
+// size (ErrHistoryTooLarge) is no evidence the window died, and treating it as
+// such would let a long scrollback end a live session's card.
+func (m *Manager) History(ctx context.Context, s Session) (Capture, error) {
+	if err := guardDelivery(s); err != nil {
+		return Capture{}, fmt.Errorf("capture history: %w", err)
+	}
+
+	text, err := m.tmux.CaptureHistory(ctx, s.TmuxName())
+	if err != nil {
+		return Capture{}, fmt.Errorf("capture history of session %s: %w", s.ID, err)
+	}
+
+	return Capture{Text: tmuxctl.Strip(text), At: m.clock.Now()}, nil
 }
 
 // guardDelivery is Compact's two guards: an empty ID would build the bare
