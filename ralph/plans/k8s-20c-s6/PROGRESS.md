@@ -36,3 +36,5 @@ S5 planned. Facts checked on disk, so no iteration has to rediscover them:
 
 None open.
 BLOCKED: dependency not merged
+
+- Operator (10/6/26): S5 merged (#214); dependency met, branch rebased onto main. Ignore the BLOCKED line above.
