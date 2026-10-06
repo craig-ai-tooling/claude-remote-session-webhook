@@ -252,3 +252,11 @@ Added `sessionHistory`, `patternSessionHistory`, `errHistoryCrossSite`, `errHist
   action door's). `TestHistoryIsOwnerScoped` compares a stranger's id against an unknown id instead. The write error on
   `io.WriteString` goes to `s.report`, which the task did not list but the stream's writes do the same.
 - The Write/Bash heredoc is refused for Go code (brace next to a quote); append Go with Edit anchored on the file's last lines.
+
+## Iteration 14: T012 (2026-10-06)
+
+Added `canaryTyped`, a `dashboard.type` act in `driveTheActionRoutes`, the secret-list row, the expected-action entry, and a "reached the host" row in `leak_test.go`. `pasted()` now also reads `OpPasteBracketed`, because typed text goes through the bracketed paste and the old filter would have seen nothing.
+
+- Guard proven: with `AuditFrom(r.Context()).Deny(text)` added before `Manager.Type` in `typeFromBrowser`, `TestNoOperationLeaksSecretMaterialIntoTheTrailOrTheLogs` FAILED (canary in a `dashboard.type` deny record). Reverted, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T013): the act uses the literal field names `"text"` and `"enter"`, since `fieldText`/`fieldEnter` live in `internal/httpapi` and the audit test spells its own values on purpose.
