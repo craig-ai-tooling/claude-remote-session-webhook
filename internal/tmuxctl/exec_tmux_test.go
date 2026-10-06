@@ -96,6 +96,121 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
+// history-limit is read when a pane is created, so the proof is a real pane
+// that has to hold more than tmux's 2000-line default.
+func TestTmuxNewSessionKeepsFiveThousandLinesOfHistory(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-6a000000000000000000000000000000"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SendKeys(ctx, name, "seq 1 9000", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+
+	display := func(format string) string {
+		out, err := exec.Command("tmux", "-L", e.socket, "display", "-p", "-t", PaneTarget(name), format).Output() //nolint:gosec // socket is socketFor(t.Name())
+		if err != nil {
+			t.Fatalf("display %s: %v", format, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	waitFor(t, "history to fill", func() bool {
+		n, err := strconv.Atoi(display("#{history_size}"))
+		return err == nil && n >= 4900
+	})
+	if got := display("#{history_limit}"); got != "5000" {
+		t.Fatalf("history_limit = %s, want 5000", got)
+	}
+}
+
+// The program has to ask for bracketed paste before tmux will wrap anything, so
+// the pane runs one that does (printf of DECSET 2004) and echoes what it reads.
+func TestTmuxPasteBracketedWrapsTheText(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-6b000000000000000000000000000000"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SendKeys(ctx, name, "printf '\\033[?2004h'; stty -icanon -echo; echo READY; cat -v", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	pane := func() string {
+		got, err := e.CapturePane(ctx, name)
+		if err != nil {
+			t.Fatalf("CapturePane: %v", err)
+		}
+		return got
+	}
+	// The typed command line also contains "READY", so wait for a line that is
+	// only that: it prints after the mode is on and the terminal is raw, and a
+	// paste sent any earlier would reach the shell unbracketed.
+	waitFor(t, "the pane to be raw with bracketed paste on", func() bool {
+		for _, line := range strings.Split(pane(), "\n") {
+			if line == "READY" {
+				return true
+			}
+		}
+		return false
+	})
+
+	if err := e.PasteBracketed(ctx, name, []byte("alpha\nbeta")); err != nil {
+		t.Fatalf("PasteBracketed: %v", err)
+	}
+	waitFor(t, "the start marker before alpha", func() bool { return strings.Contains(pane(), "^[[200~alpha") })
+	if got := pane(); !strings.Contains(got, "^[[201~") {
+		t.Fatalf("no end marker in the pane:\n%s", got)
+	}
+}
+
+// -E -1 is what keeps the visible screen out of the history, so the last line of
+// the capture must be older than the last line on screen.
+func TestTmuxCaptureHistoryReturnsOnlyHistory(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-6c000000000000000000000000000000"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SendKeys(ctx, name, "seq 1 6000", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	lastLine := func(s string) string {
+		lines := strings.Split(strings.TrimRight(s, "\n "), "\n")
+		return strings.TrimSpace(lines[len(lines)-1])
+	}
+	var screen string
+	// The typed command also contains "6000", so wait for a line that is only it.
+	waitFor(t, "the pane to show 6000", func() bool {
+		got, err := e.CapturePane(ctx, name)
+		if err != nil {
+			t.Fatalf("CapturePane: %v", err)
+		}
+		screen = got
+		return strings.Contains("\n"+got, "\n6000\n")
+	})
+
+	history, err := e.CaptureHistory(ctx, name)
+	if err != nil {
+		t.Fatalf("CaptureHistory: %v", err)
+	}
+	if n := countLines(history); n > HistoryLimit || n < 4900 {
+		t.Errorf("history is %d lines, want 4900 to %d", n, HistoryLimit)
+	}
+	if strings.Contains(history, "\x1b") {
+		t.Error("history carries an escape byte")
+	}
+	if lastLine(history) == lastLine(screen) {
+		t.Errorf("history ends on the screen's last line %q, so the two overlap", lastLine(screen))
+	}
+}
+
 func TestTmuxCreateHasKill(t *testing.T) {
 	ctx := context.Background()
 	e := newTestExec(t)

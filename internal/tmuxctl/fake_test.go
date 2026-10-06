@@ -45,8 +45,14 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 	if err := f.Paste(ctx, fakeName, []byte("hello")); err != nil {
 		t.Fatalf("Paste: %v", err)
 	}
+	if err := f.PasteBracketed(ctx, fakeName, []byte("hello")); err != nil {
+		t.Fatalf("PasteBracketed: %v", err)
+	}
 	if _, err := f.CapturePane(ctx, fakeName); err != nil {
 		t.Fatalf("CapturePane: %v", err)
+	}
+	if _, err := f.CaptureHistory(ctx, fakeName); err != nil {
+		t.Fatalf("CaptureHistory: %v", err)
 	}
 	if err := f.Resize(ctx, fakeName, 44, 24); err != nil {
 		t.Fatalf("Resize: %v", err)
@@ -62,12 +68,15 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 	}
 
 	want := []tmuxctl.Call{
-		{Op: tmuxctl.OpNew, Argv: []string{"tmux", "new-session", "-d", "-s", fakeName, "-c", fakeWorkDir}},
+		{Op: tmuxctl.OpNew, Argv: []string{"tmux", "set-option", "-g", "history-limit", "5000", ";", "new-session", "-d", "-s", fakeName, "-c", fakeWorkDir}},
 		{Op: tmuxctl.OpSetOption, Argv: []string{"tmux", "set-option", "-t", "=" + fakeName + ":", "@crswd-managed", "1"}},
 		{Op: tmuxctl.OpSendKeys, Argv: []string{"tmux", "send-keys", "-t", "=" + fakeName + ":", "--", "Enter"}},
-		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", fakeName, "-"}, Stdin: []byte("hello")},
-		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", fakeName, "-t", "=" + fakeName + ":"}},
+		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", tmuxctl.FakeBufferName(1), "-"}, Stdin: []byte("hello")},
+		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", tmuxctl.FakeBufferName(1), "-t", "=" + fakeName + ":"}},
+		{Op: tmuxctl.OpPasteBracketed, Argv: []string{"tmux", "load-buffer", "-b", tmuxctl.FakeBufferName(2), "-"}, Stdin: []byte("hello")},
+		{Op: tmuxctl.OpPasteBracketed, Argv: []string{"tmux", "paste-buffer", "-p", "-d", "-b", tmuxctl.FakeBufferName(2), "-t", "=" + fakeName + ":"}},
 		{Op: tmuxctl.OpCapturePane, Argv: []string{"tmux", "capture-pane", "-p", "-t", "=" + fakeName + ":"}},
+		{Op: tmuxctl.OpCaptureHistory, Argv: []string{"tmux", "capture-pane", "-p", "-S", "-5000", "-E", "-1", "-t", "=" + fakeName + ":"}},
 		{Op: tmuxctl.OpResize, Argv: []string{"tmux", "resize-window", "-t", "=" + fakeName + ":", "-x", "44", "-y", "24"}},
 		{Op: tmuxctl.OpKill, Argv: []string{"tmux", "kill-session", "-t", "=" + fakeName}},
 		{Op: tmuxctl.OpHas, Argv: []string{"tmux", "has-session", "-t", "=" + fakeName}},
@@ -118,6 +127,31 @@ func TestFakeArgvNeverInvokesAShell(t *testing.T) {
 				t.Errorf("call %d invokes a shell: %q", i, c.Argv)
 			}
 		}
+	}
+}
+
+// The history capture has the same rule as the pane capture, and it is the one
+// that reaches a browser as a whole document.
+func TestFakeCaptureHistoryNeverAsksForEscapes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	f := tmuxctl.NewFake()
+	f.SetHistory(fakeName, "old output\n")
+
+	got, err := f.CaptureHistory(ctx, fakeName)
+	if err != nil {
+		t.Fatalf("CaptureHistory: %v", err)
+	}
+	if got != "old output\n" {
+		t.Errorf("CaptureHistory = %q, want what SetHistory stored", got)
+	}
+	calls := f.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("recorded %d calls, want 1", len(calls))
+	}
+	if slices.Contains(calls[0].Argv, "-e") {
+		t.Errorf("capture-pane history asked for escapes: %q", calls[0].Argv)
 	}
 }
 
@@ -270,6 +304,59 @@ func TestFakePastePayloadNeverEntersArgv(t *testing.T) {
 			calls := f.Calls()
 			if len(calls) != 2 {
 				t.Fatalf("Paste recorded %d calls, want 2 (load-buffer then paste-buffer)", len(calls))
+			}
+			if got := string(calls[0].Stdin); got != tc.payload {
+				t.Errorf("payload delivered as %q, want %q", got, tc.payload)
+			}
+			if calls[1].Stdin != nil {
+				t.Errorf("paste-buffer carried stdin %q, want none", calls[1].Stdin)
+			}
+			if tc.payload == "" {
+				return // an empty payload is a substring of everything
+			}
+			for i, c := range calls {
+				for _, arg := range c.Argv {
+					if strings.Contains(arg, tc.payload) {
+						t.Errorf("call %d put caller text on the command line: %q", i, c.Argv)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Same rule as Paste: -p changes what tmux wraps around the text, not how the
+// text reaches tmux.
+func TestFakePasteBracketedPayloadNeverEntersArgv(t *testing.T) {
+	t.Parallel()
+
+	payloads := []struct {
+		name    string
+		payload string
+	}{
+		{"bare semicolon", ";"},
+		{"trailing semicolon", "foo;"},
+		{"doubled trailing semicolon", "foo;;"},
+		{"shell metacharacters", "a; echo PWNED; $(id)"},
+		{"embedded newline", "line one\nline two"},
+		{"empty", ""},
+	}
+
+	for _, tc := range payloads {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			f := tmuxctl.NewFake()
+			f.Seed(tmuxctl.SessionInfo{Name: fakeName, Managed: true})
+
+			if err := f.PasteBracketed(ctx, fakeName, []byte(tc.payload)); err != nil {
+				t.Fatalf("PasteBracketed: %v", err)
+			}
+
+			calls := f.Calls()
+			if len(calls) != 2 {
+				t.Fatalf("PasteBracketed recorded %d calls, want 2 (load-buffer then paste-buffer)", len(calls))
 			}
 			if got := string(calls[0].Stdin); got != tc.payload {
 				t.Errorf("payload delivered as %q, want %q", got, tc.payload)

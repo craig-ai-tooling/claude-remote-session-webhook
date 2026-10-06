@@ -255,6 +255,11 @@ func TestEmitAcceptsEveryDocumentedAction(t *testing.T) {
 		audit.ActionDashboardReject:  "dashboard.reject",
 		audit.ActionFleetOpen:        "fleet.open",
 
+		// Spec 018's: a browser that can type, press a key and read scrollback.
+		audit.ActionDashboardType:    "dashboard.type",
+		audit.ActionDashboardKey:     "dashboard.key",
+		audit.ActionDashboardHistory: "dashboard.history",
+
 		// Milestone 4's one addition: the read-only settings page.
 		audit.ActionSettingsView: "settings.view",
 
@@ -367,6 +372,10 @@ func TestDashboardActionsAreDistinctFromAPI(t *testing.T) {
 		"dashboard.compact": audit.ActionDashboardCompact,
 		"dashboard.reject":  audit.ActionDashboardReject,
 		"fleet.open":        audit.ActionFleetOpen,
+
+		"dashboard.type":    audit.ActionDashboardType,
+		"dashboard.key":     audit.ActionDashboardKey,
+		"dashboard.history": audit.ActionDashboardHistory,
 	}
 
 	// Every action the trail already spoke before this milestone — milestone 1's

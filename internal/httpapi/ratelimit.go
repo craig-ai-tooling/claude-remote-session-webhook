@@ -264,6 +264,12 @@ func (s *Server) limitCreates(next http.Handler) http.Handler {
 // constant if you want another.
 const loginRatePerMin = 6
 
+// inputRatePerMin is how many typed messages and key presses one operator may
+// send a minute, shared by both input routes (research R5). It is a constant
+// and not a setting: a human on a key bar presses a handful a second at most,
+// and a loop faster than 240 a minute is a script that has the API door.
+const inputRatePerMin = 240
+
 // loginSource is one address sign-in attempts are counted against.
 //
 // It is its own type rather than auth.CallerID, which is the reuse that would

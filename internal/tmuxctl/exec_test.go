@@ -8,6 +8,7 @@ package tmuxctl
 // discrimination under test rather than under review.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,8 +31,13 @@ const (
 	stubEnv       = "CRSWD_TEST_STUB"
 	stubRecordEnv = "CRSWD_TEST_STUB_RECORD"
 	stubStdoutEnv = "CRSWD_TEST_STUB_STDOUT"
+	// stubFillEnv is a byte count, because one environment string is capped far
+	// below the 4 MiB a history bound test has to print.
+	stubFillEnv   = "CRSWD_TEST_STUB_FILL"
 	stubStderrEnv = "CRSWD_TEST_STUB_STDERR"
 	stubCodeEnv   = "CRSWD_TEST_STUB_CODE"
+	// stubFailOnEnv names a tmux subcommand; only that one exits non-zero.
+	stubFailOnEnv = "CRSWD_TEST_STUB_FAILON"
 )
 
 var _ Controller = (*Exec)(nil)
@@ -62,7 +69,7 @@ const execPaneBound = 24
 // nothing crosses that boundary unless something puts it there.
 func testSessionEnv() []string {
 	env := []string{"HOME=/home/operator", "PATH=" + os.Getenv("PATH"), "TERM=xterm"}
-	for _, name := range []string{stubEnv, stubRecordEnv, stubStdoutEnv, stubStderrEnv, stubCodeEnv} {
+	for _, name := range []string{stubEnv, stubRecordEnv, stubStdoutEnv, stubFillEnv, stubStderrEnv, stubCodeEnv, stubFailOnEnv} {
 		if v := os.Getenv(name); v != "" {
 			env = append(env, name+"="+v)
 		}
@@ -126,10 +133,27 @@ func runStub() int {
 			return 125
 		}
 	}
+	if os.Getenv(stubFillEnv) == "forever" {
+		chunk := bytes.Repeat([]byte("x"), 64<<10)
+		for {
+			if _, err := os.Stdout.Write(chunk); err != nil {
+				return 0 // the reader went away, which is the point
+			}
+		}
+	}
+	if n, err := strconv.Atoi(os.Getenv(stubFillEnv)); err == nil && n > 0 {
+		if _, err := os.Stdout.Write(bytes.Repeat([]byte("x"), n)); err != nil {
+			fmt.Fprintln(os.Stderr, "stub: write fill:", err)
+			return 125
+		}
+	}
 	if msg := os.Getenv(stubStderrEnv); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
 
+	if on := os.Getenv(stubFailOnEnv); on != "" && (len(os.Args) < 4 || !slices.Contains(strings.Split(on, ","), os.Args[3])) {
+		return 0
+	}
 	code, err := strconv.Atoi(os.Getenv(stubCodeEnv))
 	if err != nil {
 		return 0
@@ -148,7 +172,14 @@ type stub struct {
 	code   int
 	stdout string
 	stderr string
+	fill   int
+	// failOn limits code to one tmux subcommand; empty means every command.
+	failOn string
+	// forever makes stdout endless, for a reader that must stop on its own.
+	forever bool
 }
+
+var bufferNameShape = regexp.MustCompile(`^crswd-in-[0-9a-f]{16}$`)
 
 // install puts the stub on PATH as "tmux" and returns a reader for what it
 // recorded. A symlink to the test binary avoids writing an executable script,
@@ -174,6 +205,11 @@ func (s stub) install(t *testing.T) func(*testing.T) []stubCall {
 	t.Setenv(stubEnv, "1")
 	t.Setenv(stubRecordEnv, record)
 	t.Setenv(stubStdoutEnv, s.stdout)
+	t.Setenv(stubFillEnv, strconv.Itoa(s.fill))
+	if s.forever {
+		t.Setenv(stubFillEnv, "forever")
+	}
+	t.Setenv(stubFailOnEnv, s.failOn)
 	t.Setenv(stubStderrEnv, s.stderr)
 	t.Setenv(stubCodeEnv, strconv.Itoa(s.code))
 
@@ -237,11 +273,11 @@ func TestExecSendsTheContractArgv(t *testing.T) {
 	}
 
 	want := []stubCall{
-		{Argv: []string{"tmux", "-L", execSocket, "new-session", "-d", "-s", execName, "-c", execWorkDir}},
+		{Argv: []string{"tmux", "-L", execSocket, "set-option", "-g", "history-limit", "5000", ";", "new-session", "-d", "-s", execName, "-c", execWorkDir}},
 		{Argv: []string{"tmux", "-L", execSocket, "set-option", "-t", "=" + execName + ":", "@crswd-managed", "1"}},
 		{Argv: []string{"tmux", "-L", execSocket, "send-keys", "-t", "=" + execName + ":", "--", "Enter"}},
-		{Argv: []string{"tmux", "-L", execSocket, "load-buffer", "-b", execName, "-"}, Stdin: []byte("hello")},
-		{Argv: []string{"tmux", "-L", execSocket, "paste-buffer", "-d", "-b", execName, "-t", "=" + execName + ":"}},
+		{Argv: []string{"tmux", "-L", execSocket, "load-buffer", "-b", "", "-"}, Stdin: []byte("hello")},
+		{Argv: []string{"tmux", "-L", execSocket, "paste-buffer", "-d", "-b", "", "-t", "=" + execName + ":"}},
 		{Argv: []string{"tmux", "-L", execSocket, "capture-pane", "-p", "-t", "=" + execName + ":"}},
 		{Argv: []string{"tmux", "-L", execSocket, "kill-session", "-t", "=" + execName}},
 		{Argv: []string{"tmux", "-L", execSocket, "has-session", "-t", "=" + execName}},
@@ -252,6 +288,13 @@ func TestExecSendsTheContractArgv(t *testing.T) {
 	if len(got) != len(want) {
 		t.Fatalf("ran %d commands, want %d: %v", len(got), len(want), got)
 	}
+	// The buffer is random per call, so pin its shape and then pin the rest of
+	// the argv with it substituted in.
+	buffer := got[3].Argv[5]
+	if !bufferNameShape.MatchString(buffer) {
+		t.Fatalf("buffer name %q, want %s", buffer, bufferNameShape)
+	}
+	want[3].Argv[5], want[4].Argv[6] = buffer, buffer
 	for i := range want {
 		if !slices.Equal(got[i].Argv, want[i].Argv) {
 			t.Errorf("command %d argv =\n  %q\nwant\n  %q", i, got[i].Argv, want[i].Argv)
@@ -290,6 +333,47 @@ func TestExecPasteKeepsCallerTextOffTheCommandLine(t *testing.T) {
 			}
 			if got := string(calls[0].Stdin); got != payload {
 				t.Errorf("payload on stdin = %q, want %q", got, payload)
+			}
+			for i, c := range calls {
+				for j, arg := range c.Argv {
+					if strings.Contains(arg, payload) {
+						t.Errorf("payload reached command %d argv[%d] = %q", i, j, arg)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Same payloads, same rule as Paste, plus the one difference: the second command
+// carries -p.
+func TestExecPasteBracketedKeepsCallerTextOffTheCommandLine(t *testing.T) {
+	payloads := []string{
+		";",
+		"foo;",
+		"foo;;",
+		"a; echo PWNED; $(id) `whoami`",
+		"line one\nline two",
+		"--dangerously-skip-permissions",
+	}
+
+	for _, payload := range payloads {
+		t.Run(fmt.Sprintf("%q", payload), func(t *testing.T) {
+			recorded := stub{}.install(t)
+
+			if err := newStubExec(t).PasteBracketed(context.Background(), execName, []byte(payload)); err != nil {
+				t.Fatalf("PasteBracketed: %v", err)
+			}
+
+			calls := recorded(t)
+			if len(calls) != 2 {
+				t.Fatalf("PasteBracketed ran %d commands, want 2: %v", len(calls), calls)
+			}
+			if got := string(calls[0].Stdin); got != payload {
+				t.Errorf("payload on stdin = %q, want %q", got, payload)
+			}
+			if !slices.Contains(calls[1].Argv, "-p") {
+				t.Errorf("paste-buffer argv has no -p: %v", calls[1].Argv)
 			}
 			for i, c := range calls {
 				for j, arg := range c.Argv {
@@ -370,6 +454,53 @@ func TestCaptureRefusesPastBound(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), marker) {
 				t.Errorf("the refusal carries pane content: %v", err)
+			}
+		})
+	}
+}
+
+// A history past either bound is refused, never shortened: the line bound is
+// tmux's own history-limit, and the byte bound catches a few enormous lines the
+// line count lets through.
+func TestExecCaptureHistoryRefusesPastTheBound(t *testing.T) {
+	const marker = "SECRET-HISTORY-CONTENT"
+
+	tests := []struct {
+		name    string
+		history string
+		fill    int
+		refused bool
+	}{
+		{"a history at the bound", strings.Repeat(marker+"\n", HistoryLimit), 0, false},
+		{"one line past the bound", strings.Repeat(marker+"\n", HistoryLimit+1), 0, true},
+		{"one line past the bound, unterminated", strings.Repeat(marker+"\n", HistoryLimit) + marker, 0, true},
+		{"one line of 4 MiB and a byte", "", maxHistoryBytes + 1, true},
+		{"empty", "", 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Not parallel: install mutates the environment.
+			stub{stdout: tt.history, fill: tt.fill}.install(t)
+
+			got, err := newStubExec(t).CaptureHistory(context.Background(), execName)
+			if !tt.refused {
+				if err != nil {
+					t.Fatalf("CaptureHistory: %v", err)
+				}
+				if got != tt.history {
+					t.Errorf("CaptureHistory returned %d bytes, want the %d tmux printed", len(got), len(tt.history))
+				}
+				return
+			}
+			if !errors.Is(err, ErrHistoryTooLarge) {
+				t.Fatalf("CaptureHistory = %d bytes, %v; want ErrHistoryTooLarge", len(got), err)
+			}
+			if got != "" {
+				t.Errorf("CaptureHistory returned %d bytes beside its refusal", len(got))
+			}
+			if strings.Contains(err.Error(), marker) {
+				t.Errorf("the refusal carries history content: %v", err)
 			}
 		})
 	}
@@ -1015,5 +1146,116 @@ func TestLivenessUnknownIsAlive(t *testing.T) {
 	}
 	if got := livenessFrom("1"); got != LivenessRunning {
 		t.Errorf("livenessFrom(%q) = %q, want %q", "1", got, LivenessRunning)
+	}
+}
+
+// Two pastes into one session must not share a buffer, or one can load over the
+// other before it is pasted (spec 018 review #1).
+func TestExecPasteUsesAFreshBufferEachCall(t *testing.T) {
+	recorded := stub{}.install(t)
+	e := newStubExec(t)
+
+	for _, payload := range []string{"one", "two"} {
+		if err := e.PasteBracketed(context.Background(), execName, []byte(payload)); err != nil {
+			t.Fatalf("PasteBracketed: %v", err)
+		}
+	}
+
+	calls := recorded(t)
+	if len(calls) != 4 {
+		t.Fatalf("ran %d commands, want 4: %v", len(calls), calls)
+	}
+	first, second := calls[0].Argv[5], calls[2].Argv[5]
+	for _, b := range []string{first, second} {
+		if !bufferNameShape.MatchString(b) {
+			t.Errorf("buffer name %q, want %s", b, bufferNameShape)
+		}
+	}
+	if first == second {
+		t.Errorf("both pastes used buffer %q", first)
+	}
+	if calls[1].Argv[len(calls[1].Argv)-3] != first || calls[3].Argv[len(calls[3].Argv)-3] != second {
+		t.Errorf("paste-buffer did not name the buffer its load-buffer filled: %v", calls)
+	}
+}
+
+// -d only runs when the paste works, so a failed paste-buffer has to delete the
+// buffer itself, and neither error may carry the text (spec 018 review #2).
+func TestExecFailedPasteDeletesItsBuffer(t *testing.T) {
+	const secret = "hunter2-do-not-leak"
+	for name, paste := range map[string]func(*Exec) error{
+		"Paste":          func(e *Exec) error { return e.Paste(context.Background(), execName, []byte(secret)) },
+		"PasteBracketed": func(e *Exec) error { return e.PasteBracketed(context.Background(), execName, []byte(secret)) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorded := stub{code: 1, stderr: "can't find pane", failOn: "paste-buffer"}.install(t)
+
+			err := paste(newStubExec(t))
+			if err == nil {
+				t.Fatal("paste succeeded, want the paste-buffer failure")
+			}
+			if strings.Contains(err.Error(), secret) {
+				t.Errorf("error carries the text: %v", err)
+			}
+
+			calls := recorded(t)
+			if len(calls) != 3 {
+				t.Fatalf("ran %d commands, want load, paste, delete: %v", len(calls), calls)
+			}
+			buffer := calls[0].Argv[5]
+			want := []string{"tmux", "-L", execSocket, "delete-buffer", "-b", buffer}
+			if !slices.Equal(calls[2].Argv, want) {
+				t.Errorf("cleanup argv = %q, want %q", calls[2].Argv, want)
+			}
+		})
+	}
+}
+
+// If the cleanup fails too, both errors survive (errors.Join) and still hold no
+// text.
+func TestExecFailedPasteJoinsTheCleanupError(t *testing.T) {
+	const secret = "hunter2-do-not-leak"
+	stub{code: 1, stderr: "boom", failOn: "paste-buffer,delete-buffer"}.install(t)
+
+	err := newStubExec(t).Paste(context.Background(), execName, []byte(secret))
+	if err == nil {
+		t.Fatal("Paste succeeded, want both failures")
+	}
+	for _, want := range []string{"tmux paste-buffer", "tmux delete-buffer"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("error carries the text: %v", err)
+	}
+}
+
+// The history bound holds while reading: a tmux that never stops printing is
+// cut off and reaped at 4 MiB, and the refusal is the existing one (review #5).
+func TestExecCaptureHistoryStopsReadingAtTheBound(t *testing.T) {
+	stub{forever: true}.install(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	_, err := newStubExec(t).CaptureHistory(ctx, execName)
+	if !errors.Is(err, ErrHistoryTooLarge) {
+		t.Fatalf("CaptureHistory err = %v, want ErrHistoryTooLarge", err)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("CaptureHistory ran until the deadline instead of stopping at the bound")
+	}
+}
+
+func TestCapWriterKeepsOnlyTheFirstBytes(t *testing.T) {
+	w := &capWriter{max: 4}
+	for _, chunk := range []string{"ab", "cdef", "gh"} {
+		if n, err := w.Write([]byte(chunk)); n != len(chunk) || err != nil {
+			t.Fatalf("Write(%q) = %d, %v; want a full write", chunk, n, err)
+		}
+	}
+	if got := w.buf.String(); got != "abcd" {
+		t.Errorf("kept %q, want %q", got, "abcd")
 	}
 }

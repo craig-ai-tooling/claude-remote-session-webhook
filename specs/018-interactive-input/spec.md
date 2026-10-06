@@ -114,9 +114,12 @@ Line 1 of the 3000 is readable.
 - **A browser sends CRLF from a textarea**: the handler normalises `\r\n` to `\n`
   before validation (FR-004). A bare `\r` left after that is a control character
   and is refused.
-- **Two tabs typing into one session**: both deliveries land, in arrival order.
-  Nothing serialises them, and nothing needs to. They are two people at one
-  keyboard.
+- **Two tabs typing into one session**: both deliveries land, one after the
+  other. `Manager` holds one mutex per session across a whole delivery (a paste
+  and its Enter, or one key), so a key can never land inside another message's
+  text. Each paste also loads its own tmux buffer, `crswd-in-` plus 16 random
+  hex, so two pastes cannot overwrite each other, and a paste that fails deletes
+  its buffer.
 - **A burst of key presses** past the budget: refused with `input-limited` and
   nothing delivered. The budget refills at 4 a second.
 - **History larger than the bound** (impossible at `history-limit 5000` with
@@ -176,10 +179,16 @@ Line 1 of the 3000 is readable.
   nothing.
 - **FR-010**: A successful type or key MUST answer `204 No Content` with no body.
   Every refusal after the gate MUST answer `303` to the fleet page with the
-  route's outcome code, as every other action does.
+  route's outcome code, as every other action does. When the paste lands and the
+  Enter after it fails, the outcome is `type-unsubmitted` ("The text was typed
+  but not submitted"), not `type-failed`, and the script clears the textarea for
+  it so a retry cannot type the text twice.
 - **FR-011**: Type and key MUST move the session's last-driven clock with
-  `store.Touch` **before** delivery, as `Manager.Compact` does
-  (`internal/session/manager.go:1114-1119`). History MUST NOT move it.
+  `store.Touch` once the delivery has succeeded (review #3: a failed delivery
+  must not make a vanished session look driven); before it they only confirm the
+  record is still in the store. A delivery that fails MUST ask the controller
+  `Has` for the session, and an absent one answers `ErrSessionDead`, which the
+  handlers turn into the uniform not-found. History MUST NOT move the clock.
 
 ### Audit
 

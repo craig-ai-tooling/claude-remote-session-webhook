@@ -1061,17 +1061,17 @@ func TestAPromptIsDeliveredByteForByte(t *testing.T) {
 				t.Fatalf("status = %d (%q); want %d", answer.Code, answer.Body, http.StatusAccepted)
 			}
 
-			tmuxName, pane := f.live.TmuxName(), f.live.PaneTarget()
+			pane := f.live.PaneTarget()
 			want := []tmuxctl.Call{
 				// The dialog check's own read, ahead of every write below it
 				// (session/dialog.go, #150 follow-up): promptSession asks what
 				// the pane holds before typing into it, on every prompt whose
 				// text is non-empty, whether or not anything matches.
 				{Op: tmuxctl.OpCapturePane, Argv: []string{"tmux", "capture-pane", "-p", "-t", pane}},
-				{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", tmuxName, "-"}, Stdin: []byte(payload)},
+				{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", tmuxctl.FakeBufferName(1), "-"}, Stdin: []byte(payload)},
 				{
 					Op:   tmuxctl.OpPaste,
-					Argv: []string{"tmux", "paste-buffer", "-d", "-b", tmuxName, "-t", pane},
+					Argv: []string{"tmux", "paste-buffer", "-d", "-b", tmuxctl.FakeBufferName(1), "-t", pane},
 				},
 				{Op: tmuxctl.OpSendKeys, Argv: []string{"tmux", "send-keys", "-t", pane, "--", "Enter"}},
 			}

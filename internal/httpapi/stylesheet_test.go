@@ -2709,6 +2709,12 @@ func TestTheReflowIsOfferedRatherThanTaken(t *testing.T) {
 	if !found {
 		t.Fatal("crswd.js carries no reflow module at all, so the offer the pane renders is never revealed to anybody")
 	}
+	// The module is closed by its own IIFE. It used to be the last thing in the
+	// file, so "the rest of the file" was the module; the input client now follows
+	// it, and its fetch and requestSubmit are not this control's.
+	if end := strings.Index(module, "})();"); end >= 0 {
+		module = module[:end]
+	}
 
 	query := regexp.MustCompile(`querySelectorAll\(\s*['"][^'"]*data-reflow[^'"]*['"]\s*\)`)
 	if query.FindString(module) == "" {
@@ -4087,4 +4093,150 @@ func blockAfter(t *testing.T, source, marker string) string {
 	}
 	t.Fatalf("the block introduced by %q is never closed", marker)
 	return ""
+}
+
+// inputClient is the session page's input module, cut out of the script by its
+// leading comment, so a claim about it cannot be satisfied by the shared handler
+// that sits fifteen hundred lines above.
+func inputClient(t *testing.T) string {
+	t.Helper()
+
+	js, err := web.Static.ReadFile("static/crswd.js")
+	if err != nil {
+		t.Fatalf("read the embedded script: %v", err)
+	}
+	const marker = "/* The session page's input panel (spec 018). */"
+	whole := string(js)
+	at := strings.Index(whole, marker)
+	if at < 0 {
+		t.Fatalf("crswd.js carries no %q, so the input client cannot be read", marker)
+	}
+	rest := whole[at+len(marker):]
+	end := strings.Index(rest, "})();")
+	if end < 0 {
+		t.Fatal("the input client is never closed")
+	}
+	return jsComment.ReplaceAllString(rest[:end], "")
+}
+
+// TestTheInputClientSkipsTheSharedHandler holds the early return that keeps the
+// shared dashboard handler off the two input forms. Their answer is a 204 with
+// no banner, which that handler would turn into "The host answered without a
+// message" after the input module had already handled it.
+func TestTheInputClientSkipsTheSharedHandler(t *testing.T) {
+	t.Parallel()
+
+	// The whole guard, not the attribute name: deleting the return leaves the
+	// string in place and turns every typed message into two POSTs.
+	guard := jsBlock(t, script(t), "if (form.hasAttribute('data-session-input'))")
+	if !strings.Contains(guard, "return;") {
+		t.Errorf("the shared submit handler's data-session-input guard does not return: %q", guard)
+	}
+}
+
+// jsBlock returns the braced block that follows header in src, header included,
+// with its braces balanced. It is a string test's nearest thing to reading
+// control flow, which this repo has no harness to run.
+func jsBlock(t *testing.T, src, header string) string {
+	t.Helper()
+
+	at := strings.Index(src, header)
+	if at < 0 {
+		t.Fatalf("the script carries no %q", header)
+	}
+	open := strings.Index(src[at:], "{")
+	if open < 0 {
+		t.Fatalf("%q opens no block", header)
+	}
+	depth := 0
+	for i := at + open; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return src[at : i+1]
+			}
+		}
+	}
+	t.Fatalf("the block after %q is never closed", header)
+	return ""
+}
+
+func TestTheInputClientPostsSameOrigin(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	for _, want := range []string{"credentials: 'same-origin'", "data-session-input"} {
+		if !strings.Contains(client, want) {
+			t.Errorf("the input client does not carry %q", want)
+		}
+	}
+	if strings.Contains(client, "innerHTML") {
+		t.Error("the input client reaches for innerHTML")
+	}
+}
+
+func TestTheScrollbackIsText(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	if !strings.Contains(client, "textContent =") {
+		t.Error("the input client never assigns textContent, so scrollback reaches the page some other way")
+	}
+	for _, sink := range []string{"innerHTML", "insertAdjacentHTML", "outerHTML"} {
+		if strings.Contains(client, sink) {
+			t.Errorf("the input client uses %s, and scrollback is pane content", sink)
+		}
+	}
+}
+
+func TestCtrlEnterSends(t *testing.T) {
+	t.Parallel()
+
+	// The whole modifier branch: Send is recorded as the clicked button and then
+	// the form is submitted, in that order. Either line deleted, or swapped,
+	// sends nothing or sends "Type only" on a browser without SubmitEvent.submitter.
+	branch := jsBlock(t, inputClient(t), "if (event.key === 'Enter' && (event.ctrlKey || event.metaKey))")
+	remember := strings.Index(branch, "lastClicked.set(form, send)")
+	submit := strings.Index(branch, "form.requestSubmit(send)")
+	if remember < 0 || submit < 0 {
+		t.Fatalf("the Ctrl/Cmd+Enter branch does not remember Send and submit with it:\n%s", branch)
+	}
+	if remember > submit {
+		t.Errorf("the Ctrl/Cmd+Enter branch submits before it remembers Send:\n%s", branch)
+	}
+}
+
+// One click is remembered for one submission, and a message the daemon says was
+// typed but not submitted is cleared from the box so a retry cannot duplicate it.
+func TestTheInputClientForgetsTheClickAndClearsAnUnsubmittedMessage(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	pressed := strings.Index(client, "event.submitter || lastClicked.get(form)")
+	forgot := strings.Index(client, "lastClicked.delete(form)")
+	if pressed < 0 || forgot < pressed {
+		t.Error("the input client does not forget the remembered click right after reading it")
+	}
+	cleared := jsBlock(t, client, "if (code === 'type-unsubmitted'")
+	if !strings.Contains(cleared, "field.value = ''") {
+		t.Errorf("the type-unsubmitted branch does not clear the textarea:\n%s", cleared)
+	}
+}
+
+func TestTheInputClientRemembersTheClickedButton(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	for _, want := range []string{
+		"new WeakMap()",
+		"lastClicked.set(",
+		"event.submitter || lastClicked.get(form)",
+	} {
+		if !strings.Contains(client, want) {
+			t.Errorf("the input client does not carry %q, so a browser without SubmitEvent.submitter loses the pressed key", want)
+		}
+	}
 }

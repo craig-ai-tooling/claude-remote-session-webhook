@@ -1245,6 +1245,11 @@
     if (!(form instanceof HTMLFormElement) || !form.getAttribute('action')?.startsWith('/dashboard/')) {
       return;
     }
+    // The session page's input panel answers 204, which has no banner for this
+    // handler to lift; the module at the end of the file owns those two forms.
+    if (form.hasAttribute('data-session-input')) {
+      return;
+    }
     // Let the browser do the ordinary thing if it cannot do this one.
     if (typeof window.fetch !== 'function') {
       return;
@@ -1378,6 +1383,11 @@
       reenable();
     }
   });
+
+  // The input panel's module runs later and cannot reach this closure, so it is
+  // handed the two functions it needs, the way window.crswdReloadSignInPanel is.
+  window.crswdShowToast = show;
+  window.crswdSentence = sentence;
 })();
 
 /*
@@ -2358,4 +2368,133 @@ const waitOutTheUpdate = () => {
   };
 
   document.querySelectorAll('form[data-reflow]').forEach(offer);
+})();
+
+/* The session page's input panel (spec 018). */
+(() => {
+  if (typeof window.fetch !== 'function') {
+    // Without fetch the forms stay plain posts, which the daemon answers with a
+    // redirect and a banner, so nothing here is needed to make them work.
+    return;
+  }
+
+  /*
+   * Which button was pressed, for browsers that do not report it.
+   *
+   * Both forms carry their meaning in the submitter's name and value (`enter`
+   * on the type form, `key` on the key bar), and a script that builds the body
+   * from FormData alone drops it. SubmitEvent.submitter is the right source;
+   * this remembers the last click as the fallback.
+   */
+  const lastClicked = new WeakMap();
+  document.addEventListener('click', (event) => {
+    const button = event.target.closest?.('form[data-session-input] button[type="submit"]');
+    if (button) {
+      lastClicked.set(button.form, button);
+    }
+  });
+
+  document.addEventListener('submit', async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.matches('form[data-session-input]')) {
+      return;
+    }
+    event.preventDefault();
+
+    const button = event.submitter || lastClicked.get(form) || null;
+    // One submission, one remembered button. A stale click must not stand in for
+    // the next submission that has no click of its own.
+    lastClicked.delete(form);
+    const body = new URLSearchParams(new FormData(form));
+    if (button?.name) {
+      body.set(button.name, button.value);
+    }
+
+    try {
+      const answer = await fetch(form.action, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        // The gate reads Sec-Fetch-Site; same-origin keeps it the one value
+        // the daemon admits.
+        credentials: 'same-origin',
+      });
+
+      if (answer.status === 204) {
+        // Delivered. The typed text is cleared only now, so a refusal leaves
+        // the operator's message where they wrote it.
+        if (form.classList.contains('type-form')) {
+          const field = form.querySelector('textarea');
+          if (field) {
+            field.value = '';
+            field.focus();
+          }
+        }
+        return;
+      }
+
+      const said = await answer.text();
+      // The text reached the pane and only the Enter failed. Clearing the box is
+      // what stops a retry from typing the same message a second time.
+      const code = new DOMParser().parseFromString(said, 'text/html')
+        .querySelector('[data-outcome]')?.getAttribute('data-outcome');
+      if (code === 'type-unsubmitted' && form.classList.contains('type-form')) {
+        const field = form.querySelector('textarea');
+        if (field) {
+          field.value = '';
+        }
+      }
+      window.crswdShowToast(window.crswdSentence(said) || 'That could not be sent.', form);
+    } catch {
+      window.crswdShowToast('That could not be sent. Nothing reached the session.', form);
+    }
+  });
+
+  // Ctrl/Cmd+Enter sends, because Enter alone must stay a newline in a message
+  // that may be several lines.
+  for (const field of document.querySelectorAll('.type-form textarea')) {
+    field.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        const form = field.form;
+        const send = form.querySelector('button[value="yes"]');
+        // A browser without SubmitEvent.submitter reads the remembered click, and
+        // requestSubmit makes none, so Send is recorded here.
+        lastClicked.set(form, send);
+        form.requestSubmit(send);
+      }
+    });
+  }
+
+  /*
+   * Scrollback is fetched when the disclosure opens, never with the page, and
+   * it is assigned as text: it is pane content, which this project renders as
+   * text and nothing else.
+   */
+  for (const details of document.querySelectorAll('details.scrollback[data-history]')) {
+    details.addEventListener('toggle', async () => {
+      if (!details.open) {
+        return;
+      }
+      const pre = details.querySelector('pre');
+      if (!pre) {
+        return;
+      }
+      pre.textContent = 'Loading…';
+      try {
+        const answer = await fetch(details.dataset.history, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!answer.ok) {
+          throw new Error('history refused');
+        }
+        const text = await answer.text();
+        pre.textContent = text === '' ? 'No scrollback yet.' : text;
+        pre.scrollTop = pre.scrollHeight;
+      } catch {
+        pre.textContent = 'Scrollback could not be read. Close and open it to try again.';
+      }
+    });
+  }
 })();

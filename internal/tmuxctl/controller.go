@@ -38,10 +38,21 @@ type Controller interface {
 	// command line. Submit it afterwards with SendKeys(name, "Enter").
 	Paste(ctx context.Context, name string, payload []byte) error
 
+	// PasteBracketed is Paste with paste-buffer -p, so a program that enabled
+	// bracketed paste receives the text wrapped in its start and end markers and
+	// holds a multi-line message instead of submitting line one (research R1).
+	PasteBracketed(ctx context.Context, name string, payload []byte) error
+
 	// CapturePane returns the rendered pane as plain text. The implementation
 	// must never pass -e, which would reconstruct ANSI escapes from cell
 	// attributes and hand raw control bytes to the API.
 	CapturePane(ctx context.Context, name string) (string, error)
+
+	// CaptureHistory returns the scrollback above the visible screen as plain
+	// text. Like CapturePane it never passes -e. It refuses with
+	// ErrHistoryTooLarge past HistoryLimit lines or 4 MiB rather than returning a
+	// shortened history, because a truncated history reads as a complete one.
+	CaptureHistory(ctx context.Context, name string) (string, error)
 
 	// Resize sets the session's window to cols by rows, which is how the
 	// terminal rather than a stylesheet does the wrapping (#120). tmux rewraps
@@ -94,6 +105,11 @@ type Controller interface {
 	// this package has already given a composed environment.
 	ReconcileServerEnvironment(ctx context.Context) (Reconciliation, error)
 }
+
+// HistoryLimit is the scrollback every pane is created with. tmux reads
+// history-limit when a pane is made and never again, so it has to ride on the
+// new-session invocation itself (research R2).
+const HistoryLimit = 5000
 
 // The tmux user options the daemon writes onto every session it creates, and
 // reads back on startup to decide what it owns (research D3).

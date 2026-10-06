@@ -275,8 +275,16 @@ func decode[T any](r *http.Request) (T, error) {
 Specific to this daemon:
 - **Never build a shell string.** Use `exec.Command` with an argv slice. No
   `sh -c`, no `fmt.Sprintf` into a command line.
-- **`tmux send-keys` takes the prompt as a single literal argument**, never
-  interpolated into a shell. Treat prompt text as hostile bytes.
+- **Caller text reaches tmux only through `load-buffer` on stdin, then
+  `paste-buffer`** (bracketed, `-p`, on the session page's route). Text holding a C0
+  control other than TAB or LF is refused, because inside a bracketed paste
+  `ESC[201~` would end the paste. Treat prompt text as hostile bytes.
+- **`send-keys` receives daemon constants only.** The session page's key bar sends a
+  symbolic name, and the daemon maps it through a closed table.
+- The daemon never types into a working session on its own initiative. The one
+  exception is the session page's input panel (spec 018): text or a key the operator
+  sent, delivered once, when they pressed it. It never types from a timer, a
+  supervisor, a dialog detector or any path without an operator request behind it.
 - **Working directories are allowlisted**, resolved with `filepath.Clean` +
   `filepath.EvalSymlinks`, then checked to be under an approved root. A caller
   does not get to name an arbitrary path.

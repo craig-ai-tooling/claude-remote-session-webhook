@@ -178,6 +178,13 @@ type Manager struct {
 	restartingMu sync.Mutex
 	restarting   map[string]bool
 
+	// inputLocks holds one *sync.Mutex per session ID, taken by Type and
+	// PressKey for the whole of a delivery (spec 018 review #1). A typed message
+	// is a paste and then an Enter, and a key arriving between the two would land
+	// inside another request's text. The zero Map is ready, and Destroy removes
+	// the entry with the record, so it does not outlive its session.
+	inputLocks sync.Map
+
 	// maxLifetime is the ceiling a per-session override may not exceed (#37).
 	// Zero means the built-in constant, so a manager nobody configured refuses
 	// any override beyond what the daemon always allowed.
@@ -1472,12 +1479,19 @@ func (m *Manager) Output(ctx context.Context, s Session) (Capture, error) {
 // None of them carries captured text: a partial read in an error string is pane
 // content in whatever records that error (FR-042).
 func (m *Manager) unreadable(ctx context.Context, s Session, cause error) error {
+	return m.vanished(ctx, s, "capture pane of", cause)
+}
+
+// vanished is unreadable for any operation that touches the window: what names
+// the operation in the error ("capture pane of", "type into"), and the rest is
+// the same question asked for the same reason.
+func (m *Manager) vanished(ctx context.Context, s Session, what string, cause error) error {
 	gone, confirmErr := m.confirmGone(ctx, s.TmuxName())
 	switch {
 	case confirmErr != nil:
-		return fmt.Errorf("capture pane of session %s: %w", s.ID, errors.Join(cause, confirmErr))
+		return fmt.Errorf("%s session %s: %w", what, s.ID, errors.Join(cause, confirmErr))
 	case !gone:
-		return fmt.Errorf("capture pane of session %s: %w", s.ID, cause)
+		return fmt.Errorf("%s session %s: %w", what, s.ID, cause)
 	}
 
 	// A record already gone is not a failure, for the reason it is not one in
@@ -1489,13 +1503,14 @@ func (m *Manager) unreadable(ctx context.Context, s Session, cause error) error 
 	// The event is Destroy's, on the same terms: this discovery is one of the
 	// ways a session leaves the fleet without anyone asking it to, and only the
 	// call that actually removed the record announces it.
+	m.inputLocks.Delete(s.ID)
 	switch err := m.store.Delete(s.ID); {
 	case err == nil:
 		m.emit(FleetVanished, s)
 	case !errors.Is(err, ErrSessionNotFound):
 		return fmt.Errorf("drop the record of vanished session %s: %w: %w", s.ID, ErrSessionDead, err)
 	}
-	return fmt.Errorf("capture pane of session %s: %w", s.ID, ErrSessionDead)
+	return fmt.Errorf("%s session %s: %w", what, s.ID, ErrSessionDead)
 }
 
 // Destroy tears a session down and reports success only once the host has
@@ -1567,6 +1582,7 @@ func (m *Manager) Destroy(ctx context.Context, s Session) error {
 		log.Printf("crswd: %v", fmt.Errorf("journal the end of session %s: %w", s.ID, err))
 	}
 
+	m.inputLocks.Delete(s.ID)
 	switch err := m.store.Delete(s.ID); {
 	case err == nil:
 		m.emit(FleetVanished, s)

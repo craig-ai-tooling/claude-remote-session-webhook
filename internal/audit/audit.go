@@ -157,6 +157,21 @@ const (
 	// column count is not a field on it; what the window is now is on the card.
 	ActionDashboardReflow Action = "dashboard.reflow"
 
+	// ActionDashboardType is an operator typing text into a session from the
+	// browser (spec 018). The record says the delivery happened and never carries
+	// the text: the shape is frozen and FR-012 forbids a prompt on the trail.
+	ActionDashboardType Action = "dashboard.type"
+
+	// ActionDashboardKey is an operator pressing one named key in a session from
+	// the browser. It never carries the key; which key was pressed is not a field
+	// on a frozen record.
+	ActionDashboardKey Action = "dashboard.key"
+
+	// ActionDashboardHistory is an operator reading a session's scrollback. It
+	// never carries the history, which is pane content and secret under
+	// docs/security.md section 3.
+	ActionDashboardHistory Action = "dashboard.history"
+
 	// ActionDashboardReject is a mutating browser request refused by the
 	// cross-site defence, and is deliberately not ActionAccessReject: an identity
 	// that passed layer 1 and then failed the cross-site check is a different and

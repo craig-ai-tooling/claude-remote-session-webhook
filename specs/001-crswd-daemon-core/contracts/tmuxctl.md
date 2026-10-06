@@ -67,8 +67,11 @@ one. A unit test asserts each helper's output format.
 ## `New` — create a session
 
 ```
-tmux new-session -d -s <name> -c <workDir>
+tmux set-option -g history-limit 5000 ; new-session -d -s <name> -c <workDir>
 ```
+
+Chained in one invocation because a limit set after `new-session` changes nothing for
+that session (spec 018 research R2).
 
 Starts the login shell only. The Claude command is delivered separately as keys, so a
 Claude crash leaves an inspectable shell rather than a dead session (FR-018, and the
@@ -120,6 +123,17 @@ prompts are secret under `docs/security.md` §3.
 Implementation: `cmd.Stdin = bytes.NewReader(payload)`. Nothing is written to disk.
 
 After a paste, `SendKeys(name, "Enter")` submits it.
+
+Two more commands arrived with spec 018:
+
+```
+tmux paste-buffer -p -d -b crswd-<id> -t =<name>:     # PasteBracketed
+tmux capture-pane -p -S -5000 -E -1 -t =<name>:       # CaptureHistory
+```
+
+`-p` on `paste-buffer` wraps the text in `ESC[200~ … ESC[201~`, so a multi-line message
+arrives as one message. `-S -5000 -E -1` returns only the scrollback, never the visible
+screen, and `CaptureHistory` refuses more than 5000 lines or 4 MiB.
 
 ---
 

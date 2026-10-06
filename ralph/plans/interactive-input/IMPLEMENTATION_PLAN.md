@@ -73,19 +73,19 @@ The loop may create or edit these paths and no others:
 
 ## Tasks
 
-- [ ] **T001** Create every session with `history-limit 5000` (chain in `argvNew`, `HistoryLimit` const, three argv expectations updated). Done when `go test -tags tmux ./internal/tmuxctl -run FiveThousand` and `go test ./internal/tmuxctl ./internal/session` pass.
-- [ ] **T002** Add `PasteBracketed` to `Controller`, `Fake`, `Exec`, plus `ArgvPasteBracketed`. Done when `go test -tags tmux ./internal/tmuxctl -run Bracketed` passes and removing `-p` fails it.
-- [ ] **T003** Add `CaptureHistory` (`-S -5000 -E -1`, refuse past 5000 lines or 4 MiB with `ErrHistoryTooLarge`) and `Fake.SetHistory`. Done when `go test -tags tmux ./internal/tmuxctl -run History` and `go test ./internal/tmuxctl` pass.
-- [ ] **T004** Add `session.Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes` and three sentinels in a new input file. Done when `go test ./internal/session -run 'Key|Typed'` passes.
-- [ ] **T005** Add `Manager.Type` (Touch, bracketed paste, optional Enter) and `Manager.PressKey`. Done when `go test ./internal/session -run 'Type|PressKey'` passes.
-- [ ] **T006** Add `Manager.History` (strip, no Touch, no `unreadable`). Done when `go test ./internal/session -run History` passes.
-- [ ] **T007** Add audit actions `dashboard.type`, `dashboard.key`, `dashboard.history` to both action tables. Done when `go test ./internal/audit` passes.
-- [ ] **T008** Add seven outcome codes with their exact sentences, and the `inputs` bucket (240/min) built inside `newServer`. Done when `go test ./internal/httpapi -run 'Outcome|InputBudget'` passes.
-- [ ] **T009** Add `POST /dashboard/sessions/{id}/type` behind `handleAction`, answering 204. Done when `go test ./internal/httpapi -run Type` passes, including every refusal shape.
-- [ ] **T010** Add `POST /dashboard/sessions/{id}/key` behind `handleAction`, sharing the bucket. Done when `go test ./internal/httpapi -run Key` passes.
-- [ ] **T011** Add `GET /sessions/{id}/history` behind `handleBrowser`, refusing cross-site, as text/plain no-store. Done when `go test ./internal/httpapi -run History` passes.
-- [ ] **T012** Make the leak suite type a canary and prove it reaches no record. Done when `go test ./internal/audit -run 'Leak|Secret|Drives'` passes.
-- [ ] **T013** Add the input panel, key bar and Scrollback disclosure to the pane partial, with five classes from existing tokens. Done when `go test ./internal/httpapi` passes, including the stylesheet sweeps.
-- [ ] **T014** Add the input client to `crswd.js` (204 handling, Ctrl/Cmd+Enter, scrollback on toggle) and make the shared handler skip it. Done when `go test ./internal/httpapi -run 'Input|Scrollback|CtrlEnter'` passes.
-- [ ] **T015** Amend the never-types rule in AGENTS.md and security.md, and update components.md, the mobile Q4/Q5 and the tmuxctl contract. Done when `grep -c 'on its own initiative' AGENTS.md` prints `1` and `go test ./...` passes.
-- [ ] **T016** Run the full gate, including `-tags tmux` and `-tags dev`, and break and restore the five guards. Done when `go test -tags tmux ./...` exits 0 and PROGRESS.md lists five failed-then-restored guards.
+- [x] **T001** Create every session with `history-limit 5000` (chain in `argvNew`, `HistoryLimit` const, three argv expectations updated). Done when `go test -tags tmux ./internal/tmuxctl -run FiveThousand` and `go test ./internal/tmuxctl ./internal/session` pass.
+- [x] **T002** Add `PasteBracketed` to `Controller`, `Fake`, `Exec`, plus `ArgvPasteBracketed`. Done when `go test -tags tmux ./internal/tmuxctl -run Bracketed` passes and removing `-p` fails it.
+- [x] **T003** Add `CaptureHistory` (`-S -5000 -E -1`, refuse past 5000 lines or 4 MiB with `ErrHistoryTooLarge`) and `Fake.SetHistory`. Done when `go test -tags tmux ./internal/tmuxctl -run History` and `go test ./internal/tmuxctl` pass.
+- [x] **T004** Add `session.Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes` and three sentinels in a new input file. Done when `go test ./internal/session -run 'Key|Typed'` passes.
+- [x] **T005** Add `Manager.Type` (Touch, bracketed paste, optional Enter) and `Manager.PressKey`. Done when `go test ./internal/session -run 'Type|PressKey'` passes.
+- [x] **T006** Add `Manager.History` (strip, no Touch, no `unreadable`). Done when `go test ./internal/session -run History` passes.
+- [x] **T007** Add audit actions `dashboard.type`, `dashboard.key`, `dashboard.history` to both action tables. Done when `go test ./internal/audit` passes.
+- [x] **T008** Add seven outcome codes with their exact sentences, and the `inputs` bucket (240/min) built inside `newServer`. Done when `go test ./internal/httpapi -run 'Outcome|InputBudget'` passes.
+- [x] **T009** Add `POST /dashboard/sessions/{id}/type` behind `handleAction`, answering 204. Done when `go test ./internal/httpapi -run Type` passes, including every refusal shape.
+- [x] **T010** Add `POST /dashboard/sessions/{id}/key` behind `handleAction`, sharing the bucket. Done when `go test ./internal/httpapi -run Key` passes.
+- [x] **T011** Add `GET /sessions/{id}/history` behind `handleBrowser`, refusing cross-site, as text/plain no-store. Done when `go test ./internal/httpapi -run History` passes.
+- [x] **T012** Make the leak suite type a canary and prove it reaches no record. Done when `go test ./internal/audit -run 'Leak|Secret|Drives'` passes.
+- [x] **T013** Add the input panel, key bar and Scrollback disclosure to the pane partial, with five classes from existing tokens. Done when `go test ./internal/httpapi` passes, including the stylesheet sweeps.
+- [x] **T014** Add the input client to `crswd.js` (204 handling, Ctrl/Cmd+Enter, scrollback on toggle) and make the shared handler skip it. Done when `go test ./internal/httpapi -run 'Input|Scrollback|CtrlEnter'` passes.
+- [x] **T015** Amend the never-types rule in AGENTS.md and security.md, and update components.md, the mobile Q4/Q5 and the tmuxctl contract. Done when `grep -c 'on its own initiative' AGENTS.md` prints `1` and `go test ./...` passes.
+- [x] **T016** Run the full gate, including `-tags tmux` and `-tags dev`, and break and restore the five guards. Done when `go test -tags tmux ./...` exits 0 and PROGRESS.md lists five failed-then-restored guards.

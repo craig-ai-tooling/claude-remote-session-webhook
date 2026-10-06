@@ -729,10 +729,10 @@ Rules — these are security rules as much as design rules:
   value and `user-scalable=no` are both refused by `TestNoPageClampsTheZoom`,
   across every template — a clamp is cheap to add, and with the wrap gone it is
   the whole of what a reader who has not reflowed has.
-- **The pane shows the live screen, not scrollback.** A repainting screen has no
-  "bottom" to follow, so an update must never move the viewport for the reader.
-  History is what `tmux attach` is for, and the interface should say so rather
-  than imply a transcript it does not keep.
+- **The pane shows the live screen, and history is the Scrollback disclosure below
+  it.** A repainting screen has no "bottom" to follow, so an update must never move
+  the viewport for the reader. Scrollback is fetched when it is opened and capped at
+  5000 lines.
 - **A stream that stops says why.** When the watched session ends, the note beside
   the pane is revealed and the source is closed. Updates that simply cease look
   exactly like a session sitting quietly at a prompt, and the last screen stays on
@@ -806,6 +806,38 @@ Rules:
 - **A screen that could not be read carries no offer**, for the reason it carries
   no stream: a reflow whose result cannot be shown is an action with nothing to
   observe, and the operator reloads instead.
+
+### Input panel (spec 018)
+
+Below the pane: a way to type into the session and to read what scrolled off it. Five
+classes, all from existing tokens: `.input-panel` (the sticky wrapper),
+`.type-form` (the textarea and its two buttons), `.key-bar` (the key buttons),
+`.scrollback` (the disclosure) and `.scrollback-summary` (its summary).
+
+Rules:
+- **Two routes, one answer.** The type form posts to
+  `POST /dashboard/sessions/{id}/type` and the key bar to
+  `POST /dashboard/sessions/{id}/key`. Both answer `204` on success, and the script
+  shows a toast rather than navigating. Without script they are ordinary forms and
+  answer with the redirect every action does.
+- **Twelve keys, a closed set**: Enter, Esc, Ctrl-C, Tab, Shift-Tab, the four arrows,
+  PgUp, PgDn and Backspace. The button's `value` is a symbolic name and the daemon
+  maps it; the page never sends a byte.
+- **Send submits, Type only does not.** Ctrl+Enter or Cmd+Enter in the textarea sends.
+- **Never gated by the dialog heuristic.** A session that looks like it is on a
+  dialog or sign-in screen still accepts input, because the heuristic is a guess and
+  the operator is looking at the screen.
+- **The panel and the Scrollback disclosure are drawn only with a page token**
+  (FR-017), like every other control that changes something.
+- **One delivery at a time per session.** A message is a paste and an Enter, and
+  the daemon holds both under one lock, so a key from another tab cannot land
+  between them.
+- **Type answers for what happened.** `type-unsubmitted` ("The text was typed but
+  not submitted") means the paste landed and the Enter did not. The script clears
+  the textarea for that outcome and only that one, since the text is already in
+  the session and a retry would type it twice. `type-failed` leaves the box alone.
+- **Scrollback is a `<pre>` filled with `textContent`**, fetched from
+  `GET /sessions/{id}/history` when the disclosure opens, never as markup.
 
 ## Form
 

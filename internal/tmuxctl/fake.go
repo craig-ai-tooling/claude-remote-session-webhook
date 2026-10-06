@@ -17,16 +17,18 @@ import (
 type Op string
 
 const (
-	OpNew          Op = "New"
-	OpSetOption    Op = "SetOption"
-	OpSendKeys     Op = "SendKeys"
-	OpPaste        Op = "Paste"
-	OpCapturePane  Op = "CapturePane"
-	OpResize       Op = "Resize"
-	OpKill         Op = "Kill"
-	OpHas          Op = "Has"
-	OpList         Op = "List"
-	OpReconcileEnv Op = "ReconcileServerEnvironment"
+	OpNew            Op = "New"
+	OpSetOption      Op = "SetOption"
+	OpSendKeys       Op = "SendKeys"
+	OpPaste          Op = "Paste"
+	OpPasteBracketed Op = "PasteBracketed"
+	OpCapturePane    Op = "CapturePane"
+	OpCaptureHistory Op = "CaptureHistory"
+	OpResize         Op = "Resize"
+	OpKill           Op = "Kill"
+	OpHas            Op = "Has"
+	OpList           Op = "List"
+	OpReconcileEnv   Op = "ReconcileServerEnvironment"
 )
 
 // Call is one recorded invocation. Argv is the complete command line, argv[0]
@@ -47,8 +49,12 @@ type Call struct {
 // asserting the command tmux will actually receive. Each returns a fresh slice
 // with argv[0] set, so a caller runs exec.CommandContext(ctx, argv[0], argv[1:]...).
 
+// The ";" is tmux's own command separator, passed as its own argv element, so
+// this is still one exec and no shell string. The limit is chained here because
+// a set-option after creation does not change a pane that already exists
+// (research R2); a server that is not running yet is started by the chain.
 func argvNew(name, workDir string) []string {
-	return []string{"tmux", "new-session", "-d", "-s", name, "-c", workDir}
+	return []string{"tmux", "set-option", "-g", "history-limit", strconv.Itoa(HistoryLimit), ";", "new-session", "-d", "-s", name, "-c", workDir}
 }
 
 func argvSetOption(name, option, value string) []string {
@@ -65,16 +71,38 @@ func argvSendKeys(name string, keys ...string) []string {
 	return append(argv, keys...)
 }
 
-// The buffer is named for the session, so two sessions pasting at once cannot
-// read each other's text. The payload rides on stdin, never on the command line.
-func argvLoadBuffer(name string) []string {
-	return []string{"tmux", "load-buffer", "-b", name, "-"}
+// BufferPrefix starts every buffer name a paste uses. The buffer is named per
+// call, never per session: two pastes into one session, or one cleanup racing
+// another paste, must not be able to read or delete each other's text.
+const BufferPrefix = "crswd-in-"
+
+// FakeBufferName is the name the Fake gives its n'th paste (1-based), so a test
+// can write the argv it expects without the randomness the real controller has.
+func FakeBufferName(n uint64) string { return fmt.Sprintf("%s%016x", BufferPrefix, n) }
+
+// The payload rides on stdin, never on the command line.
+func argvLoadBuffer(buffer string) []string {
+	return []string{"tmux", "load-buffer", "-b", buffer, "-"}
 }
 
 // -d deletes the buffer as it pastes, so prompt text does not linger where
-// another tmux client could read it.
-func argvPasteBuffer(name string) []string {
-	return []string{"tmux", "paste-buffer", "-d", "-b", name, "-t", PaneTarget(name)}
+// another tmux client could read it. It only runs when the paste succeeds, which
+// is why argvDeleteBuffer exists.
+func argvPasteBuffer(buffer, name string) []string {
+	return []string{"tmux", "paste-buffer", "-d", "-b", buffer, "-t", PaneTarget(name)}
+}
+
+// -p wraps the text in the bracketed-paste markers when the pane's program has
+// asked for them, which is what keeps a newline inside a message from being read
+// as Enter (research R1). Otherwise identical to argvPasteBuffer.
+func argvPasteBufferBracketed(buffer, name string) []string {
+	return []string{"tmux", "paste-buffer", "-p", "-d", "-b", buffer, "-t", PaneTarget(name)}
+}
+
+// argvDeleteBuffer is the cleanup for a paste-buffer that failed after
+// load-buffer succeeded, when -d never ran.
+func argvDeleteBuffer(buffer string) []string {
+	return []string{"tmux", "delete-buffer", "-b", buffer}
 }
 
 // No -e. tmux stores the rendered screen, so the default output is already
@@ -82,6 +110,12 @@ func argvPasteBuffer(name string) []string {
 // raw control bytes to the API.
 func argvCapturePane(name string) []string {
 	return []string{"tmux", "capture-pane", "-p", "-t", PaneTarget(name)}
+}
+
+// -E -1 stops one line above the visible screen, so the history and the pane
+// never overlap. No -e, for the reason argvCapturePane gives.
+func argvCaptureHistory(name string) []string {
+	return []string{"tmux", "capture-pane", "-p", "-S", "-" + strconv.Itoa(HistoryLimit), "-E", "-1", "-t", PaneTarget(name)}
 }
 
 // The window dimensions tmux itself accepts, measured against tmux 3.4 on a
@@ -228,6 +262,14 @@ type Fake struct {
 	surviving map[string]bool
 	fail      map[Op]error
 	now       func() time.Time
+	buffers   uint64
+}
+
+// nextBuffer is the fake's stand-in for the random buffer name Exec draws. The
+// caller holds f.mu.
+func (f *Fake) nextBuffer() string {
+	f.buffers++
+	return FakeBufferName(f.buffers)
 }
 
 type fakeSession struct {
@@ -241,6 +283,7 @@ type fakeSession struct {
 	paneCommand string
 	options     map[string]string
 	pane        string
+	history     string
 
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
@@ -316,12 +359,39 @@ func (f *Fake) Paste(_ context.Context, name string, payload []byte) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.record(OpPaste, argvLoadBuffer(name), append([]byte(nil), payload...))
-	f.record(OpPaste, argvPasteBuffer(name), nil)
+	buffer := f.nextBuffer()
+	f.record(OpPaste, argvLoadBuffer(buffer), append([]byte(nil), payload...))
+	f.record(OpPaste, argvPasteBuffer(buffer, name), nil)
+	// The real controller deletes the buffer when paste-buffer fails, since -d
+	// only runs on success.
 	if err := f.fail[OpPaste]; err != nil {
+		f.record(OpPaste, argvDeleteBuffer(buffer), nil)
 		return err
 	}
 	if _, ok := f.sessions[name]; !ok {
+		f.record(OpPaste, argvDeleteBuffer(buffer), nil)
+		return errNoSession(name)
+	}
+	return nil
+}
+
+// PasteBracketed records the same two calls Paste does, under its own op, with
+// the second carrying -p.
+func (f *Fake) PasteBracketed(_ context.Context, name string, payload []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	buffer := f.nextBuffer()
+	f.record(OpPasteBracketed, argvLoadBuffer(buffer), append([]byte(nil), payload...))
+	f.record(OpPasteBracketed, argvPasteBufferBracketed(buffer, name), nil)
+	// The real controller deletes the buffer when paste-buffer fails, since -d
+	// only runs on success.
+	if err := f.fail[OpPasteBracketed]; err != nil {
+		f.record(OpPasteBracketed, argvDeleteBuffer(buffer), nil)
+		return err
+	}
+	if _, ok := f.sessions[name]; !ok {
+		f.record(OpPasteBracketed, argvDeleteBuffer(buffer), nil)
 		return errNoSession(name)
 	}
 	return nil
@@ -340,6 +410,21 @@ func (f *Fake) CapturePane(_ context.Context, name string) (string, error) {
 		return "", errNoSession(name)
 	}
 	return s.pane, nil
+}
+
+func (f *Fake) CaptureHistory(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.record(OpCaptureHistory, argvCaptureHistory(name), nil)
+	if err := f.fail[OpCaptureHistory]; err != nil {
+		return "", err
+	}
+	s, ok := f.sessions[name]
+	if !ok {
+		return "", errNoSession(name)
+	}
+	return s.history, nil
 }
 
 // Resize records the call and leaves the session at the size tmux was told —
@@ -574,6 +659,20 @@ func (f *Fake) SetPane(name, content string) {
 		f.sessions[name] = s
 	}
 	s.pane = content
+}
+
+// SetHistory sets what CaptureHistory returns, seeding the session if it does
+// not exist yet, as SetPane does.
+func (f *Fake) SetHistory(name, content string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.history = content
 }
 
 // SetPaneCommand replaces what List reports as this session's pane command,
