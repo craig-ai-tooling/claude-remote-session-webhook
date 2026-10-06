@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"unicode/utf8"
 )
 
 // trust_codex.go is trust.go for Codex: it records a session's working
@@ -139,6 +140,9 @@ func readCodexConfig(path string) ([]byte, error) {
 
 // trustablePath reports whether dir can sit inside a TOML basic string as is.
 func trustablePath(dir string) bool {
+	if !utf8.ValidString(dir) {
+		return false
+	}
 	for i := 0; i < len(dir); i++ {
 		if c := dir[i]; c == '"' || c == '\\' || c < 0x20 || c == 0x7f {
 			return false

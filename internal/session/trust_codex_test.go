@@ -99,6 +99,7 @@ func TestWithCodexTrust(t *testing.T) {
 			name: "escaped header naming the same dir", dir: codexDir, wantErr: ErrCodexConfigShape,
 			in: "[projects.\"/home/op/code/\\u0072epo\"]\ntrust_level = \"untrusted\"\n",
 		},
+		{name: "invalid utf-8 in dir", dir: "/a\xffb", wantErr: ErrUntrustablePath},
 		{name: "quote in dir", dir: "/a\"b", wantErr: ErrUntrustablePath},
 		{name: "backslash in dir", dir: "/a\\b", wantErr: ErrUntrustablePath},
 		{name: "newline in dir", dir: "/a\nb", wantErr: ErrUntrustablePath},
