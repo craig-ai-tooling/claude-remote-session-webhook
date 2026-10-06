@@ -35,5 +35,18 @@ func run() error {
 			return fmt.Errorf("write %s: %w", p, err)
 		}
 	}
+	chart, err := manifest.ChartFiles()
+	if err != nil {
+		return fmt.Errorf("render chart files: %w", err)
+	}
+	for name, b := range chart {
+		p := filepath.Join("deploy", "chart", filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			return fmt.Errorf("create %s: %w", filepath.Dir(p), err)
+		}
+		if err := os.WriteFile(p, b, 0o600); err != nil { //nolint:gosec // G306/G304: constant names, repo-local output
+			return fmt.Errorf("write %s: %w", p, err)
+		}
+	}
 	return nil
 }

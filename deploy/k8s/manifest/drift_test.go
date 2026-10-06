@@ -30,6 +30,24 @@ func TestCommittedManifestsMatchFiles(t *testing.T) {
 	}
 }
 
+func TestCommittedChartFilesMatchChartFiles(t *testing.T) {
+	t.Parallel()
+	files, err := ChartFiles()
+	if err != nil {
+		t.Fatalf("ChartFiles: %v", err)
+	}
+	for name, want := range files {
+		got, err := os.ReadFile(filepath.Join("..", "..", "chart", filepath.FromSlash(name))) //nolint:gosec // G304: name comes from ChartFiles(), not input
+		if err != nil {
+			t.Errorf("read deploy/chart/%s: %v; %s", name, err, regenerate)
+			continue
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("deploy/chart/%s differs from ChartFiles(); %s", name, regenerate)
+		}
+	}
+}
+
 // A JSON file nothing generates is a manifest nobody reviews as Go.
 func TestNoStrayManifests(t *testing.T) {
 	t.Parallel()

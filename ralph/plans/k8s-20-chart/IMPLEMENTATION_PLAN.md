@@ -24,7 +24,7 @@ If it fails, the reason is "spec 017 S7 not merged".
 Take the topmost open task. One per iteration.
 
 - [x] T1: Allow the loop's helm commands per Design §1. Verify: `grep -c 'Bash(helm lint:\*)\|Bash(helm template:\*)' .claude/settings.json` prints `2`.
-- [ ] T2: The generator writes the chart's CRD and RBAC rules per Design §2. Run `go run ./deploy/k8s/gen` to write them. Verify: `go test ./deploy/k8s/...` exits 0 (the drift test compares the generator's bytes with the files on disk).
+- [x] T2: The generator writes the chart's CRD and RBAC rules per Design §2. Run `go run ./deploy/k8s/gen` to write them. Verify: `go test ./deploy/k8s/...` exits 0 (the drift test compares the generator's bytes with the files on disk).
 - [ ] T3: Chart skeleton, values, helpers and NOTES per Design §3. Verify: `helm lint deploy/chart --set sharedSecret.existingSecret=s` exits 0.
 - [ ] T4: Namespaces, ServiceAccounts and RBAC templates per Design §4. Verify: `helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s` exits 0 and `go test -run ChartRBAC ./deploy/chart -v` passes.
 - [ ] T5: The claim, the two Deployments, the optional Service and the optional cloudflared sidecar per Design §5. Verify: `helm lint deploy/chart --set sharedSecret.existingSecret=s` exits 0, `helm template t deploy/chart -n crswd` exits non-zero, and `go test ./deploy/chart -v` passes.

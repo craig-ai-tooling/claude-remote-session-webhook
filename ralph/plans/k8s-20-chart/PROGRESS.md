@@ -45,3 +45,26 @@ BLOCKED: T1 cannot edit .claude/settings.json, the Edit tool was denied write pe
 ## Operator (10/6/26): T1 done
 
 The loop cannot write `.claude/`, so the operator added `helm lint`, `helm template`, `bash -n` and `shellcheck` to `.claude/settings.json` and ticked T1. Ignore the BLOCKED line above. Next: T2.
+
+## Iteration 2 (T2, generator writes the chart's CRD and rules)
+
+Done: `manifest.ChartFiles()` returns `crds/agentsessions.crswd.craigcloud.io.json` (same bytes as
+`crd.json`) and `files/rules.json` (`daemon`, `lease`, `reconciler`). `gen` writes them under
+`deploy/chart/`. `drift_test.go` compares them with disk. `chart_test.go` holds the SC-005 walker
+checks over the chart rules, a match test against the three `rbac-*.json` files, and a walker
+that can fail.
+
+Failing first: `go vet ./deploy/k8s/...` printed `chart_test.go:17:16: undefined: ChartFiles` (does
+not compile). After the code, before `gen` ran, `TestCommittedChartFilesMatchChartFiles` failed with
+`open ../../chart/files/rules.json: no such file or directory`.
+
+Next iteration would waste time on:
+- `rbac.go` is not in "Files touched", so the rules are not extracted into helpers there. `rulesOf`
+  in `chart.go` reads item 0 of each builder's List and returns an error, because errcheck rejects
+  `_` on the type assertions.
+- `deploy/chart/` has only `crds/` and `files/` so far. T3 adds Chart.yaml and the rest.
+- Gate steps 1 to 6, 8 and 9 passed. Step 7 (helm lint) starts at T3.
+
+Noticed, not fixed: one `go test ./...` run failed `TestCodexSignedIn` in `internal/loginrelay` with
+`text file busy` (fork/exec of a just-written fake codex). It passed on the next run. Outside this
+plan's files.
