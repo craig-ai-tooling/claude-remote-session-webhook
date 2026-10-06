@@ -54,3 +54,11 @@ BLOCKED: dependency not merged
 - Gate: all green, quickstart included (8765 free). Root `go.sum` absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean. `k8s/go.mod` untouched; lint of `k8s/` left to CI per the prompt.
 - Next iteration: `pod.go` already defines a generic `ptr[T]`; reuse it in `reconcile.go`. `pod_test.go` defines `podNow`, `podCfg()`, `podObj()` and `envOf2` (`envOf` is taken by `config_test.go`), reuse them in `reconcile_test.go`. An unparseable `spec.lifetime` (including `never`) returns a plain wrapped error, not `ErrLifetimeOver`; admission in T3 rejects it first, so rule 5 only sees valid durations.
 - Noticed, not fixed: none.
+
+## Iteration 3: T3 ReconcileOne
+
+- Added `k8s/internal/reconcile/reconcile.go` and `reconcile_test.go`: `Reconciler`, `New`, `ReconcileOne` (rules 1 to 7), `setStatus`, `AnnotationRecreates`, `MaxRecreates`, `AnnotationConversation`.
+- Failing first: `go -C k8s test ./internal/reconcile -run Reconcile` printed `reconcile_test.go:23:8: undefined: Reconciler` (did not compile; the type did not exist).
+- Gate: all green, quickstart included (8765 free). Root go.sum absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean. Lint of `k8s/` left to CI.
+- Next iteration: `reconcile_test.go` has `newRig(t, cfg, objs, pods...)` returning `rig{r, kube, dyn}` with `count(verb, resource)` and `status(t, name)`; reuse it in `loop_test.go`. `Reconciler.dyn` is only written so far; T4 reads it for the informer. `Admit` filters the object itself out of `others` by UID, so List needs no filtering. Unparseable `pod-recreates` counts as 0.
+- Noticed, not fixed: none.
