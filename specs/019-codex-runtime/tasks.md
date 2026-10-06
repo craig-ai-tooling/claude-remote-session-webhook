@@ -448,7 +448,12 @@ the last `-c` for a key, so an operator's own later `-c check_for_update_on_star
 
 - **Files**: `internal/session/conversation.go` (dispatchers), `internal/session/supervisor.go`
   (`:197` HasTranscript gate), `internal/session/manager.go` (`Continue` `:2471`),
-  `internal/session/conversation_codex_test.go`.
+  `internal/session/conversation_codex_test.go`, `internal/session/harness_test.go` (`continueFixture`
+  only: plant a Codex rollout instead of a Claude transcript. Replace its `conversationHome(...)` line
+  with `home := t.TempDir(); f.mgr.SetCodexHome(home); plantCodexRollout(t, home,
+  harnessTestConversation, s.WorkDir)`, where `plantCodexRollout` is a new helper in
+  `conversation_codex_test.go` built from `writeRollout` and `codexMetaLine`; operator decision
+  2026-10-06).
 - **Interface**:
   ```go
   func (m *Manager) ConversationsFor(h harness.Name, workDir string) []Conversation
