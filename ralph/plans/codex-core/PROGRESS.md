@@ -77,3 +77,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: `specOf` reads the start-command name from the record and resolves it through the configured set. A name no longer configured reads as `Other`, so it gets plain paste.
 - `Type` is not routed through `paste`.
 - Left: T006 onward. No findings unfixed.
+
+## Iteration 9 (T006, stopped)
+
+- No code changed. T006 is ambiguous; marked `- [!]` in IMPLEMENTATION_PLAN.md.
+
+## NEEDS CLARIFICATION (3)
+
+- **T006**: quoted text: "Files: `internal/session/manager.go` (`SetMode` `:1297`), `internal/session/mode_test.go`." and "Tests: `TestSetModeRefusesCodex` (fake records zero SendKeys calls), existing mode tests unedited." and "Acceptance: `go test ./internal/session/... -run Mode` passes." `internal/session/mode_test.go` begins with `//go:build tmux` and holds only real-tmux round-trip tests, so a test added there is invisible to the default-build acceptance command and cannot be proven to fail on the old code. A fake-based test belongs in a default-build file. `SetMode`'s existing fake tests (`TestSetModeRefusesWhatItCannotCarryOut`, `codexFixture`) live in `manager_test.go` and `harness_test.go`, neither listed. Question: which default-build file may hold `TestSetModeRefusesCodex`? Suggested fix: change T006's Files line to name `internal/session/harness_test.go` (it already has `codexFixture`) instead of `mode_test.go`, and keep the acceptance as is. The `manager.go` change is one line and unambiguous (`specOf(s).RemoteControl` check after the dead-state check).
