@@ -82,6 +82,22 @@ Create, journal replay and Continue go through it. New `resolver_test.go`.
 - A scratch worktree for a baseline check must not live under an unset `$TMPDIR` (it resolves to `/`);
   `go test -C <dir>` avoids the `cd` prompt.
 
+## Iteration 4 (T4, 10/6/26)
+
+Created `internal/admit/admit.go` (pure `Admit`) and `admit_test.go` (25 table rows plus a no-mutation test).
+
+- Failing first: `go test ./internal/admit` printed `admit_test.go:178:19: undefined: Admit`
+  (package did not compile, no `Admit` yet). Passes after.
+- Gate green: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port 8765 free, 58s),
+  golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0. `TestDashboardQuickstartStory2Cap`
+  passed this time, so the iteration 3 flake is intermittent.
+- Next iteration: reasons are fixed sentences: "working directory is not under an approved root",
+  "lifetime must be a positive duration such as 8h", "session is past its lifetime", "session limit reached".
+  `CreationTimestamp + lifetime == now` counts as past. A zero `CreationTimestamp` with a short lifetime
+  is rejected as past; the reconciler (S-later) reads real API-server timestamps, so it is not a concern here.
+- Do not run the gate with `cd` or `&&` chains that mix `-C` and `golangci-lint`: the harness stalls for
+  approval. Run each command separately from the worktree root.
+
 ## NEEDS CLARIFICATION
 
 None open.
