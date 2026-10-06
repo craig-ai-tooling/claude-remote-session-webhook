@@ -25,7 +25,7 @@ Take the topmost open task. One per iteration.
 - [x] T3: The cluster binary `k8s/cmd/crswd` per Design §3. Verify: `go -C k8s test ./cmd/crswd/... -v` passes and `go -C k8s build -o /dev/null ./cmd/crswd` exits 0.
 - [x] T4: The crswd image Dockerfile and the session image's Codex per Design §4. Verify: `go test -run Dockerfile ./internal/sessionpod ./deploy/image -v` passes, and `bash -n deploy/session-image/fetch-codex.sh` exits 0.
 - [x] T5: The crswd-next manifests, generated, per Design §5. Run `go run ./deploy/k8s/gen` to write them. Verify: `go test ./deploy/k8s/...` exits 0 (the drift test compares the generator's bytes with the files on disk).
-- [ ] T6: `docs/k8s-mode.md` per Design §6. Verify: `grep -c '^## ' docs/k8s-mode.md` prints at least `7`, and `go test ./...` exits 0.
+- [x] T6: `docs/k8s-mode.md` per Design §6. Verify: `grep -c '^## ' docs/k8s-mode.md` prints at least `7`, and `go test ./...` exits 0.
 - [ ] T7: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
 
 ## Files touched

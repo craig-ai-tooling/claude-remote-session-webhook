@@ -202,3 +202,19 @@ For the next iteration:
 - Bash refuses `$?` and `$VAR` in a command line here; write literal paths.
 
 Noticed, not fixed: the quickstart cap flake (3rd time, Iterations 2, 5, 6).
+
+## Iteration 7 (T6, docs/k8s-mode.md): done
+
+Wrote `docs/k8s-mode.md` with the seven Design §6 sections, in order. No em-dash. The deployment table is copied from spec 017. The build commands match the two Dockerfile headers.
+
+Failing first: `grep -c "^## " docs/k8s-mode.md` printed `grep: docs/k8s-mode.md: No such file or directory` before the file existed (a doc has no unit test; the verify is the heading count, now 7).
+
+Verify: heading count 7, `go test ./...` exits 0. Full pre-commit list passed (`-tags quickstart` passed first time, 44s, port free).
+
+Deviation from Design §6 item 4: the plan lists the secret before `kubectl apply`, but the namespace must exist first, so step 1 applies `crswd-next/namespaces.json`. The doc also names `placeholder-credentials.json` (empty `claude-credentials`) in step 4.
+
+For the next iteration (T7):
+- Read VALIDATION_CONTRACT.md and run every command in it; the pre-commit list above is the same set, plus whatever the contract adds.
+- The quickstart cap flake (`TestDashboardQuickstartStory2Cap`) did not fire this time; if it does, rerun alone.
+
+Noticed, not fixed: none.
