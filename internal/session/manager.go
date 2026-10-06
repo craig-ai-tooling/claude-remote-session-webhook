@@ -1350,6 +1350,11 @@ func (m *Manager) SetMode(ctx context.Context, s Session, mode Mode) (Session, e
 	if s.State == StateDead {
 		return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrSessionDead)
 	}
+	// Codex has no remote-control mode to switch to. Only Codex is refused, not
+	// every harness without one: an Other session keeps today's behaviour.
+	if m.specOf(s).Name == harness.Codex {
+		return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable)
+	}
 
 	target, err := m.commandForMode(mode)
 	if err != nil {

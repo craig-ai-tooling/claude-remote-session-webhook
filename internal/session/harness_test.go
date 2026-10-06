@@ -311,3 +311,19 @@ func TestTypeStaysBracketedForClaude(t *testing.T) {
 		t.Error("Type on a Claude session did not use paste-buffer -p")
 	}
 }
+
+func TestSetModeRefusesCodex(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	before := len(f.tmux.Calls())
+
+	for _, mode := range []Mode{ModeLocal, ModeRemote} {
+		if _, err := f.mgr.SetMode(context.Background(), *s, mode); !errors.Is(err, ErrModeUnavailable) {
+			t.Errorf("SetMode(%s) on Codex error = %v, want ErrModeUnavailable", mode, err)
+		}
+	}
+	if got := f.tmux.Calls()[before:]; len(got) != 0 {
+		t.Errorf("a refused Codex mode change touched the pane: %v", opsOf(got))
+	}
+}
