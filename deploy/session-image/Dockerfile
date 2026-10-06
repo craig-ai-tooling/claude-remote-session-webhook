@@ -38,7 +38,8 @@
 # secret mount. The pod gets an access-token-only Secret mounted as a directory
 # at run time (FR-015), and the reconciler names it in the pod spec without ever
 # reading it.
-FROM --platform=linux/amd64 docker.io/nctiggy/ralph-runner:2.1.246-ci10
+# docker.io/nctiggy/ralph-runner:2.1.246-ci10
+FROM --platform=linux/amd64 docker.io/nctiggy/ralph-runner:2.1.246-ci10@sha256:5986748b2442efdee9e23a96ce4351b317f8953676d7b750a290d03efdb47ad7
 
 # COPY and not ADD: ADD fetches URLs and unpacks archives, and this image has no
 # business doing either. The binary is root-owned and not writable by the session

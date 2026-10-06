@@ -12,6 +12,9 @@ on:
       - 'k8s/**'
       - 'internal/**'
       - 'api/**'
+      - 'web/**'
+      - 'go.mod'
+      - 'go.sum'
       - 'deploy/image/**'
       - 'deploy/session-image/**'
       - 'deploy/chart/**'
@@ -31,6 +34,11 @@ concurrency:
 jobs:
   images:
     name: Build and publish
+    # workflow_dispatch lets anyone with write access pick any ref, and this job
+    # holds packages: write. Publishing only from main keeps a branch's bytes out
+    # of ghcr under a version that names a main commit. Dispatch stays for a
+    # rerun on main.
+    if: github.ref == 'refs/heads/main'
     # GitHub-hosted for the reason release.yml gives: these are the bytes other
     # people pull and run, so they are built on a machine that holds nothing of
     # the operator's.
@@ -75,7 +83,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A version tag is immutable. A rerun on the same commit finds the tag in
+      # ghcr and skips the push rather than overwrite what people may have pulled.
+      - name: Check for published tags
+        id: exists
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for pair in "crswd:crswd" "session:crswd-session"; do
+            key="${pair%%:*}"; img="${pair##*:}"
+            if docker buildx imagetools inspect "ghcr.io/craig-ai-tooling/$img:$VERSION" > /dev/null 2>&1; then
+              echo "::notice::ghcr.io/craig-ai-tooling/$img:$VERSION already exists, not pushing"
+              echo "$key=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$key=false" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
       - name: Push crswd
+        if: steps.exists.outputs.crswd != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ runner.temp }}/bin
@@ -86,6 +112,7 @@ jobs:
           push: true
 
       - name: Push crswd-session
+        if: steps.exists.outputs.session != 'true'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ runner.temp }}/session
@@ -107,4 +134,8 @@ jobs:
         run: |
           helm package deploy/chart --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP"
           echo "$GH_TOKEN" | helm registry login ghcr.io -u "$GH_ACTOR" --password-stdin
+          if helm show chart oci://ghcr.io/craig-ai-tooling/charts/crswd --version "$VERSION" > /dev/null 2>&1; then
+            echo "::notice::chart crswd $VERSION already exists, not pushing"
+            exit 0
+          fi
           helm push "$RUNNER_TEMP/crswd-$VERSION.tgz" oci://ghcr.io/craig-ai-tooling/charts
