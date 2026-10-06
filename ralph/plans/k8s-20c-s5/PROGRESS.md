@@ -140,3 +140,23 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - For S7: the pod's `crswd codex-conversation <name>` runs `sessionpod.CodexConversation(ctx, <real exec>, name, "/proc", session.CodexHome(os.Environ()))`, and `crswd has-transcript <name> <harness> <id> <workdir>` runs `sessionpod.HasTranscript(harness.Name(h), id, workdir, os.Environ())`, exiting 0 when true and 1 when false. Wire `mgr.SetCodexConversationFinder(func(ctx, s) { return ctl.CodexConversation(ctx, s.TmuxName()) })`.
 - Sandbox note: an absolute `go -C <path>` is refused; use `go -C k8s ...` from the repo root. A stray `cd` into a subdirectory breaks the allowlist for later commands.
 - Nothing noticed to fix.
+
+## T11: validation contract
+
+Every bullet run from the repo root on `plan/k8s-20c-s5`, uncached (`-count=1`) for the targeted ones:
+
+- Host module shape: `test ! -e go.sum` ok, `grep -c require go.mod` prints 0, the `git diff --diff-filter=M ... '*_test.go'` command prints nothing.
+- Root gate (build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd`, golangci-lint): all green, lint 0 issues. Port 8765 was free.
+- Cluster module (`go -C k8s` vet, test, build): green. Not linted here, CI does.
+- Controller assertion: one line, `k8s/internal/podctl/podctl.go:59`.
+- `podctl -run 'SendKeys|Paste|Resize|SetOption'`: ok (4 top-level tests).
+- `podctl -run Paste`: ok (`TestPastePayloadInStdinNotArgv`, `TestPasteFailureDeletesBuffer`).
+- `podctl -run Kill`: ok (`TestKill`, `TestCapturePaneKillStopsStream`).
+- `podctl -run List`: ok, including `TestListRepairsUnmanagedPod` (option replay).
+- `sessionpod -run 'PassThrough|CodexConversation'` and `podctl -run CodexConversation`: ok.
+- `sessionpod -run Seed`: ok.
+- `session -run 'SuperviseLexical|TranscriptChecker|CodexConversationFinder'`: ok.
+
+Skipped: nothing. The k8s module lint is the operator's pre-PR step.
+
+RALPH_COMPLETE

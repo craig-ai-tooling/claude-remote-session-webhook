@@ -30,7 +30,7 @@ T5 to T10 are the cluster module `k8s/`.
 - [x] T8: podctl `CapturePane` over one held `pane-loop` stream per session, per Design §8. Verify: `go -C k8s test ./internal/podctl -run CapturePane -v` passes.
 - [x] T9: podctl `List`, with option replay into a fresh pod, per Design §9. Verify: `go -C k8s test ./internal/podctl -run List -v` passes.
 - [x] T10: podctl `CodexConversation` and `HasTranscript` methods, and the compile-time Controller assertion, per Design §10. Verify: `go -C k8s test ./internal/podctl -v` passes and `go -C k8s vet ./...` exits 0.
-- [ ] T11: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
+- [x] T11: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
 
 ## Files touched
 
