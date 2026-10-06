@@ -23,7 +23,7 @@ Take the topmost open task. One per iteration. All of them are in the cluster mo
 - [x] T3: `ReconcileOne`, the decision table, per Design §3. Verify: `go -C k8s test ./internal/reconcile -run Reconcile -v` passes.
 - [x] T4: The loop: informers, queue, `Run`, and `RunWithLease`, per Design §4. Verify: `go -C k8s test ./internal/reconcile -run 'Loop|Lease' -v` passes.
 - [x] T5: The spec and plan amendment per Design §5. Verify: `grep -n 'finalizer' specs/017-k8s-native-execution/plan.md` prints at least one line inside the Reconcile paragraph.
-- [ ] T6: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go -C k8s test ./... && go test ./...` exits 0.
+- [x] T6: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go -C k8s test ./... && go test ./...` exits 0.
 
 ## Files touched
 

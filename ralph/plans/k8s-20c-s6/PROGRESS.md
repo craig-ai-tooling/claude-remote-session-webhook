@@ -78,3 +78,18 @@ BLOCKED: dependency not merged
 - Gate: all green, quickstart included (8765 free). Root go.sum absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean. Lint of `k8s/` left to CI.
 - Next iteration: T6 only. Run every command in VALIDATION_CONTRACT.md and record each result, then append `RALPH_COMPLETE`. Test results were cached this run; use `-count=1` when recording T6 evidence.
 - Noticed, not fixed: none.
+
+## Iteration 6 (T6): validation contract
+
+All run with `-count=1` from the repo root.
+- Host module unchanged: `git diff --name-only origin/main...HEAD -- . ':!k8s' ':!specs' ':!ralph'` printed nothing; `test ! -e go.sum` exit 0.
+- Root gate: build, vet, test, `golangci-lint run` exit 0 (0 issues). `-tags tmux ./...` no failures. `-tags quickstart ./cmd/crswd` ok (8765 free). `grep -c require go.mod` prints 0.
+- Cluster module: vet, test, build exit 0. Lint of `k8s/` left to CI.
+- `PodForNoSecretReadNoHostAccess`, `PodForBothRuntimes`, `PodForDeadline`: PASS.
+- `Reconcile`: PASS; the delete case checks `GracePeriodSeconds` nil (reconcile_test.go:125).
+- `Reconcile.*(Outside|Cap)`: PASS (`TestReconcileOutsideRoot`, `TestReconcileRecreateCapReached`).
+- `Lease`: PASS (`TestLeaseOneActs`, `TestRunWithLeaseReturnsLoopError`).
+- `grep -n finalizer specs/017-k8s-native-execution/plan.md`: line 48.
+- Noticed, not fixed: none.
+
+RALPH_COMPLETE
