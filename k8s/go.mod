@@ -1,6 +1,6 @@
 module github.com/nctiggy/claude-remote-session-webhook/k8s
 
-go 1.23.0
+go 1.25.0
 
 require (
 	k8s.io/apimachinery v0.32.8
@@ -36,11 +36,11 @@ require (
 	github.com/nctiggy/claude-remote-session-webhook v0.0.0-00010101000000-000000000000
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/net v0.30.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/term v0.25.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.7.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
