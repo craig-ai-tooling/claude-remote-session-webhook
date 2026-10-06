@@ -70,6 +70,11 @@ func dispatch(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 			return 0
 		}
 		return 1
+	case "unit":
+		// FR-003: no systemd unit runs this build. The Helm chart installs and
+		// upgrades it.
+		sayln(stderr, "crswd: unit is refused in kubernetes mode: the Helm chart installs and upgrades this daemon")
+		return 2
 	case "reconcile":
 		return report(stderr, runReconciler(ctx))
 	default:

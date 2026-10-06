@@ -21,6 +21,20 @@ func TestDispatchUnknownCommand(t *testing.T) {
 	}
 }
 
+// FR-003: the unit subcommands are refused with a message naming the mode,
+// whatever follows them, rather than falling through to "unknown command".
+func TestDispatchRefusesUnit(t *testing.T) {
+	for _, args := range [][]string{{"unit"}, {"unit", "install"}, {"unit", "check"}, {"unit", "bogus"}} {
+		var out, errb bytes.Buffer
+		if code := dispatch(context.Background(), args, &out, &errb); code != 2 {
+			t.Errorf("%v: exit = %d, want 2", args, code)
+		}
+		if !strings.Contains(errb.String(), "kubernetes mode") {
+			t.Errorf("%v: stderr = %q, want it to name kubernetes mode", args, errb.String())
+		}
+	}
+}
+
 func TestDispatchVersion(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := dispatch(context.Background(), []string{"--version"}, &out, &errb); code != 0 {
