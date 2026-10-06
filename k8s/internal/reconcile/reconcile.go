@@ -84,6 +84,12 @@ func (r *Reconciler) ReconcileOne(ctx context.Context, name string) error {
 		return fmt.Errorf("reconcile: get pod %s: %w", name, err)
 	}
 
+	// A deleting object gets no pod; the owner reference lets the garbage
+	// collector clear any that exists.
+	if obj.Metadata.DeletionTimestamp != nil {
+		return nil
+	}
+
 	others, err := r.sessions.List(ctx)
 	if err != nil {
 		return err
@@ -105,7 +111,7 @@ func (r *Reconciler) ReconcileOne(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if !found || live.Metadata.UID != obj.Metadata.UID {
+	if !found || live.Metadata.UID != obj.Metadata.UID || live.Metadata.DeletionTimestamp != nil {
 		return nil
 	}
 

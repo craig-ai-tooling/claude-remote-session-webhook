@@ -236,3 +236,28 @@ func TestUpdateMissingIsError(t *testing.T) {
 		t.Fatal("UpdateStatus of a missing object returned nil")
 	}
 }
+
+func TestDeletionTimestampSurvivesConversion(t *testing.T) {
+	t.Parallel()
+	stamp := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	in := sample("crswd-x")
+	in.Metadata.DeletionTimestamp = &stamp
+	u, err := FromObject(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ToObject(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata.DeletionTimestamp == nil || !got.Metadata.DeletionTimestamp.Equal(stamp) {
+		t.Fatalf("deletionTimestamp = %v, want %v", got.Metadata.DeletionTimestamp, stamp)
+	}
+	plain, err := FromObject(sample("crswd-y"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta, _ := plain.Object["metadata"].(map[string]any); meta["deletionTimestamp"] != nil {
+		t.Fatal("an unset deletionTimestamp was written")
+	}
+}

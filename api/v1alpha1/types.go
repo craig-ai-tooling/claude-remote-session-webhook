@@ -18,10 +18,13 @@ const (
 
 // ObjectMeta carries only the metadata the daemon and reconciler read.
 type ObjectMeta struct {
-	Name              string            `json:"name"`
-	Namespace         string            `json:"namespace,omitempty"`
-	UID               string            `json:"uid,omitempty"`
-	CreationTimestamp time.Time         `json:"creationTimestamp,omitempty"`
+	Name              string    `json:"name"`
+	Namespace         string    `json:"namespace,omitempty"`
+	UID               string    `json:"uid,omitempty"`
+	CreationTimestamp time.Time `json:"creationTimestamp,omitempty"`
+	// DeletionTimestamp is set while the object is being deleted. Without it
+	// the reconciler cannot tell a deleting object from a live one.
+	DeletionTimestamp *time.Time        `json:"deletionTimestamp,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
 	Annotations       map[string]string `json:"annotations,omitempty"`
 	Finalizers        []string          `json:"finalizers,omitempty"`
