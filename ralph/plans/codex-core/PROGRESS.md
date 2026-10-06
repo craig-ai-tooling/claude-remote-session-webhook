@@ -222,3 +222,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Gate green: gofmt, build, vet, `go test ./...`, golangci-lint. tmux and quickstart suites not run: nothing in tmuxctl, session or cmd changed.
 - Learned: the Codex rollout planter lives in the session test package, so httpapi has its own `plantCodexRolloutFile`. A removed start command reads as Other, which is how the tests build one.
 - Left: T017, T018. No findings unfixed.
+
+## Iteration 26 (T017)
+
+- Wrote `TestQuickstartCodexSession` first; it failed to compile on the old code (no `writeCodexShim`). Then added `host.writeCodexShim` and fixed the test until green. It asserts the typed Codex line in the pane, `@crswd-binary` = `codex|node`, the trusted `[projects."<workdir>"]` table in `$HOME/.codex/config.toml`, `"harness":"codex"` on the `GET /sessions` entry, and tmuxctl liveness `running`.
+- Gate green: gofmt, build, vet, `go vet -tags quickstart`, `go test ./...`, `go test -tags quickstart ./cmd/crswd` (whole suite, 47s), golangci-lint. tmux suite not run: nothing in tmuxctl or session changed.
+- Learned, differs from the task text: the shim does not report `pane_current_command` = `codex` on its own. tmux reports argv[0], which for a `#!/bin/sh` script is `sh`, so liveness read `stopped`. The shim is now bash and re-execs itself with `exec -a codex`. The pane also wraps the argv line at its width, so the test waits on the unwrapped prefix and compares with newlines removed.
+- The entry's `state` stays `starting` until the 30s sweep promotes it, so liveness is read through `tmuxctl.NewExec(...).List` with `TMUX_TMPDIR` passed in its environment, not from the API entry.
+- Left: T018. No findings unfixed.

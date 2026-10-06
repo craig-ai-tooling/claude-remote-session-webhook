@@ -384,6 +384,27 @@ func (h *host) writeShim() {
 	}
 }
 
+// writeCodexShim installs the `codex` stand-in beside the claude one. It prints
+// its own argv so a test can see the line the daemon typed.
+func (h *host) writeCodexShim() {
+	h.t.Helper()
+
+	// tmux reports argv[0], which for a script is its interpreter. Re-executing
+	// under the name codex makes pane_current_command say what the real binary
+	// would, which is the claim the liveness assertion is about.
+	script := "#!/bin/bash\n" +
+		"# Stand-in for `codex` during the acceptance run.\n" +
+		"if [ -z \"$CRSWD_SHIM_REEXEC\" ]; then CRSWD_SHIM_REEXEC=1 exec -a codex bash \"$0\" \"$@\"; fi\n" +
+		"printf '%s\\n' " + shimReady + "\n" +
+		"printf 'shim-argv:%s\\n' \"$*\"\n" +
+		"while IFS= read -r line; do printf '" + shimEcho + "%s\\n' \"$line\"; done\n"
+
+	path := filepath.Join(h.shimDir, "codex")
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		h.t.Fatalf("write the codex stand-in: %v", err)
+	}
+}
+
 // env is the daemon's environment: the process's own, with the quickstart's
 // variables and the two isolating ones layered over it.
 func (h *host) env(over map[string]string) []string {
@@ -1630,7 +1651,6 @@ func TestQuickstartStory4Restart(t *testing.T) {
 		Sessions []struct {
 			ID      string `json:"id"`
 			Adopted bool   `json:"adopted"`
-			State   string `json:"state"`
 			// Present on exactly one list: the first after adoption, which is the
 			// only response an adopted session's credential can arrive in.
 			Token string `json:"token"`
@@ -2491,6 +2511,121 @@ func TestSessionCarriesWhatRevivalNeeds(t *testing.T) {
 		if strings.Contains(string(body), forbidden) {
 			t.Errorf("the journal names %q:\n%s", forbidden, body)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// A Codex session, end to end (spec 019)
+// ---------------------------------------------------------------------------
+
+// TestQuickstartCodexSession creates a session from the `codex` start command
+// against a real daemon, a real tmux and a stand-in `codex` on PATH.
+//
+// **Must fail when** the create does not carry the harness through: the process
+// set on the session is not `codex|node`, the line typed into the pane is not
+// Codex's (no `--no-alt-screen`, no update-check override), the work directory is
+// not trusted in `$CODEX_HOME/config.toml` before the line is typed, or the API
+// entry does not name the harness. The real `codex` is never run; the shim dir
+// leads PATH.
+func TestQuickstartCodexSession(t *testing.T) {
+	h := newHost(t)
+	h.writeCodexShim()
+
+	codexHome := filepath.Join(h.home, ".codex")
+	if err := os.MkdirAll(codexHome, 0o700); err != nil {
+		t.Fatalf("make %s: %v", codexHome, err)
+	}
+
+	d := h.start(map[string]string{
+		"CRSW_START_COMMANDS": "codex=codex --dangerously-bypass-approvals-and-sandbox",
+		"CODEX_HOME":          unset,
+	})
+
+	body := fmt.Sprintf(`{"name":"codexed","work_dir":%q,"start_command":"codex"}`, h.workDir)
+	resp := d.call(http.MethodPost, "/sessions", body, "")
+	if resp.Status != http.StatusCreated {
+		t.Fatalf("POST /sessions = %d, want 201: %s", resp.Status, resp.Body)
+	}
+	var c created
+	if err := json.Unmarshal(resp.Body, &c); err != nil {
+		t.Fatalf("decode the create response: %v", err)
+	}
+
+	d.waitForPane(c.ID, c.Token, shimReady)
+	const want = "shim-argv:--no-alt-screen -c check_for_update_on_startup=false --dangerously-bypass-approvals-and-sandbox"
+	// The pane wraps at its width, so wait on the unwrapped prefix and compare
+	// the line with the wraps removed. The shim prints it in one write.
+	pane := d.waitForPane(c.ID, c.Token, "shim-argv:--no-alt-screen")
+	if !strings.Contains(strings.ReplaceAll(pane, "\n", ""), want) {
+		t.Errorf("the pane does not show the Codex line %q:\n%s", want, pane)
+	}
+
+	name := "crswd-" + c.ID
+	out, err := h.tmux("show-options", "-t", "="+name+":", "@crswd-binary")
+	if err != nil {
+		t.Fatalf("read @crswd-binary off %s: %v", name, err)
+	}
+	got := strings.Trim(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(out), "@crswd-binary")), `"`)
+	if got != "codex|node" {
+		t.Errorf("@crswd-binary = %q, want %q", got, "codex|node")
+	}
+
+	config, err := os.ReadFile(filepath.Join(codexHome, "config.toml")) //nolint:gosec // composed from the test's own temp home
+	if err != nil {
+		t.Fatalf("the create trusted nothing; no config.toml under %s: %v", codexHome, err)
+	}
+	if !strings.Contains(string(config), "[projects."+strconv.Quote(h.workDir)+"]") ||
+		!strings.Contains(string(config), `trust_level = "trusted"`) {
+		t.Errorf("config.toml does not trust %s:\n%s", h.workDir, config)
+	}
+
+	// The shim reports pane_current_command as `codex`, which the set accepts,
+	// so tmux must answer running. The entry's own state stays "starting" until
+	// the 30-second sweep promotes it, so liveness is read from tmuxctl.
+	ctl, err := tmuxctl.NewExec(tmuxctl.SocketFor(d.addr), 1000,
+		[]string{"PATH=" + os.Getenv("PATH"), "TMUX_TMPDIR=" + h.tmuxDir})
+	if err != nil {
+		t.Fatalf("open the daemon's tmux server: %v", err)
+	}
+	infos, err := ctl.List(t.Context())
+	if err != nil {
+		t.Fatalf("list the daemon's tmux sessions: %v", err)
+	}
+	live := tmuxctl.LivenessUnknown
+	for _, info := range infos {
+		if info.Name == name || info.Name == c.ID {
+			live = info.Claude
+		}
+	}
+	if live != tmuxctl.LivenessRunning {
+		t.Errorf("tmux reads %s as %q, want %q", name, live, tmuxctl.LivenessRunning)
+	}
+
+	list := d.call(http.MethodGet, "/sessions", "", "")
+	if list.Status != http.StatusOK {
+		t.Fatalf("GET /sessions = %d: %s", list.Status, list.Body)
+	}
+	var entries struct {
+		Sessions []struct {
+			ID      string `json:"id"`
+			Harness string `json:"harness"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal(list.Body, &entries); err != nil {
+		t.Fatalf("decode the list: %v\n%s", err, list.Body)
+	}
+	found := false
+	for _, e := range entries.Sessions {
+		if e.ID != c.ID {
+			continue
+		}
+		found = true
+		if e.Harness != "codex" {
+			t.Errorf("the entry's harness = %q, want %q", e.Harness, "codex")
+		}
+	}
+	if !found {
+		t.Fatalf("GET /sessions does not list %s:\n%s", c.ID, list.Body)
 	}
 }
 
