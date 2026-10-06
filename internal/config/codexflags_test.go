@@ -40,6 +40,12 @@ func TestCodexUpdateCheckValues(t *testing.T) {
 				t.Errorf("codexUpdateCheckValues(%q) = %q, want %q", tc.command, got, tc.want)
 			}
 			err := validateCodexUpdateCheck("VAR", "n", tc.command)
+			if tc.command != "" && strings.ContainsAny(tc.command, "'\"\\") && strings.HasPrefix(tc.command, "codex") {
+				if !errors.Is(err, ErrCodexQuoting) {
+					t.Fatalf("validateCodexUpdateCheck(%q) = %v, want ErrCodexQuoting", tc.command, err)
+				}
+				return
+			}
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("validateCodexUpdateCheck(%q) = %v, wantErr %v", tc.command, err, tc.wantErr)
 			}
@@ -69,5 +75,40 @@ func TestLoadStartCommandsRefusesCodexUpdateCheck(t *testing.T) {
 	_, err := LoadFrom(func(k string) string { return pairs[k] }, io.Discard)
 	if !errors.Is(err, ErrCodexUpdateCheck) {
 		t.Fatalf("LoadFrom() = %v, want ErrCodexUpdateCheck", err)
+	}
+}
+
+func TestValidateCodexQuoting(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		command string
+	}{
+		{"double quote", `codex -c model="o3"`},
+		{"single quote", "codex -c model='o3'"},
+		{"backslash", `codex -c model=o\3`},
+		{"quoted whole assignment", `codex -c "check_for_update_on_startup=true"`},
+		{"single-quoted whole assignment", `codex -c 'check_for_update_on_startup=true'`},
+		{"quoted key", `codex -c "check_for_update_on_startup"=true`},
+		{"escaped key", `codex -c check_for_update_on_st\artup=true`},
+		{"absolute path", `/abs/bin/codex -c "check_for_update_on_startup=true"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateCodexUpdateCheck("VAR", "n", tc.command)
+			if !errors.Is(err, ErrCodexQuoting) {
+				t.Fatalf("validateCodexUpdateCheck(%q) = %v, want ErrCodexQuoting", tc.command, err)
+			}
+			if strings.Contains(err.Error(), "check_for_update") && !strings.Contains(err.Error(), "may not contain") {
+				t.Errorf("unexpected error text: %v", err)
+			}
+		})
+	}
+	// Claude and other harnesses keep their quotes.
+	for _, c := range []string{`claude --name "x"`, `sh -c 'echo hi'`} {
+		if err := validateCodexUpdateCheck("VAR", "n", c); err != nil {
+			t.Errorf("validateCodexUpdateCheck(%q) = %v, want nil", c, err)
+		}
 	}
 }

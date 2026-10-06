@@ -12,6 +12,13 @@ import (
 // startup update check on.
 var ErrCodexUpdateCheck = errors.New("a Codex start command may not turn the startup update check on")
 
+// ErrCodexQuoting is what a Codex start command earns by containing a quote or
+// a backslash. The update-check guard reads the command split on whitespace; a
+// shell would strip quotes and escapes first, so a quoted assignment reaches
+// Codex as the one the guard missed. Refusing the characters is the rule, not
+// parsing shell.
+var ErrCodexQuoting = errors.New("a Codex start command may not contain a quote or a backslash")
+
 const codexUpdateCheckKey = "check_for_update_on_startup"
 
 // codexUpdateCheckValues returns every value the command assigns to
@@ -64,6 +71,9 @@ func unquoteOnce(s string) string {
 func validateCodexUpdateCheck(variable, name, command string) error {
 	if harness.Of(command) != harness.Codex {
 		return nil
+	}
+	if strings.ContainsAny(command, "'\"\\") {
+		return fmt.Errorf("%s: start command %q: %w; refusing to start", variable, name, ErrCodexQuoting)
 	}
 	for _, v := range codexUpdateCheckValues(command) {
 		if v != "false" {
