@@ -151,3 +151,18 @@ sentinels, unexported `tmuxKeys`) and `input_test.go` with the three tests the t
 - Next iteration: `ValidateTyped` checks length before UTF-8, so an oversize invalid string reports
   `ErrInputTooLong`; a test row pins that order. T005 should call `ValidateTyped` first and leave
   `ErrEmptyPrompt` to it.
+
+## Iteration 7: T005 (2026-10-06)
+
+Added `Manager.Type` and `Manager.PressKey` to `internal/session/input.go`, with two unexported helpers
+(`guardDelivery`, `recordDriving`) that carry Compact's guards and Touch/FleetChanged steps so the two
+methods do not copy them twice. `Compact` itself is untouched.
+
+- Guards proven: with the unknown-key check disabled, `TestPressKeyRefusesAnUnknownKey` FAILED; with
+  `recordDriving` skipped in `Type`, `TestTypeRecordsTheDriving` FAILED. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues),
+  no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration: the format hook runs goimports on every Edit, so it strips an import block you add
+  before the code that uses it. Add the code first, and the hook restores the imports itself.
+  Python heredocs are refused by the sandbox (brace-with-quote); use Edit.
+- T006 `History` must not Touch and must not return `unreadable`; the fake's `SetHistory` feeds it.
