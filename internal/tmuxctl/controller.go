@@ -227,6 +227,12 @@ const (
 	// Raw, like OptionName and OptionStart: a binary name is validated to
 	// [A-Za-z0-9._-] before it is written, so it can carry neither the separator
 	// nor a newline.
+	//
+	// The value may be a set of names joined by "|" ("codex|node"): tmux compares
+	// it with an m/r regex anchored at both ends, so "|" is alternation and the
+	// pane is alive when it runs any one of them. A name's only regex
+	// metacharacter is ".", which matches any character; that looseness is
+	// accepted.
 	OptionBinary = "@crswd-binary"
 
 	// OptionManagedValue is what OptionManaged is set to. List only tests the

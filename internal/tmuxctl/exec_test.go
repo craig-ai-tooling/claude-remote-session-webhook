@@ -281,7 +281,7 @@ func TestExecSendsTheContractArgv(t *testing.T) {
 		{Argv: []string{"tmux", "-L", execSocket, "capture-pane", "-p", "-t", "=" + execName + ":"}},
 		{Argv: []string{"tmux", "-L", execSocket, "kill-session", "-t", "=" + execName}},
 		{Argv: []string{"tmux", "-L", execSocket, "has-session", "-t", "=" + execName}},
-		{Argv: []string{"tmux", "-L", execSocket, "list-sessions", "-F", "#{session_name}|#{session_created}|#{@crswd-managed}|#{@crswd-name}|#{@crswd-workdir}|#{@crswd-start}|#{@crswd-lifetime}|#{@crswd-width}|#{@crswd-conversation}|#{?#{@crswd-binary},#{==:#{pane_current_command},#{@crswd-binary}},?}"}},
+		{Argv: []string{"tmux", "-L", execSocket, "list-sessions", "-F", "#{session_name}|#{session_created}|#{@crswd-managed}|#{@crswd-name}|#{@crswd-workdir}|#{@crswd-start}|#{@crswd-lifetime}|#{@crswd-width}|#{@crswd-conversation}|#{?#{@crswd-binary},#{m/r:^(#{@crswd-binary})$,#{pane_current_command}},?}"}},
 	}
 
 	got := recorded(t)

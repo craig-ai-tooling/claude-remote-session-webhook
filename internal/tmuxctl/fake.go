@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -217,7 +218,7 @@ func argvReconcileEnv() []string {
 // and the comment above about the last two fields stays true. Digits only, so it
 // cannot carry the separator either.
 func argvList() []string {
-	live := "#{?#{" + OptionBinary + "},#{==:#{pane_current_command},#{" + OptionBinary + "}},?}"
+	live := "#{?#{" + OptionBinary + "},#{m/r:^(#{" + OptionBinary + "})$,#{pane_current_command}},?}"
 	return []string{"tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{" + OptionManaged + "}|#{" + OptionName + "}|#{" + OptionWorkDir + "}|#{" + OptionStart + "}|#{" + OptionLifetime + "}|#{" + OptionWidth + "}|#{" + OptionConversation + "}|" + live}
 }
 
@@ -237,15 +238,19 @@ const fakeAliveCommand = "claude"
 // the fake models the round trip rather than only its first half. A fake that
 // always answered "running" would let every revival test pass against a daemon
 // that never revives anything.
+//
+// The binary may be a set of names joined by "|", which tmux reads as regex
+// alternation. An empty element is skipped so it can never match an empty pane.
 func livenessOf(binary, paneCommand string) Liveness {
-	switch binary {
-	case "":
+	if binary == "" {
 		return LivenessUnknown
-	case paneCommand:
-		return LivenessRunning
-	default:
-		return LivenessStopped
 	}
+	for _, name := range strings.Split(binary, "|") {
+		if name != "" && name == paneCommand {
+			return LivenessRunning
+		}
+	}
+	return LivenessStopped
 }
 
 // Fake is an in-memory Controller for every other package's tests, so no unit

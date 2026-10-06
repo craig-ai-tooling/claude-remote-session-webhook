@@ -737,7 +737,7 @@ func hasLine(pane, want string) bool {
 // make.
 //
 // The liveness field is not a value this daemon writes and reads back — it is an
-// *expression* tmux evaluates: `#{?#{@crswd-binary},#{==:#{pane_current_command},#{@crswd-binary}},?}`.
+// *expression* tmux evaluates: `#{?#{@crswd-binary},#{m/r:^(#{@crswd-binary})$,#{pane_current_command}},?}`.
 // The fake models the comparison in Go, which is exactly where a mistake in that
 // expression would be invisible. If a tmux build does not support the nested
 // conditional, every session on the host reads as stopped and the supervisor
@@ -808,6 +808,51 @@ func TestTmuxListReportsTheConversationAndLiveness(t *testing.T) {
 	for _, name := range []string{matching, stopped, silent} {
 		if got := seen[name].ConversationID; got != uuid {
 			t.Errorf("%s: ConversationID = %q, want %q — this tmux may not keep or render %s", name, got, uuid, OptionConversation)
+		}
+	}
+}
+
+// TestLivenessAlternatives is the real-tmux half of TestLivenessOfSet: the "|"
+// alternation lives in an m/r regex tmux evaluates, so only a real tmux can say
+// whether a set of names compares the way the fake models it.
+func TestLivenessAlternatives(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SetOption(ctx, name, OptionManaged, OptionManagedValue); err != nil {
+		t.Fatalf("SetOption managed: %v", err)
+	}
+	if _, stderr, err := e.run(ctx, []string{"tmux", "-L", e.socket, "send-keys", "-t", PaneTarget(name), "exec sleep 30", "Enter"}, nil); err != nil {
+		t.Fatalf("start sleep: %v (%s)", err, stderr)
+	}
+	waitFor(t, "the pane to run sleep", func() bool {
+		out, _, err := e.run(ctx, []string{"tmux", "-L", e.socket, "display-message", "-p", "-t", PaneTarget(name), "#{pane_current_command}"}, nil)
+		return err == nil && strings.TrimSpace(out) == "sleep"
+	})
+
+	for binary, want := range map[string]Liveness{
+		"codex|sleep": LivenessRunning,
+		"codex|node":  LivenessStopped,
+	} {
+		if err := e.SetOption(ctx, name, OptionBinary, binary); err != nil {
+			t.Fatalf("SetOption binary %q: %v", binary, err)
+		}
+		sessions, err := e.List(ctx)
+		if err != nil {
+			t.Fatalf("List: %v", err)
+		}
+		var got Liveness
+		for _, s := range sessions {
+			if s.Name == name {
+				got = s.Claude
+			}
+		}
+		if got != want {
+			t.Errorf("binary %q: Claude = %q, want %q", binary, got, want)
 		}
 	}
 }

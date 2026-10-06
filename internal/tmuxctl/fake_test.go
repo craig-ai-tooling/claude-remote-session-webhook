@@ -80,7 +80,7 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 		{Op: tmuxctl.OpResize, Argv: []string{"tmux", "resize-window", "-t", "=" + fakeName + ":", "-x", "44", "-y", "24"}},
 		{Op: tmuxctl.OpKill, Argv: []string{"tmux", "kill-session", "-t", "=" + fakeName}},
 		{Op: tmuxctl.OpHas, Argv: []string{"tmux", "has-session", "-t", "=" + fakeName}},
-		{Op: tmuxctl.OpList, Argv: []string{"tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{@crswd-managed}|#{@crswd-name}|#{@crswd-workdir}|#{@crswd-start}|#{@crswd-lifetime}|#{@crswd-width}|#{@crswd-conversation}|#{?#{@crswd-binary},#{==:#{pane_current_command},#{@crswd-binary}},?}"}},
+		{Op: tmuxctl.OpList, Argv: []string{"tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{@crswd-managed}|#{@crswd-name}|#{@crswd-workdir}|#{@crswd-start}|#{@crswd-lifetime}|#{@crswd-width}|#{@crswd-conversation}|#{?#{@crswd-binary},#{m/r:^(#{@crswd-binary})$,#{pane_current_command}},?}"}},
 	}
 
 	got := f.Calls()
@@ -773,5 +773,56 @@ func TestFakeIsSafeForConcurrentUse(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	} else if len(got) != 0 {
 		t.Errorf("%d sessions survived, want 0", len(got))
+	}
+}
+
+// TestLivenessOfSet pins the fake's half of the set comparison. The real List
+// has tmux evaluate the same alternation (TestLivenessAlternatives), so the two
+// must agree on every row here.
+func TestLivenessOfSet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		binary string
+		pane   string
+		want   tmuxctl.Liveness
+	}{
+		{"single name running", "claude", "claude", tmuxctl.LivenessRunning},
+		{"single name stopped", "claude", "bash", tmuxctl.LivenessStopped},
+		{"set matches first", "codex|node", "codex", tmuxctl.LivenessRunning},
+		{"set matches second", "codex|node", "node", tmuxctl.LivenessRunning},
+		{"set matches neither", "codex|node", "bash", tmuxctl.LivenessStopped},
+		{"empty element never matches an empty pane", "codex||node", "", tmuxctl.LivenessStopped},
+		{"empty element does not hide the rest", "codex||node", "node", tmuxctl.LivenessRunning},
+		{"no binary is unknown", "", "bash", tmuxctl.LivenessUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			f := tmuxctl.NewFake()
+			if err := f.New(ctx, fakeName, fakeWorkDir); err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if tt.binary != "" {
+				if err := f.SetOption(ctx, fakeName, tmuxctl.OptionBinary, tt.binary); err != nil {
+					t.Fatalf("SetOption: %v", err)
+				}
+			}
+			f.SetPaneCommand(fakeName, tt.pane)
+
+			sessions, err := f.List(ctx)
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(sessions) != 1 {
+				t.Fatalf("List returned %d sessions, want 1", len(sessions))
+			}
+			if got := sessions[0].Claude; got != tt.want {
+				t.Errorf("binary %q, pane %q: Claude = %q, want %q", tt.binary, tt.pane, got, tt.want)
+			}
+		})
 	}
 }

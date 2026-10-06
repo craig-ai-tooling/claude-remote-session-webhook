@@ -45,7 +45,7 @@ tasks.md narrows this further.
 ## Tasks
 
 - [x] **T001** Add the harness package. Done when `go test ./internal/harness/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T001.
-- [ ] **T002** Liveness matches a set of names. Done when `go test -tags tmux ./internal/tmuxctl/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T002.
+- [x] **T002** Liveness matches a set of names. Done when `go test -tags tmux ./internal/tmuxctl/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T002.
 - [ ] **T003** Controller.PanePID. Done when `go test -tags tmux ./internal/tmuxctl/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T003.
 - [ ] **T004** Session derives the harness and renders per-harness lines. Done when `go test ./internal/session/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T004.
 - [ ] **T004a** Config refuses a Codex start command that re-enables the update check. Done when `go test ./internal/config/...` exits 0 and the task's acceptance in tasks.md holds. Full task: specs/019-codex-runtime/tasks.md, section T004a.
