@@ -237,3 +237,18 @@ the type route in `server.go`, and wrote the five tests the task names (plus a `
   `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
 - Next iteration (T011): `typer` and `newTyper` in `input_test.go` are reusable for the history route; `ty.send` takes the
   `Sec-Fetch-Site` value, but a GET has no form, so check how `stream` tests build theirs before copying `typed`.
+
+## Iteration 13: T011 (2026-10-06)
+
+Added `sessionHistory`, `patternSessionHistory`, `errHistoryCrossSite`, `errHistoryUnreadable` and `contentTypePlain` to
+`internal/httpapi/input.go`, registered the route after the stream in `server.go`, and wrote the tests the task names in
+`input_test.go` (plus `typer.read`, `typer.askedForHistory` and an absent-`Sec-Fetch-Site` row).
+
+- Guards proven: with `crossSite(r)` made `false && crossSite(r)`, `TestHistoryRefusesCrossSite` FAILED; with the
+  `handleBrowser(patternSessionHistory...)` line commented out, all six History tests FAILED. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`.
+  `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T012): the browser door's not-found is the full "No such page" HTML, not `wantNotFoundBody` (that is the
+  action door's). `TestHistoryIsOwnerScoped` compares a stranger's id against an unknown id instead. The write error on
+  `io.WriteString` goes to `s.report`, which the task did not list but the stream's writes do the same.
+- The Write/Bash heredoc is refused for Go code (brace next to a quote); append Go with Edit anchored on the file's last lines.
