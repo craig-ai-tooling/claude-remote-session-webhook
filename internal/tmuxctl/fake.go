@@ -17,16 +17,17 @@ import (
 type Op string
 
 const (
-	OpNew          Op = "New"
-	OpSetOption    Op = "SetOption"
-	OpSendKeys     Op = "SendKeys"
-	OpPaste        Op = "Paste"
-	OpCapturePane  Op = "CapturePane"
-	OpResize       Op = "Resize"
-	OpKill         Op = "Kill"
-	OpHas          Op = "Has"
-	OpList         Op = "List"
-	OpReconcileEnv Op = "ReconcileServerEnvironment"
+	OpNew            Op = "New"
+	OpSetOption      Op = "SetOption"
+	OpSendKeys       Op = "SendKeys"
+	OpPaste          Op = "Paste"
+	OpPasteBracketed Op = "PasteBracketed"
+	OpCapturePane    Op = "CapturePane"
+	OpResize         Op = "Resize"
+	OpKill           Op = "Kill"
+	OpHas            Op = "Has"
+	OpList           Op = "List"
+	OpReconcileEnv   Op = "ReconcileServerEnvironment"
 )
 
 // Call is one recorded invocation. Argv is the complete command line, argv[0]
@@ -79,6 +80,13 @@ func argvLoadBuffer(name string) []string {
 // another tmux client could read it.
 func argvPasteBuffer(name string) []string {
 	return []string{"tmux", "paste-buffer", "-d", "-b", name, "-t", PaneTarget(name)}
+}
+
+// -p wraps the text in the bracketed-paste markers when the pane's program has
+// asked for them, which is what keeps a newline inside a message from being read
+// as Enter (research R1). Otherwise identical to argvPasteBuffer.
+func argvPasteBufferBracketed(name string) []string {
+	return []string{"tmux", "paste-buffer", "-p", "-d", "-b", name, "-t", PaneTarget(name)}
 }
 
 // No -e. tmux stores the rendered screen, so the default output is already
@@ -323,6 +331,23 @@ func (f *Fake) Paste(_ context.Context, name string, payload []byte) error {
 	f.record(OpPaste, argvLoadBuffer(name), append([]byte(nil), payload...))
 	f.record(OpPaste, argvPasteBuffer(name), nil)
 	if err := f.fail[OpPaste]; err != nil {
+		return err
+	}
+	if _, ok := f.sessions[name]; !ok {
+		return errNoSession(name)
+	}
+	return nil
+}
+
+// PasteBracketed records the same two calls Paste does, under its own op, with
+// the second carrying -p.
+func (f *Fake) PasteBracketed(_ context.Context, name string, payload []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.record(OpPasteBracketed, argvLoadBuffer(name), append([]byte(nil), payload...))
+	f.record(OpPasteBracketed, argvPasteBufferBracketed(name), nil)
+	if err := f.fail[OpPasteBracketed]; err != nil {
 		return err
 	}
 	if _, ok := f.sessions[name]; !ok {

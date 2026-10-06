@@ -38,6 +38,11 @@ type Controller interface {
 	// command line. Submit it afterwards with SendKeys(name, "Enter").
 	Paste(ctx context.Context, name string, payload []byte) error
 
+	// PasteBracketed is Paste with paste-buffer -p, so a program that enabled
+	// bracketed paste receives the text wrapped in its start and end markers and
+	// holds a multi-line message instead of submitting line one (research R1).
+	PasteBracketed(ctx context.Context, name string, payload []byte) error
+
 	// CapturePane returns the rendered pane as plain text. The implementation
 	// must never pass -e, which would reconstruct ANSI escapes from cell
 	// attributes and hand raw control bytes to the API.

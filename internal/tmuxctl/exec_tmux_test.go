@@ -127,6 +127,47 @@ func TestTmuxNewSessionKeepsFiveThousandLinesOfHistory(t *testing.T) {
 	}
 }
 
+// The program has to ask for bracketed paste before tmux will wrap anything, so
+// the pane runs one that does (printf of DECSET 2004) and echoes what it reads.
+func TestTmuxPasteBracketedWrapsTheText(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-6b000000000000000000000000000000"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SendKeys(ctx, name, "printf '\\033[?2004h'; stty -icanon -echo; echo READY; cat -v", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	pane := func() string {
+		got, err := e.CapturePane(ctx, name)
+		if err != nil {
+			t.Fatalf("CapturePane: %v", err)
+		}
+		return got
+	}
+	// The typed command line also contains "READY", so wait for a line that is
+	// only that: it prints after the mode is on and the terminal is raw, and a
+	// paste sent any earlier would reach the shell unbracketed.
+	waitFor(t, "the pane to be raw with bracketed paste on", func() bool {
+		for _, line := range strings.Split(pane(), "\n") {
+			if line == "READY" {
+				return true
+			}
+		}
+		return false
+	})
+
+	if err := e.PasteBracketed(ctx, name, []byte("alpha\nbeta")); err != nil {
+		t.Fatalf("PasteBracketed: %v", err)
+	}
+	waitFor(t, "the start marker before alpha", func() bool { return strings.Contains(pane(), "^[[200~alpha") })
+	if got := pane(); !strings.Contains(got, "^[[201~") {
+		t.Fatalf("no end marker in the pane:\n%s", got)
+	}
+}
+
 func TestTmuxCreateHasKill(t *testing.T) {
 	ctx := context.Background()
 	e := newTestExec(t)

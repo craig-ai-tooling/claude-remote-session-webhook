@@ -40,6 +40,11 @@ func ArgvPaste(name string) (loadBuffer, pasteBuffer []string) {
 	return argvLoadBuffer(name), argvPasteBuffer(name)
 }
 
+// ArgvPasteBracketed is ArgvPaste with `paste-buffer -p` as the second command.
+func ArgvPasteBracketed(name string) (loadBuffer, pasteBuffer []string) {
+	return argvLoadBuffer(name), argvPasteBufferBracketed(name)
+}
+
 // ArgvCapturePane is `tmux capture-pane -p`, without -e.
 func ArgvCapturePane(name string) []string { return argvCapturePane(name) }
 

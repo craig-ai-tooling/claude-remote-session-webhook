@@ -302,6 +302,47 @@ func TestExecPasteKeepsCallerTextOffTheCommandLine(t *testing.T) {
 	}
 }
 
+// Same payloads, same rule as Paste, plus the one difference: the second command
+// carries -p.
+func TestExecPasteBracketedKeepsCallerTextOffTheCommandLine(t *testing.T) {
+	payloads := []string{
+		";",
+		"foo;",
+		"foo;;",
+		"a; echo PWNED; $(id) `whoami`",
+		"line one\nline two",
+		"--dangerously-skip-permissions",
+	}
+
+	for _, payload := range payloads {
+		t.Run(fmt.Sprintf("%q", payload), func(t *testing.T) {
+			recorded := stub{}.install(t)
+
+			if err := newStubExec(t).PasteBracketed(context.Background(), execName, []byte(payload)); err != nil {
+				t.Fatalf("PasteBracketed: %v", err)
+			}
+
+			calls := recorded(t)
+			if len(calls) != 2 {
+				t.Fatalf("PasteBracketed ran %d commands, want 2: %v", len(calls), calls)
+			}
+			if got := string(calls[0].Stdin); got != payload {
+				t.Errorf("payload on stdin = %q, want %q", got, payload)
+			}
+			if !slices.Contains(calls[1].Argv, "-p") {
+				t.Errorf("paste-buffer argv has no -p: %v", calls[1].Argv)
+			}
+			for i, c := range calls {
+				for j, arg := range c.Argv {
+					if strings.Contains(arg, payload) {
+						t.Errorf("payload reached command %d argv[%d] = %q", i, j, arg)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestExecCapturePaneReturnsTmuxOutputVerbatim(t *testing.T) {
 	const pane = "$ echo hi\nhi\n$ \n"
 	stub{stdout: pane}.install(t)

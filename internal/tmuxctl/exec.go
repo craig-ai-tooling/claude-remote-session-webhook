@@ -187,6 +187,18 @@ func (e *Exec) Paste(ctx context.Context, name string, payload []byte) error {
 	return nil
 }
 
+// PasteBracketed is Paste with the second command carrying -p. The load-buffer
+// error keeps tmux's stderr out for the same reason Paste's does.
+func (e *Exec) PasteBracketed(ctx context.Context, name string, payload []byte) error {
+	if _, _, err := e.run(ctx, argvLoadBuffer(name), payload); err != nil {
+		return fmt.Errorf("tmux load-buffer %s: %w", name, err)
+	}
+	if _, stderr, err := e.run(ctx, argvPasteBufferBracketed(name), nil); err != nil {
+		return fmt.Errorf("tmux paste-buffer -p %s: %w", name, withStderr(err, stderr))
+	}
+	return nil
+}
+
 // CapturePane returns tmux's rendered screen verbatim, or refuses. It is
 // already plain text because argvCapturePane never passes -e; the defensive
 // stripper is a separate second line of defence.

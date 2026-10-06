@@ -45,6 +45,9 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 	if err := f.Paste(ctx, fakeName, []byte("hello")); err != nil {
 		t.Fatalf("Paste: %v", err)
 	}
+	if err := f.PasteBracketed(ctx, fakeName, []byte("hello")); err != nil {
+		t.Fatalf("PasteBracketed: %v", err)
+	}
 	if _, err := f.CapturePane(ctx, fakeName); err != nil {
 		t.Fatalf("CapturePane: %v", err)
 	}
@@ -67,6 +70,8 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 		{Op: tmuxctl.OpSendKeys, Argv: []string{"tmux", "send-keys", "-t", "=" + fakeName + ":", "--", "Enter"}},
 		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", fakeName, "-"}, Stdin: []byte("hello")},
 		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", fakeName, "-t", "=" + fakeName + ":"}},
+		{Op: tmuxctl.OpPasteBracketed, Argv: []string{"tmux", "load-buffer", "-b", fakeName, "-"}, Stdin: []byte("hello")},
+		{Op: tmuxctl.OpPasteBracketed, Argv: []string{"tmux", "paste-buffer", "-p", "-d", "-b", fakeName, "-t", "=" + fakeName + ":"}},
 		{Op: tmuxctl.OpCapturePane, Argv: []string{"tmux", "capture-pane", "-p", "-t", "=" + fakeName + ":"}},
 		{Op: tmuxctl.OpResize, Argv: []string{"tmux", "resize-window", "-t", "=" + fakeName + ":", "-x", "44", "-y", "24"}},
 		{Op: tmuxctl.OpKill, Argv: []string{"tmux", "kill-session", "-t", "=" + fakeName}},
@@ -270,6 +275,59 @@ func TestFakePastePayloadNeverEntersArgv(t *testing.T) {
 			calls := f.Calls()
 			if len(calls) != 2 {
 				t.Fatalf("Paste recorded %d calls, want 2 (load-buffer then paste-buffer)", len(calls))
+			}
+			if got := string(calls[0].Stdin); got != tc.payload {
+				t.Errorf("payload delivered as %q, want %q", got, tc.payload)
+			}
+			if calls[1].Stdin != nil {
+				t.Errorf("paste-buffer carried stdin %q, want none", calls[1].Stdin)
+			}
+			if tc.payload == "" {
+				return // an empty payload is a substring of everything
+			}
+			for i, c := range calls {
+				for _, arg := range c.Argv {
+					if strings.Contains(arg, tc.payload) {
+						t.Errorf("call %d put caller text on the command line: %q", i, c.Argv)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Same rule as Paste: -p changes what tmux wraps around the text, not how the
+// text reaches tmux.
+func TestFakePasteBracketedPayloadNeverEntersArgv(t *testing.T) {
+	t.Parallel()
+
+	payloads := []struct {
+		name    string
+		payload string
+	}{
+		{"bare semicolon", ";"},
+		{"trailing semicolon", "foo;"},
+		{"doubled trailing semicolon", "foo;;"},
+		{"shell metacharacters", "a; echo PWNED; $(id)"},
+		{"embedded newline", "line one\nline two"},
+		{"empty", ""},
+	}
+
+	for _, tc := range payloads {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			f := tmuxctl.NewFake()
+			f.Seed(tmuxctl.SessionInfo{Name: fakeName, Managed: true})
+
+			if err := f.PasteBracketed(ctx, fakeName, []byte(tc.payload)); err != nil {
+				t.Fatalf("PasteBracketed: %v", err)
+			}
+
+			calls := f.Calls()
+			if len(calls) != 2 {
+				t.Fatalf("PasteBracketed recorded %d calls, want 2 (load-buffer then paste-buffer)", len(calls))
 			}
 			if got := string(calls[0].Stdin); got != tc.payload {
 				t.Errorf("payload delivered as %q, want %q", got, tc.payload)

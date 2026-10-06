@@ -58,6 +58,14 @@ func TestArgvWrappersEqualBuilders(t *testing.T) {
 	if want := argvPasteBuffer(argvTestName); !slices.Equal(paste, want) {
 		t.Errorf("ArgvPaste paste-buffer = %q, builder = %q", paste, want)
 	}
+
+	load, paste = ArgvPasteBracketed(argvTestName)
+	if want := argvLoadBuffer(argvTestName); !slices.Equal(load, want) {
+		t.Errorf("ArgvPasteBracketed load-buffer = %q, builder = %q", load, want)
+	}
+	if want := argvPasteBufferBracketed(argvTestName); !slices.Equal(paste, want) {
+		t.Errorf("ArgvPasteBracketed paste-buffer = %q, builder = %q", paste, want)
+	}
 }
 
 // The clamp is the builder's, so it must reach the wrapper's caller too: a pod
