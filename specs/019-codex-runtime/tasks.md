@@ -246,18 +246,20 @@ the last `-c` for a key, so an operator's own later `-c check_for_update_on_star
   `TestTypeStaysBracketedForClaude` (fake `Calls()` shows `paste-buffer -p` for a Claude session's
   `Type`).
 
-### T006 — `SetMode` refuses non-Claude sessions (FR-012a)
+### T006 — `SetMode` refuses Codex sessions (FR-012a)
 
 - **Files**: `internal/session/manager.go` (`SetMode` `:1297`), `internal/session/harness_test.go`
   (default build; `mode_test.go` is `//go:build tmux` and must not be used for this fake-based test,
   operator decision 2026-10-06).
-- **Interface**: first check after the dead-state check: `if !m.specOf(s).RemoteControl { return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable) }`.
-- **Edge cases**: Claude session behaviour unchanged; a session whose start-command name is no longer
-  configured resolves to Other and is refused the same way (it could not be switched today either:
-  `resolveStartCommand` fails later).
+- **Interface**: first check after the dead-state check: `if m.specOf(s).Name == harness.Codex { return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable) }`.
+  Codex only, not `!RemoteControl`: an Other session keeps today's behaviour (spec non-goal), and the
+  real-tmux mode tests in `mode_test.go` run Other stand-ins (`seq`, `echo`) that must keep passing
+  unedited (operator decision 2026-10-06).
+- **Edge cases**: Claude session behaviour unchanged; Other session behaviour unchanged; Codex refused
+  with zero pane operations.
 - **Mirror**: the existing `ErrModeUnchanged` check.
 - **Tests**: `TestSetModeRefusesCodex` (fake records zero SendKeys calls), existing mode tests unedited.
-- **Acceptance**: `go test ./internal/session/... -run Mode` passes.
+- **Acceptance**: `go test ./internal/session/... -run Mode` and `go test -tags tmux ./internal/session/...` pass.
 - **Depends**: T004.
 - **Guardrails**: do not touch `commandForMode`.
 
