@@ -98,6 +98,22 @@ Created `internal/admit/admit.go` (pure `Admit`) and `admit_test.go` (25 table r
 - Do not run the gate with `cd` or `&&` chains that mix `-C` and `golangci-lint`: the harness stalls for
   approval. Run each command separately from the worktree root.
 
+## Iteration 5 (T5, 10/6/26)
+
+Created `deploy/k8s/manifest/` with `manifest.go` (constants, `Files()`), `crd.go` (`CRD()`) and `crd_test.go`.
+
+- Failing first: `go test ./deploy/k8s/manifest` printed `crd_test.go:34:16: undefined: Files`
+  (package had no non-test source, so it did not compile). Passes after.
+- Gate green: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port 8765 free, 53s),
+  golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0.
+- Next iteration: `Files()` holds a `map[string]any` of file name to value and currently has only `crd.json`.
+  T6 adds `rbac-reconciler.json`, `rbac-lease.json`, `rbac-daemon.json` by adding entries there and
+  `rbac.go` with the three Lists. `crd_test.go` already has `dig`, `asList`, `asObject`, `asStrings`,
+  `keysOf` helpers that `rbac_test.go` can reuse (same package). errcheck flags bare `.([]any)` type
+  assertions in tests, so use those helpers rather than asserting inline.
+- `CRD()` returns `map[string]any`, so rules/enums in it are `[]string` until marshalled; tests decode
+  through `Files()` to see the real JSON types.
+
 ## NEEDS CLARIFICATION
 
 None open.
