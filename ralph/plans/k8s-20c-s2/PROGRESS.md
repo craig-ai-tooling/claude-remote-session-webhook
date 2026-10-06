@@ -114,6 +114,21 @@ Created `deploy/k8s/manifest/` with `manifest.go` (constants, `Files()`), `crd.g
 - `CRD()` returns `map[string]any`, so rules/enums in it are `[]string` until marshalled; tests decode
   through `Files()` to see the real JSON types.
 
+## Iteration 6 (T6, 10/6/26)
+
+Added `deploy/k8s/manifest/rbac.go` (`ReconcilerRBAC`, `LeaseRBAC`, `DaemonRBAC`, registered in `Files()`) and `rbac_test.go`.
+
+- Failing first: `go test ./deploy/k8s/manifest` printed `rbac_test.go:216: Files() has no rbac-reconciler.json`
+  (and the same for the daemon file; 6 RBAC tests failed). 12 tests pass after.
+- Gate green: build, vet, test, `-tags tmux`, golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0.
+  `-tags quickstart ./cmd/crswd` failed once on `TestDashboardQuickstartStory2Cap` (the iteration 3 flake,
+  `quickstart_dashboard_test.go:844`, 429 want 200) and passed on the immediate rerun (75s, port 8765 free).
+- Next iteration (T7): `Files()` now has four entries, so the generator writes `crd.json`, `rbac-reconciler.json`,
+  `rbac-lease.json`, `rbac-daemon.json`. `rbac_test.go` declares types `rbacList`, `rbacObject`, `policyRule`,
+  `subject` and helper `has`; do not reuse those names in `drift_test.go` or `fixtures_test.go`. The production
+  helper is `roleAndBinding`. `deploy/k8s/*.json` does not exist yet, so run the generator before the drift test.
+- Not fixed: the walker's `secrets`/`*` check ignores `resourceNames` and `nonResourceURLs`; neither is used.
+
 ## NEEDS CLARIFICATION
 
 None open.

@@ -24,7 +24,10 @@ const (
 // maps sorts their keys, which keeps the bytes stable between runs.
 func Files() (map[string][]byte, error) {
 	objects := map[string]any{
-		"crd.json": CRD(),
+		"crd.json":             CRD(),
+		"rbac-reconciler.json": ReconcilerRBAC(),
+		"rbac-lease.json":      LeaseRBAC(),
+		"rbac-daemon.json":     DaemonRBAC(),
 	}
 	files := make(map[string][]byte, len(objects))
 	for name, v := range objects {
