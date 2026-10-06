@@ -122,7 +122,7 @@ func TestDeleteRemovesObject(t *testing.T) {
 	if err := c.Delete(ctx, "crswd-x"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, ok, _ := c.Get(ctx, "crswd-x"); ok {
+	if _, ok, err := c.Get(ctx, "crswd-x"); err != nil || ok {
 		t.Fatal("object still there after Delete")
 	}
 }
@@ -137,7 +137,10 @@ func TestSetAnnotationKeepsExisting(t *testing.T) {
 	if err := c.SetAnnotation(ctx, "crswd-x", "crswd.craigcloud.io/managed", "1"); err != nil {
 		t.Fatalf("SetAnnotation: %v", err)
 	}
-	got, _, _ := c.Get(ctx, "crswd-x")
+	got, _, err := c.Get(ctx, "crswd-x")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := map[string]string{"keep": "me", "crswd.craigcloud.io/managed": "1"}
 	if !reflect.DeepEqual(got.Metadata.Annotations, want) {
 		t.Fatalf("annotations = %v, want %v", got.Metadata.Annotations, want)
@@ -150,7 +153,10 @@ func TestFromObjectZeroTimestampIsOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	meta, _ := u.Object["metadata"].(map[string]any)
+	meta, ok := u.Object["metadata"].(map[string]any)
+	if !ok {
+		t.Fatal("metadata is not a map")
+	}
 	if _, has := meta["creationTimestamp"]; has {
 		t.Fatalf("zero creationTimestamp was serialised: %v", meta["creationTimestamp"])
 	}
@@ -160,7 +166,10 @@ func TestFromObjectZeroTimestampIsOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	meta, _ = u.Object["metadata"].(map[string]any)
+	meta, ok = u.Object["metadata"].(map[string]any)
+	if !ok {
+		t.Fatal("metadata is not a map")
+	}
 	if _, has := meta["creationTimestamp"]; !has {
 		t.Fatal("a set creationTimestamp was dropped")
 	}
@@ -178,7 +187,10 @@ func TestUpdateStatusLeavesSpecAndAnnotations(t *testing.T) {
 	if err := c.UpdateStatus(ctx, "crswd-x", st); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
-	got, _, _ := c.Get(ctx, "crswd-x")
+	got, _, err := c.Get(ctx, "crswd-x")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.Status != st {
 		t.Fatalf("status = %+v, want %+v", got.Status, st)
 	}
@@ -202,7 +214,10 @@ func TestUpdateChangesAnnotationsNotSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	got, _, _ := c.Get(ctx, "crswd-x")
+	got, _, err := c.Get(ctx, "crswd-x")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.Metadata.Annotations["added"] != "yes" || got.Metadata.Annotations["keep"] != "me" {
 		t.Fatalf("annotations = %v", got.Metadata.Annotations)
 	}

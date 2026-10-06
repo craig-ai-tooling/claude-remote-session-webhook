@@ -66,7 +66,9 @@ func TestCapturePaneReassemblesFrames(t *testing.T) {
 	t.Parallel()
 	r := captureRig(t, func(ctx context.Context, _ string, _ []string, out io.Writer) (int, error) {
 		for _, piece := range []string{"hel", "lo wor", "ld" + sep + "par"} {
-			_, _ = io.WriteString(out, piece)
+			if _, err := io.WriteString(out, piece); err != nil {
+				return 0, err
+			}
 		}
 		<-ctx.Done()
 		return 0, ctx.Err()
@@ -83,7 +85,9 @@ func TestCapturePaneReassemblesFrames(t *testing.T) {
 func TestCapturePaneStripsANSI(t *testing.T) {
 	t.Parallel()
 	r := captureRig(t, func(ctx context.Context, _ string, _ []string, out io.Writer) (int, error) {
-		_, _ = io.WriteString(out, "\x1b[31mred\x1b[0m text"+sep)
+		if _, err := io.WriteString(out, "\x1b[31mred\x1b[0m text"+sep); err != nil {
+			return 0, err
+		}
 		<-ctx.Done()
 		return 0, ctx.Err()
 	})
@@ -101,14 +105,20 @@ func TestCapturePaneArgv(t *testing.T) {
 	var argv atomic.Value
 	r := captureRig(t, func(ctx context.Context, pod string, a []string, out io.Writer) (int, error) {
 		argv.Store(append([]string{pod}, a...))
-		_, _ = io.WriteString(out, "x"+sep)
+		if _, err := io.WriteString(out, "x"+sep); err != nil {
+			return 0, err
+		}
 		<-ctx.Done()
 		return 0, ctx.Err()
 	})
 	if _, err := r.c.CapturePane(context.Background(), testName); err != nil {
 		t.Fatal(err)
 	}
-	got := strings.Join(argv.Load().([]string), " ")
+	a, ok := argv.Load().([]string)
+	if !ok {
+		t.Fatal("the exec never ran")
+	}
+	got := strings.Join(a, " ")
 	if want := testName + " " + Binary + " pane-loop " + testName; got != want {
 		t.Fatalf("exec = %q, want %q", got, want)
 	}
@@ -118,13 +128,17 @@ func TestCapturePaneOversizeFrame(t *testing.T) {
 	t.Parallel()
 	gate := make(chan struct{})
 	r := captureRig(t, func(ctx context.Context, _ string, _ []string, out io.Writer) (int, error) {
-		_, _ = io.WriteString(out, "ok"+sep)
+		if _, err := io.WriteString(out, "ok"+sep); err != nil {
+			return 0, err
+		}
 		select {
 		case <-gate:
 		case <-ctx.Done():
 			return 0, ctx.Err()
 		}
-		_, _ = io.WriteString(out, strings.Repeat("row\n", 11)+sep) // PaneBound is 10
+		if _, err := io.WriteString(out, strings.Repeat("row\n", 11)+sep); err != nil { // PaneBound is 10
+			return 0, err
+		}
 		<-ctx.Done()
 		return 0, ctx.Err()
 	})
@@ -146,7 +160,9 @@ func TestCapturePaneOversizeFrame(t *testing.T) {
 func TestCapturePaneOversizeFirstFrame(t *testing.T) {
 	t.Parallel()
 	r := captureRig(t, func(ctx context.Context, _ string, _ []string, out io.Writer) (int, error) {
-		_, _ = io.WriteString(out, strings.Repeat("row\n", 11)+sep)
+		if _, err := io.WriteString(out, strings.Repeat("row\n", 11)+sep); err != nil {
+			return 0, err
+		}
 		<-ctx.Done()
 		return 0, ctx.Err()
 	})
@@ -161,7 +177,9 @@ func TestCapturePaneReopensCutStream(t *testing.T) {
 	var execs atomic.Int32
 	r := captureRig(t, func(_ context.Context, _ string, _ []string, out io.Writer) (int, error) {
 		execs.Add(1)
-		_, _ = io.WriteString(out, "frame"+sep)
+		if _, err := io.WriteString(out, "frame"+sep); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	})
 	if _, err := r.c.CapturePane(context.Background(), testName); err != nil {
@@ -177,14 +195,20 @@ func TestCapturePaneIdleStreamIsCancelled(t *testing.T) {
 	gate := make(chan struct{})
 	r := captureRig(t, func(ctx context.Context, _ string, _ []string, out io.Writer) (int, error) {
 		if execs.Add(1) > 1 {
-			_, _ = io.WriteString(out, "again"+sep)
+			if _, err := io.WriteString(out, "again"+sep); err != nil {
+				return 0, err
+			}
 			<-ctx.Done()
 			return 0, ctx.Err()
 		}
-		_, _ = io.WriteString(out, "one"+sep)
+		if _, err := io.WriteString(out, "one"+sep); err != nil {
+			return 0, err
+		}
 		<-gate
 		// A healthy stream never returns, so idleness has to be found here.
-		_, _ = io.WriteString(out, "two"+sep)
+		if _, err := io.WriteString(out, "two"+sep); err != nil {
+			return 0, err
+		}
 		<-ctx.Done()
 		close(cancelled)
 		return 0, ctx.Err()
@@ -235,7 +259,9 @@ func TestCapturePaneKillStopsStream(t *testing.T) {
 	t.Parallel()
 	stopped := make(chan struct{})
 	r := captureRig(t, func(ctx context.Context, _ string, _ []string, out io.Writer) (int, error) {
-		_, _ = io.WriteString(out, "x"+sep)
+		if _, err := io.WriteString(out, "x"+sep); err != nil {
+			return 0, err
+		}
 		<-ctx.Done()
 		close(stopped)
 		return 0, ctx.Err()

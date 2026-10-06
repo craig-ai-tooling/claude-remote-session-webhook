@@ -434,7 +434,10 @@ func TestSetOptionWritesAnnotation(t *testing.T) {
 	if err := r.c.SetOption(context.Background(), testName, tmuxctl.OptionManaged, tmuxctl.OptionManagedValue); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _ := r.obj.Get(context.Background(), testName)
+	got, _, err := r.obj.Get(context.Background(), testName)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.Metadata.Annotations["crswd.craigcloud.io/managed"] != "1" || got.Metadata.Annotations["keep"] != "me" {
 		t.Fatalf("annotations = %v", got.Metadata.Annotations)
 	}
@@ -460,8 +463,8 @@ func TestKill(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "still there") {
 		t.Fatalf("err = %v, want a still-there error", err)
 	}
-	if _, ok, _ := r.obj.Get(context.Background(), testName); ok {
-		t.Fatal("object survived Kill")
+	if _, ok, err := r.obj.Get(context.Background(), testName); err != nil || ok {
+		t.Fatalf("object survived Kill (found=%v, err=%v)", ok, err)
 	}
 	if err := r.pods.CoreV1().Pods("ns").Delete(context.Background(), testName, metav1.DeleteOptions{}); err != nil {
 		t.Fatal(err)

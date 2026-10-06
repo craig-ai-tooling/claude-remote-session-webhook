@@ -124,7 +124,7 @@ func (c *Controller) awaitReady(parent context.Context, name string) error {
 	defer cancel()
 	tick := time.NewTicker(c.cfg.PollInterval)
 	defer tick.Stop()
-	last := "no pod yet"
+	var last string
 	for {
 		ready, seen, err := c.readyOnce(ctx, name)
 		if err != nil {

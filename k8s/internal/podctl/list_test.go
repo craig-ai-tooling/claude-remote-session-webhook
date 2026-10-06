@@ -133,7 +133,7 @@ type seqList struct {
 func (s *seqList) Exec(ctx context.Context, pod string, argv []string, in io.Reader, out, errw io.Writer) (int, error) {
 	if strings.Join(argv, " ") == listArgv() {
 		s.recorder.mu.Lock()
-		s.recorder.calls = append(s.recorder.calls, call{pod: pod, argv: append([]string(nil), argv...)})
+		s.calls = append(s.calls, call{pod: pod, argv: append([]string(nil), argv...)})
 		s.recorder.mu.Unlock()
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -141,7 +141,9 @@ func (s *seqList) Exec(ctx context.Context, pod string, argv []string, in io.Rea
 		if len(s.listed) > 0 {
 			reply, s.listed = s.listed[0], s.listed[1:]
 		}
-		_, _ = io.WriteString(out, reply)
+		if _, err := io.WriteString(out, reply); err != nil {
+			return 0, err
+		}
 		return 0, nil
 	}
 	return s.recorder.Exec(ctx, pod, argv, in, out, errw)
