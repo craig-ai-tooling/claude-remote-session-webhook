@@ -20,13 +20,13 @@ If it fails, the reason is "S2/S4/S5/S6 not all on this branch's base".
 
 Take the topmost open task. One per iteration.
 
-- [ ] T1: The cluster switch in `internal/config/config.go` per Design §1. Verify: `go test ./internal/config/ ./cmd/crswd/` exits 0, and `go test -run HostNeverBuildsKubernetes ./cmd/crswd -v` passes.
-- [ ] T2: `httpapi.NewForCluster` per Design §2, in new `internal/httpapi/cluster.go` and `cluster_test.go`. Verify: `go test -run NewForCluster ./internal/httpapi -v` passes.
-- [ ] T3: The cluster binary `k8s/cmd/crswd` per Design §3. Verify: `go -C k8s test ./cmd/crswd/... -v` passes and `go -C k8s build -o /dev/null ./cmd/crswd` exits 0.
-- [ ] T4: The crswd image Dockerfile and the session image's Codex per Design §4. Verify: `go test -run Dockerfile ./internal/sessionpod ./deploy/image -v` passes, and `bash -n deploy/session-image/fetch-codex.sh` exits 0.
-- [ ] T5: The crswd-next manifests, generated, per Design §5. Run `go run ./deploy/k8s/gen` to write them. Verify: `go test ./deploy/k8s/...` exits 0 (the drift test compares the generator's bytes with the files on disk).
-- [ ] T6: `docs/k8s-mode.md` per Design §6. Verify: `grep -c '^## ' docs/k8s-mode.md` prints at least `7`, and `go test ./...` exits 0.
-- [ ] T7: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
+- [x] T1: The cluster switch in `internal/config/config.go` per Design §1. Verify: `go test ./internal/config/ ./cmd/crswd/` exits 0, and `go test -run HostNeverBuildsKubernetes ./cmd/crswd -v` passes.
+- [x] T2: `httpapi.NewForCluster` per Design §2, in new `internal/httpapi/cluster.go` and `cluster_test.go`. Verify: `go test -run NewForCluster ./internal/httpapi -v` passes.
+- [x] T3: The cluster binary `k8s/cmd/crswd` per Design §3. Verify: `go -C k8s test ./cmd/crswd/... -v` passes and `go -C k8s build -o /dev/null ./cmd/crswd` exits 0.
+- [x] T4: The crswd image Dockerfile and the session image's Codex per Design §4. Verify: `go test -run Dockerfile ./internal/sessionpod ./deploy/image -v` passes, and `bash -n deploy/session-image/fetch-codex.sh` exits 0.
+- [x] T5: The crswd-next manifests, generated, per Design §5. Run `go run ./deploy/k8s/gen` to write them. Verify: `go test ./deploy/k8s/...` exits 0 (the drift test compares the generator's bytes with the files on disk).
+- [x] T6: `docs/k8s-mode.md` per Design §6. Verify: `grep -c '^## ' docs/k8s-mode.md` prints at least `7`, and `go test ./...` exits 0.
+- [x] T7: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
 
 ## Files touched
 
@@ -34,6 +34,8 @@ A diff outside this list is rejected.
 
 - `internal/config/config.go` (T1 only: the switch and its comment)
 - `cmd/crswd/hostswitch_test.go` (new, T1)
+- `cmd/crswd/main_test.go` (T3: the nested-module skip in `parseTheDaemon` only; see PROGRESS.md "Operator decision")
+- `k8s/cmd/crswd/stdout_test.go` (new, T3)
 - `internal/httpapi/cluster.go`, `internal/httpapi/cluster_test.go` (new, T2; T3 may add `Server.PodRecord` to `cluster.go`)
 - `k8s/cmd/crswd/` (new: `main.go`, `daemon.go`, `reconcile.go`, `main_test.go`, `daemon_test.go`)
 - `k8s/go.mod`, `k8s/go.sum` (only if `go -C k8s mod tidy` changes them)
@@ -50,7 +52,7 @@ A diff outside this list is rejected.
 - `ralph/plans/k8s-20c-s7/`
 
 Never touch: the root `go.mod`, a root `go.sum`, `AGENTS.md`, `docs/security.md`,
-`.github/`, `.claude/`, `cmd/crswd/` except the one new test, `internal/session/`,
+`.github/`, `.claude/`, `cmd/crswd/` except the one new test and the T3 `parseTheDaemon` skip, `internal/session/`,
 `internal/sessionpod/sessionpod.go`, `k8s/internal/podctl/`, `k8s/internal/reconcile/`.
 
 ## Design

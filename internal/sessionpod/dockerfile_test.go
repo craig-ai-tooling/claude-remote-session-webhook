@@ -3,6 +3,7 @@ package sessionpod
 import (
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -60,8 +61,12 @@ func TestSessionImageDockerfileShape(t *testing.T) {
 	if user := byWord("USER"); len(user) == 0 || user[len(user)-1] != "USER 10001:10001" {
 		t.Errorf("USER = %q, want the last to be numeric 10001:10001", user)
 	}
-	if copies := byWord("COPY"); len(copies) != 1 || copies[0] != "COPY --chmod=0755 crswd /usr/local/bin/crswd" {
-		t.Errorf("COPY = %q, want exactly the one binary", copies)
+	wantCopies := []string{
+		"COPY --chmod=0755 crswd /usr/local/bin/crswd",
+		"COPY --chmod=0755 codex /usr/local/bin/codex",
+	}
+	if copies := byWord("COPY"); !slices.Equal(copies, wantCopies) {
+		t.Errorf("COPY = %q, want exactly the crswd binary then the codex binary", copies)
 	}
 	if adds := byWord("ADD"); len(adds) != 0 {
 		t.Errorf("ADD = %q; this image copies a file and fetches nothing", adds)
@@ -87,7 +92,7 @@ func TestSessionImageDockerfileShape(t *testing.T) {
 
 	// The tag scheme the brief fixes is written down where the person building
 	// the image will read it.
-	if !strings.Contains(raw, "docker.io/nctiggy/crswd-session:2.1.246-<sha7>") {
-		t.Error("the Dockerfile does not document the tag scheme docker.io/nctiggy/crswd-session:2.1.246-<sha7>")
+	if !strings.Contains(raw, "docker.io/nctiggy/crswd-session:2.1.246-codex0.153.4-<sha7>") {
+		t.Error("the Dockerfile does not document the tag scheme docker.io/nctiggy/crswd-session:2.1.246-codex0.153.4-<sha7>")
 	}
 }

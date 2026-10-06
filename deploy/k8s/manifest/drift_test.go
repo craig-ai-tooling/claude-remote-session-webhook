@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,13 +37,16 @@ func TestNoStrayManifests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Files: %v", err)
 	}
-	found, err := filepath.Glob(filepath.Join("..", "*.json"))
-	if err != nil {
-		t.Fatalf("glob: %v", err)
-	}
-	for _, p := range found {
-		if _, ok := files[filepath.Base(p)]; !ok {
-			t.Errorf("deploy/k8s/%s is not produced by Files(); delete it or add it to Files()", filepath.Base(p))
+	for _, pattern := range []string{"*.json", filepath.Join("crswd-next", "*.json")} {
+		found, err := filepath.Glob(filepath.Join("..", pattern))
+		if err != nil {
+			t.Fatalf("glob: %v", err)
+		}
+		for _, p := range found {
+			name := filepath.ToSlash(strings.TrimPrefix(p, ".."+string(filepath.Separator)))
+			if _, ok := files[name]; !ok {
+				t.Errorf("deploy/k8s/%s is not produced by Files(); delete it or add it to Files()", name)
+			}
 		}
 	}
 }

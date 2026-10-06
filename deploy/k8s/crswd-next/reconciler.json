@@ -1,0 +1,99 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "labels": {
+      "app.kubernetes.io/component": "reconciler",
+      "app.kubernetes.io/instance": "crswd-next",
+      "app.kubernetes.io/name": "crswd",
+      "app.kubernetes.io/part-of": "crswd"
+    },
+    "name": "crswd-reconciler",
+    "namespace": "crswd-next-reconciler"
+  },
+  "spec": {
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app.kubernetes.io/component": "reconciler",
+        "app.kubernetes.io/instance": "crswd-next",
+        "app.kubernetes.io/name": "crswd"
+      }
+    },
+    "strategy": {
+      "type": "Recreate"
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/component": "reconciler",
+          "app.kubernetes.io/instance": "crswd-next",
+          "app.kubernetes.io/name": "crswd"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "args": [
+              "reconcile"
+            ],
+            "env": [
+              {
+                "name": "CRSW_SESSION_NAMESPACE",
+                "value": "crswd-next"
+              },
+              {
+                "name": "CRSW_RECONCILER_NAMESPACE",
+                "value": "crswd-next-reconciler"
+              },
+              {
+                "name": "CRSW_SESSION_IMAGE",
+                "value": "docker.io/nctiggy/crswd-session:2.1.246-codex0.153.4-REPLACE"
+              },
+              {
+                "name": "CRSW_SESSION_NODE",
+                "value": "lm-amd64-1"
+              },
+              {
+                "name": "CRSW_SESSION_CLAIM",
+                "value": "crswd-sessions"
+              },
+              {
+                "name": "CRSW_MAX_SESSIONS",
+                "value": "10"
+              },
+              {
+                "name": "CRSW_CLAUDE_SECRET",
+                "value": "claude-credentials"
+              },
+              {
+                "name": "CRSW_CODEX_SECRET",
+                "value": "codex-auth"
+              }
+            ],
+            "image": "docker.io/nctiggy/crswd:2.0.0-dev.REPLACE",
+            "name": "reconciler",
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsNonRoot": true
+            }
+          }
+        ],
+        "serviceAccountName": "crswd-reconciler",
+        "tolerations": [
+          {
+            "effect": "NoSchedule",
+            "key": "drbd.linbit.com/lost-quorum",
+            "operator": "Exists"
+          }
+        ]
+      }
+    }
+  }
+}

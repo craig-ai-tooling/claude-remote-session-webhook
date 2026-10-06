@@ -439,15 +439,20 @@ func (m ExecutionMode) String() string {
 var ErrKubernetesModeUnbuilt = errors.New(`execution mode "kubernetes" is not built into this binary yet, so it refuses to start rather than run sessions on this host when the configuration asked for a cluster`)
 
 // kubernetesModeBuilt is whether this binary can run sessions in pods. It is
-// false until the cluster wiring lands (spec 017, the last slice of k8s-20c),
-// and that slice's whole change here is this line.
+// false in the host binary forever, and the cluster binary (k8s/cmd/crswd) flips
+// it through BuildKubernetesMode as its first act.
 //
-// It is a constant in this package, and the answer is asked through Runnable,
-// because two places have to agree on it: the start, which refuses, and the
-// settings page's edit, which must not write a file the start would refuse. A
-// mode an operator can save from a browser and then cannot restart out of is a
-// dashboard that took itself down.
-const kubernetesModeBuilt = false
+// The answer is asked through Runnable, because two places have to agree on it:
+// the start, which refuses, and the settings page's edit, which must not write a
+// file the start would refuse. A mode an operator can save from a browser and
+// then cannot restart out of is a dashboard that took itself down.
+var kubernetesModeBuilt bool
+
+// BuildKubernetesMode marks this process as the cluster build. Only
+// k8s/cmd/crswd calls it, first thing in main; the host binary never does, so
+// Runnable keeps refusing kubernetes there (cmd/crswd pins that by walking the
+// source). It is not safe to call once goroutines are reading Runnable.
+func BuildKubernetesMode() { kubernetesModeBuilt = true }
 
 // Runnable is nil when this binary can run sessions in the mode, and otherwise
 // the sentence saying why it cannot. The host is always runnable.

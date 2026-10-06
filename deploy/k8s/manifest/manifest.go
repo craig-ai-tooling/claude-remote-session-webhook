@@ -29,6 +29,21 @@ func Files() (map[string][]byte, error) {
 		"rbac-lease.json":      LeaseRBAC(),
 		"rbac-daemon.json":     DaemonRBAC(),
 	}
+	files, err := render(objects)
+	if err != nil {
+		return nil, err
+	}
+	next, err := crswdNextFiles()
+	if err != nil {
+		return nil, err
+	}
+	for name, b := range next {
+		files[name] = b
+	}
+	return files, nil
+}
+
+func render(objects map[string]any) (map[string][]byte, error) {
 	files := make(map[string][]byte, len(objects))
 	for name, v := range objects {
 		b, err := json.MarshalIndent(v, "", "  ")
