@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
@@ -348,7 +349,7 @@ func (m *Manager) sendStart(ctx context.Context, s Session) error {
 	}
 	// A revival can land in a directory that was trusted when it was created and
 	// is not now, so it is seeded again rather than assumed.
-	if err := SeedTrust(m.claudeConfig, s.WorkDir); err != nil {
+	if err := m.seedTrustFor(harness.For(harness.Of(template)), s.WorkDir); err != nil {
 		return err
 	}
 	if err := m.tmux.SendKeys(ctx, s.TmuxName(), command, enterKey); err != nil {

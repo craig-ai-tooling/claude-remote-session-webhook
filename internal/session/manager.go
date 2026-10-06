@@ -213,6 +213,12 @@ type Manager struct {
 	// before 2026-10-05.
 	claudeConfig string
 
+	// codexHome is the directory holding Codex's config.toml, where a session's
+	// directory is trusted before a Codex start command is typed
+	// (trust_codex.go). Empty means Codex trust is left alone: every test's
+	// manager, and a daemon in kubernetes mode.
+	codexHome string
+
 	tmux  tmuxctl.Controller
 	store *Store
 	roots []config.ApprovedRoot
@@ -273,6 +279,24 @@ func (m *Manager) SetRemoteControlCommand(name string) { m.remoteControlCommand 
 // setter for the reason SetStartCommands is one, and because a manager built by
 // a test must never reach the operator's real ~/.claude.json.
 func (m *Manager) SetClaudeConfig(path string) { m.claudeConfig = path }
+
+// SetCodexHome names the directory whose config.toml records workspace trust
+// for Codex sessions. A setter for the same reason SetClaudeConfig is one: a
+// test's manager must never reach the operator's real ~/.codex.
+func (m *Manager) SetCodexHome(path string) { m.codexHome = path }
+
+// seedTrustFor sets workspace trust for dir in the config the harness reads.
+// Other has no trust store crswd knows, so it seeds nothing.
+func (m *Manager) seedTrustFor(spec harness.Spec, dir string) error {
+	switch spec.Name {
+	case harness.Claude:
+		return SeedTrust(m.claudeConfig, dir)
+	case harness.Codex:
+		return SeedCodexTrust(m.codexHome, dir)
+	default:
+		return nil
+	}
+}
 
 // SetLifetimes gives the manager the operator's configured default and ceiling
 // (#37). A setter for the reason SetStartCommands is one: every existing caller
@@ -2082,7 +2106,7 @@ func (m *Manager) start(ctx context.Context, s Session, resume string) error {
 	}
 	// Before the command is typed, because the dialog is drawn the moment Claude
 	// starts and nothing on this host will answer it.
-	if err := SeedTrust(m.claudeConfig, s.WorkDir); err != nil {
+	if err := m.seedTrustFor(harness.For(harness.Of(template)), s.WorkDir); err != nil {
 		return err
 	}
 	if err := m.tmux.SendKeys(ctx, name, command, enterKey); err != nil {

@@ -112,3 +112,10 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: the "dir appears on another line" check is a plain substring match, so a header for `/ab` refuses when the session dir is `/a`. That follows the task text; a false refusal fails the create loudly rather than editing the wrong table.
 - Nothing calls `SeedCodexTrust` yet; T008 wires it.
 - Left: T008 onward. No findings unfixed.
+
+## Iteration 13 (T008)
+
+- Wrote `TestCreateCodexTrustsTheWorkDir`, `TestCreateCodexFailsOnShape` and `TestCreateClaudeDoesNotTouchCodexConfig` first (in `trust_codex_test.go`); they failed to compile on the old code (no `SetCodexHome`). Then added `Manager.codexHome`, `SetCodexHome` and `seedTrustFor` (Claude, Codex, Other seeds nothing), replaced both `SeedTrust` calls (`start` in manager.go, `sendStart` in supervisor.go) with `seedTrustFor(harness.For(harness.Of(template)), ...)`, and wired `SetCodexHome(session.CodexHome(sessionEnv))` in `httpapi.New` beside `SetClaudeConfig`, after the kubernetes-mode return.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: an Other start command now seeds no Claude trust where it used to. No existing test depended on it, since the fixtures use `claude`-prefixed stand-ins (T004).
+- Left: T009 onward. No findings unfixed.

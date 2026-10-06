@@ -1,10 +1,15 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
 const codexDir = "/home/op/code/repo"
@@ -249,4 +254,82 @@ func TestSeedCodexTrust(t *testing.T) {
 			t.Fatalf("err = %v, want ErrUntrustablePath", err)
 		}
 	})
+}
+
+func codexManagerFixture(t *testing.T, contents string) (managerFixture, string) {
+	t.Helper()
+
+	home := t.TempDir()
+	path := filepath.Join(home, "config.toml")
+	if contents != "" {
+		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := newManagerFixture(t)
+	f.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: claudeStartCommand,
+		"codex":                        "codex --dangerously-bypass-approvals-and-sandbox",
+	}))
+	f.mgr.SetCodexHome(home)
+	return f, path
+}
+
+func TestCreateCodexTrustsTheWorkDir(t *testing.T) {
+	t.Parallel()
+
+	f, path := codexManagerFixture(t, "model = \"x\"\n")
+	req := f.request()
+	req.StartCommand = "codex"
+
+	s, _ := mustCreate(t, f, req)
+
+	got, err := os.ReadFile(path) //nolint:gosec // G304: a path under t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "[projects.\"" + s.WorkDir + "\"]\ntrust_level = \"trusted\"\n"
+	if !strings.Contains(string(got), want) {
+		t.Errorf("config.toml after Create = %q, want it to contain %q", got, want)
+	}
+}
+
+func TestCreateCodexFailsOnShape(t *testing.T) {
+	t.Parallel()
+
+	f, path := codexManagerFixture(t, "")
+	req := f.request()
+	req.StartCommand = "codex"
+	probe, _ := mustCreate(t, f, req)
+	// A comment naming the directory is a shape crswd refuses to edit.
+	if err := os.WriteFile(path, []byte("# "+probe.WorkDir+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := len(f.tmux.Calls())
+
+	_, _, err := f.mgr.Create(context.Background(), req)
+	if !errors.Is(err, ErrCodexConfigShape) {
+		t.Fatalf("Create() error = %v, want ErrCodexConfigShape", err)
+	}
+	for _, c := range f.tmux.Calls()[before:] {
+		if c.Op == tmuxctl.OpSendKeys {
+			t.Errorf("a send-keys call was made after the seeding failed: %+v", c)
+		}
+	}
+}
+
+func TestCreateClaudeDoesNotTouchCodexConfig(t *testing.T) {
+	t.Parallel()
+
+	f, path := codexManagerFixture(t, "model = \"x\"\n")
+
+	mustCreate(t, f, f.request())
+
+	got, err := os.ReadFile(path) //nolint:gosec // G304: a path under t.TempDir().
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "model = \"x\"\n" {
+		t.Errorf("config.toml after a Claude create = %q, want it unchanged", got)
+	}
 }
