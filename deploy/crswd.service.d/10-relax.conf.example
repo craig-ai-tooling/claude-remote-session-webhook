@@ -28,7 +28,8 @@
 # ---------------------------------------------------------------------------
 #
 # A path from an authenticated request to ROOT on this host, not just to your
-# account. Sessions already run `claude --dangerously-skip-permissions` as you;
+# account. Sessions already run `claude --dangerously-skip-permissions` (or `codex
+# --dangerously-bypass-approvals-and-sandbox`) as you;
 # this additionally lets one become root through setuid binaries such as sudo.
 #
 # `allowed_roots` does not bound this. It bounds which directories a session

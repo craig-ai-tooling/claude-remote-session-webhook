@@ -119,6 +119,8 @@ advise_tools() {
     command -v "$tool" > /dev/null 2>&1 || \
       warn "$tool is not on PATH. It is not needed to install or start crswd, but a documented deployment uses it — see the README."
   done
+  command -v codex > /dev/null 2>&1 || \
+    warn "codex is not on PATH. Optional: only needed if you want Codex sessions — see the README."
 }
 
 # ~/.local/bin is where this installs, and on several distributions it is not on
