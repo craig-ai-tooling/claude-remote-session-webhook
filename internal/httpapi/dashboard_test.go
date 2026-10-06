@@ -1035,8 +1035,8 @@ func TestTheSessionPageOffersTypingKeysAndScrollback(t *testing.T) {
 
 // TestNoInputPanelWithoutAPageToken is the other half of FR-017: a pane built
 // without a token offers no way to type, for the reason a card built without one
-// offers no action. The Scrollback disclosure is not behind the token, because
-// reading history changes nothing.
+// offers no action. FR-017 puts the Scrollback disclosure behind the token too,
+// so it is absent here (spec 018 review #6).
 func TestNoInputPanelWithoutAPageToken(t *testing.T) {
 	t.Parallel()
 
@@ -1047,8 +1047,10 @@ func TestNoInputPanelWithoutAPageToken(t *testing.T) {
 			t.Errorf("a pane with no page token renders %q, a control the gate is certain to refuse:\n%s", absent, rendered)
 		}
 	}
-	if !strings.Contains(rendered, `class="scrollback"`) {
-		t.Errorf("a pane with no page token lost the Scrollback disclosure, which only reads:\n%s", rendered)
+	for _, absent := range []string{`class="scrollback"`, "/history", "scrollback-summary"} {
+		if strings.Contains(rendered, absent) {
+			t.Errorf("a pane with no page token renders %q; FR-017 draws Scrollback only with one:\n%s", absent, rendered)
+		}
 	}
 }
 
