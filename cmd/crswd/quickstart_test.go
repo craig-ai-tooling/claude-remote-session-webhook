@@ -395,6 +395,15 @@ func (h *host) writeCodexShim() {
 	script := "#!/bin/bash\n" +
 		"# Stand-in for `codex` during the acceptance run.\n" +
 		"if [ -z \"$CRSWD_SHIM_REEXEC\" ]; then CRSWD_SHIM_REEXEC=1 exec -a codex bash \"$0\" \"$@\"; fi\n" +
+		// Trust is checked here, before the ready marker, because this script runs
+		// only once the daemon has typed the start line. A daemon that seeded trust
+		// after typing would leave config.toml without the table at this moment, and
+		// the marker the test waits on would never print.
+		"ch=\"${CODEX_HOME:-$HOME/.codex}\"\n" +
+		`if ! grep -qF "[projects.\"$(pwd -P)\"]" "$ch/config.toml" 2>/dev/null; then` + "\n" +
+		"  echo shim-codex-not-trusted-yet\n" +
+		"  exit 1\n" +
+		"fi\n" +
 		"printf '%s\\n' " + shimReady + "\n" +
 		"printf 'shim-argv:%s\\n' \"$*\"\n" +
 		"while IFS= read -r line; do printf '" + shimEcho + "%s\\n' \"$line\"; done\n"
