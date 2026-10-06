@@ -856,3 +856,30 @@ func TestLivenessAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// The pane's own process is the login shell, not what runs under it: that is
+// the root the supervisor walks down from to find a harness's open files.
+func TestPanePIDIsTheShell(t *testing.T) {
+	shell := os.Getenv("SHELL")
+	if shell == "" {
+		t.Skip("SHELL is empty; no shell name to compare the pane process against")
+	}
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	pid, err := e.PanePID(ctx, name)
+	if err != nil {
+		t.Fatalf("PanePID: %v", err)
+	}
+	comm, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/comm")
+	if err != nil {
+		t.Fatalf("read comm of pid %d: %v", pid, err)
+	}
+	if got, want := strings.TrimSpace(string(comm)), filepath.Base(shell); got != want {
+		t.Errorf("/proc/%d/comm = %q, want the login shell %q", pid, got, want)
+	}
+}

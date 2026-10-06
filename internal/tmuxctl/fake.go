@@ -24,6 +24,7 @@ const (
 	OpPaste          Op = "Paste"
 	OpPasteBracketed Op = "PasteBracketed"
 	OpCapturePane    Op = "CapturePane"
+	OpPanePID        Op = "PanePID"
 	OpCaptureHistory Op = "CaptureHistory"
 	OpResize         Op = "Resize"
 	OpKill           Op = "Kill"
@@ -111,6 +112,10 @@ func argvDeleteBuffer(buffer string) []string {
 // raw control bytes to the API.
 func argvCapturePane(name string) []string {
 	return []string{"tmux", "capture-pane", "-p", "-t", PaneTarget(name)}
+}
+
+func argvPanePID(name string) []string {
+	return []string{"tmux", "display-message", "-p", "-t", PaneTarget(name), "#{pane_pid}"}
 }
 
 // -E -1 stops one line above the visible screen, so the history and the pane
@@ -290,6 +295,11 @@ type fakeSession struct {
 	pane        string
 	history     string
 
+	// panePID is what PanePID reports. Zero is unset, which the fake answers as
+	// tmux printing something unreadable, so a test that walks /proc says which
+	// pid it means rather than inheriting one.
+	panePID int
+
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
 	// the fake holds what the host holds, so a test cannot pass against a daemon
@@ -415,6 +425,24 @@ func (f *Fake) CapturePane(_ context.Context, name string) (string, error) {
 		return "", errNoSession(name)
 	}
 	return s.pane, nil
+}
+
+func (f *Fake) PanePID(_ context.Context, name string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.record(OpPanePID, argvPanePID(name), nil)
+	if err := f.fail[OpPanePID]; err != nil {
+		return 0, err
+	}
+	s, ok := f.sessions[name]
+	if !ok {
+		return 0, errNoSession(name)
+	}
+	if s.panePID <= 0 {
+		return 0, fmt.Errorf("read the pane pid of %s: %w", name, ErrUnexpectedOutput)
+	}
+	return s.panePID, nil
 }
 
 func (f *Fake) CaptureHistory(_ context.Context, name string) (string, error) {
@@ -664,6 +692,20 @@ func (f *Fake) SetPane(name, content string) {
 		f.sessions[name] = s
 	}
 	s.pane = content
+}
+
+// SetPanePID sets what PanePID returns, seeding the session if it does not
+// exist yet, as SetPane does.
+func (f *Fake) SetPanePID(name string, pid int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.panePID = pid
 }
 
 // SetHistory sets what CaptureHistory returns, seeding the session if it does

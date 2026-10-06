@@ -51,6 +51,9 @@ func ArgvDeleteBuffer(buffer string) []string { return argvDeleteBuffer(buffer) 
 // ArgvCapturePane is `tmux capture-pane -p`, without -e.
 func ArgvCapturePane(name string) []string { return argvCapturePane(name) }
 
+// ArgvPanePID is `tmux display-message -p` of `#{pane_pid}`.
+func ArgvPanePID(name string) []string { return argvPanePID(name) }
+
 // ArgvCaptureHistory is `tmux capture-pane -p -S -5000 -E -1`, without -e.
 func ArgvCaptureHistory(name string) []string { return argvCaptureHistory(name) }
 

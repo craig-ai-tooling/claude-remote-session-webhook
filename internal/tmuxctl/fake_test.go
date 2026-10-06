@@ -826,3 +826,68 @@ func TestLivenessOfSet(t *testing.T) {
 		})
 	}
 }
+
+// A pane pid is what the supervisor walks /proc from, so the argv has to ask
+// for exactly that format and nothing else, against the exact-match target.
+func TestArgvPanePID(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"tmux", "display-message", "-p", "-t", "=" + fakeName + ":", "#{pane_pid}"}
+	if got := tmuxctl.ArgvPanePID(fakeName); !slices.Equal(got, want) {
+		t.Errorf("ArgvPanePID = %q, want %q", got, want)
+	}
+}
+
+func TestFakePanePID(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("seeded", func(t *testing.T) {
+		t.Parallel()
+		f := tmuxctl.NewFake()
+		f.SetPanePID(fakeName, 4242)
+		got, err := f.PanePID(ctx, fakeName)
+		if err != nil || got != 4242 {
+			t.Fatalf("PanePID = %d, %v; want 4242, nil", got, err)
+		}
+		calls := f.Calls()
+		last := calls[len(calls)-1]
+		if last.Op != tmuxctl.OpPanePID || !slices.Equal(last.Argv, tmuxctl.ArgvPanePID(fakeName)) {
+			t.Errorf("recorded %q %q, want the PanePID argv", last.Op, last.Argv)
+		}
+	})
+
+	t.Run("unseeded", func(t *testing.T) {
+		t.Parallel()
+		f := tmuxctl.NewFake()
+		if err := f.New(ctx, fakeName, fakeWorkDir); err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		got, err := f.PanePID(ctx, fakeName)
+		if got != 0 || !errors.Is(err, tmuxctl.ErrUnexpectedOutput) {
+			t.Fatalf("PanePID = %d, %v; want 0, ErrUnexpectedOutput", got, err)
+		}
+	})
+
+	t.Run("missing session", func(t *testing.T) {
+		t.Parallel()
+		f := tmuxctl.NewFake()
+		_, want := f.CapturePane(ctx, fakeName)
+		got, err := f.PanePID(ctx, fakeName)
+		if got != 0 || err == nil || err.Error() != want.Error() {
+			t.Fatalf("PanePID = %d, %v; want 0, the error CapturePane gives (%v)", got, err, want)
+		}
+	})
+
+	t.Run("injected failure", func(t *testing.T) {
+		t.Parallel()
+		f := tmuxctl.NewFake()
+		f.SetPanePID(fakeName, 7)
+		boom := errors.New("boom")
+		f.FailOp(tmuxctl.OpPanePID, boom)
+		if _, err := f.PanePID(ctx, fakeName); !errors.Is(err, boom) {
+			t.Fatalf("PanePID err = %v, want the injected failure", err)
+		}
+	})
+}

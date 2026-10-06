@@ -290,6 +290,21 @@ func (e *Exec) CapturePane(ctx context.Context, name string) (string, error) {
 	return stdout, nil
 }
 
+// PanePID asks tmux for the pane process's pid. The answer is a number the
+// daemon will open /proc paths with, so anything that is not a positive integer
+// is refused rather than passed on; the output itself stays out of the error.
+func (e *Exec) PanePID(ctx context.Context, name string) (int, error) {
+	stdout, stderr, err := e.run(ctx, argvPanePID(name), nil)
+	if err != nil {
+		return 0, fmt.Errorf("tmux display-message %s: %w", name, withStderr(err, stderr))
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(stdout))
+	if err != nil || pid <= 0 {
+		return 0, fmt.Errorf("read the pane pid of %s: %w", name, ErrUnexpectedOutput)
+	}
+	return pid, nil
+}
+
 // CaptureHistory returns the scrollback above the visible screen, or refuses.
 // It does not use e.paneBound, which bounds the live screen; the history has its
 // own bounds, HistoryLimit lines and maxHistoryBytes. -E -1 keeps the visible
