@@ -72,7 +72,7 @@ jobs:
         if: steps.src.outputs.present == 'true' && matrix.language == 'go'
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24'
+          go-version: '1.26'
           cache: false
 
       - name: Initialize CodeQL

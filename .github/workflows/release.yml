@@ -59,7 +59,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           # Match ci.yml and the dev host. The three move together.
-          go-version: '1.24'
+          go-version: '1.26'
           cache: true
 
       - name: Build linux/amd64 and linux/arm64
