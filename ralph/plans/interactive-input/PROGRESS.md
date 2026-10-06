@@ -273,3 +273,13 @@ Replaced the pane note with the FR-020 sentence and added the input panel, key b
 ### Findings
 
 - `TestKeyAndTypeShareOneBudget` and `TestTypeSpendsTheInputBudget` failed once in a full `go test ./internal/httpapi` (204 where 303 was wanted) and passed in isolation and on three later full runs. They post 120 and 240 requests against a 240/min bucket, so a slow run that lets the bucket refill past the last post flips them. Not fixed here; T008 and T009 own them.
+
+## Iteration 16: T014 (2026-10-06)
+
+Added the input client to `crswd.js`: the shared handler's `data-session-input` early return, `window.crswdShowToast` and `window.crswdSentence` exports, and a new IIFE at the end of the file (submit with `lastClicked` fallback, 204 handling, Ctrl/Cmd+Enter, Scrollback on toggle). Five tests in `stylesheet_test.go` plus an `inputClient` helper.
+
+- Guards proven: with the early return spelled `data-session-inputx`, `TestTheInputClientSkipsTheSharedHandler` FAILED; with `event.metaKey` removed from the Enter check, `TestCtrlEnterSends` FAILED. Restored, both PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T015): `TestTheReflowIsOfferedRatherThanTaken` took "the reflow module" as everything after `REFLOW_CELLS` to end of file, so appending the new IIFE made it see `fetch(` and `requestSubmit`. It now cuts the module at the first `})();`. The task did not list this edit; it was forced by the append.
+- `script()` strips comments, so a test cannot anchor on the new IIFE's leading comment through it. `inputClient` reads the raw file for that.
+- Not run in a browser: the client is checked only as bytes, like the rest of the file.
