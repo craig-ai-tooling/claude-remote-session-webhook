@@ -110,3 +110,21 @@ Also learned: `config.Load()` reads the real config file and ambient CRSW_ varia
 ## NEEDS CLARIFICATION
 
 Task T3 ("The cluster binary `k8s/cmd/crswd` per Design §3"): `TestDiagnosticsGoToStderr` rejects `os.Stdout` in `k8s/cmd/crswd/main.go`, and `cmd/crswd/` is on the never-touch list. Which is intended? (a) allow editing `cmd/crswd/main_test.go` to exempt `k8s/cmd/crswd/main.go` (the in-pod subcommands legitimately own stdout; the daemon path writes the audit trail via `internal/audit`); (b) have it skip `k8s/` like `hostswitch_test.go` does; (c) a stdout writer built without the `os.Stdout` selector (`os.NewFile`), which evades the guard rather than satisfying it. Recommendation: (a).
+
+## Operator decision (10/6/26): T3 and the stdout guard
+
+Answer: neither (a) nor (c). `TestDiagnosticsGoToStderr` guards the host daemon, and `parseTheDaemon`
+(cmd/crswd/main_test.go) walks every `.go` file under the root, which now includes a separate module.
+Do this as part of T3, in this order:
+
+1. In `parseTheDaemon`'s `WalkDir` callback, for a directory other than `moduleRoot`, return
+   `fs.SkipDir` when `filepath.Join(path, "go.mod")` exists (`os.Stat` error nil). Comment: a nested
+   module is not compiled into this daemon. This edit to `cmd/crswd/main_test.go` is allowed for
+   this one purpose; touch nothing else under `cmd/crswd/`.
+2. Add `k8s/cmd/crswd/stdout_test.go`: parse every non-test `.go` file in `k8s/cmd/crswd`, and fail on
+   any `os.Stdout` selector outside the functions that run the in-pod subcommands `pane-loop`,
+   `codex-conversation` and `has-transcript` (their protocol is stdout, read by podctl over exec).
+   List those function names in one map in the test. Prove it can fail with a table case over a
+   synthetic source string that uses `os.Stdout` in another function.
+3. Verify: `go test ./cmd/crswd -run DiagnosticsGoToStderr` and `go -C k8s test ./cmd/crswd -run Stdout -v` pass.
+
