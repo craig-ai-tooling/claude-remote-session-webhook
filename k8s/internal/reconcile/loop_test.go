@@ -3,12 +3,16 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/agentsession"
 	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/kube"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 func createObject(t *testing.T, g *rig, ns string) {
@@ -97,5 +101,65 @@ func TestRunWithLeaseReturnsLoopError(t *testing.T) {
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Fatalf("took %v, want well before the context ends", time.Since(start))
+	}
+}
+
+// Finding 5: the worker has exited before the Lease is released.
+func TestRunWithLeaseJoinsWorkerBeforeRelease(t *testing.T) {
+	setLeaseTimings(t)
+	var exited atomic.Bool
+	var heldAtCancel atomic.Bool
+	started := make(chan struct{})
+	g := newRig(t, podCfg(), nil)
+
+	old := runLoop
+	runLoop = func(_ *Reconciler, ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		l, err := g.kube.CoordinationV1().Leases("crswd").Get(context.Background(), LeaseName, metav1.GetOptions{})
+		if err == nil && l.Spec.HolderIdentity != nil && *l.Spec.HolderIdentity == "one" {
+			heldAtCancel.Store(true)
+		}
+		time.Sleep(500 * time.Millisecond)
+		exited.Store(true)
+		return ctx.Err()
+	}
+	t.Cleanup(func() { runLoop = old })
+
+	var exitedAtRelease atomic.Int32 // 0 not released, 1 released after exit, 2 released before exit
+	g.kube.PrependReactor("update", "leases", func(a clienttesting.Action) (bool, runtime.Object, error) {
+		if l, ok := a.(clienttesting.UpdateAction).GetObject().(*coordinationv1.Lease); ok &&
+			(l.Spec.HolderIdentity == nil || *l.Spec.HolderIdentity == "") {
+			if exited.Load() {
+				exitedAtRelease.CompareAndSwap(0, 1)
+			} else {
+				exitedAtRelease.CompareAndSwap(0, 2)
+			}
+		}
+		return false, nil, nil
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- RunWithLease(ctx, g.kube, "one", g.r) }()
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("worker never started")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunWithLease did not return")
+	}
+	if !exited.Load() {
+		t.Error("RunWithLease returned before the worker exited")
+	}
+	if !heldAtCancel.Load() {
+		t.Error("the Lease was already released when the worker saw cancel")
+	}
+	if got := exitedAtRelease.Load(); got != 1 {
+		t.Errorf("Lease release: %d, want 1 (released after the worker exited)", got)
 	}
 }

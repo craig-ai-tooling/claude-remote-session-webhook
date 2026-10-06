@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/agentsession"
@@ -101,28 +102,75 @@ func (r *Reconciler) Run(ctx context.Context) error {
 
 // RunWithLease runs the loop only while holding the reconciler's Lease. A loop
 // that dies ends the call, so a reconciler that cannot act never keeps renewing.
+//
+// The worker is cancelled and joined before the Lease is released. The elector
+// runs under its own context, which is cancelled only after the join, so
+// ReleaseOnCancel hands the Lease back after the last write the worker could
+// make. Cancelling the caller's context straight into the elector would release
+// the Lease while the worker was still reconciling, and a standby could act
+// beside it.
 func RunWithLease(ctx context.Context, kc kubernetes.Interface, identity string, r *Reconciler) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	electorCtx, stopElector := context.WithCancel(context.Background())
+	defer stopElector()
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	defer stopWorker()
+
+	var (
+		mu       sync.Mutex
+		stopping bool
+		workers  sync.WaitGroup
+	)
 	runErr := make(chan error, 1)
 
 	c := leaseTimings
 	c.Namespace, c.Name, c.Identity = r.cfg.LeaseNamespace, LeaseName, identity
 	elector, err := kube.NewElector(kc, c, func(lctx context.Context) {
-		if err := runLoop(r, lctx); err != nil && lctx.Err() == nil {
-			runErr <- err
-			cancel()
+		mu.Lock()
+		if stopping {
+			mu.Unlock()
+			return
 		}
-	}, func() {})
+		workers.Add(1)
+		mu.Unlock()
+		defer workers.Done()
+
+		// Cancelled by the elector on lease loss, or by shutdown below.
+		wctx, cancel := context.WithCancel(lctx)
+		defer cancel()
+		defer context.AfterFunc(workerCtx, cancel)()
+		if err := runLoop(r, wctx); err != nil && wctx.Err() == nil {
+			select {
+			case runErr <- err:
+			default:
+			}
+		}
+	}, stopWorker)
 	if err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
-	elector.Run(ctx)
 
+	electorDone := make(chan struct{})
+	go func() {
+		defer close(electorDone)
+		elector.Run(electorCtx)
+	}()
+
+	var result error
 	select {
-	case err := <-runErr:
-		return err
-	default:
-		return ctx.Err()
+	case <-ctx.Done():
+		result = ctx.Err()
+	case result = <-runErr:
+	case <-electorDone:
+		// The Lease was lost or never won. The worker may still be running.
+		result = ctx.Err()
 	}
+
+	mu.Lock()
+	stopping = true
+	mu.Unlock()
+	stopWorker()
+	workers.Wait()
+	stopElector()
+	<-electorDone
+	return result
 }
