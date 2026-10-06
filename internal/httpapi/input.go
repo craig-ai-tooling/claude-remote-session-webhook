@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -160,4 +162,58 @@ func (s *Server) keyFromBrowser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// patternSessionHistory is the scrollback read, spelled beside the stream's route.
+const patternSessionHistory = "GET /sessions/{" + pathValueID + "}/history"
+
+const contentTypePlain = "text/plain; charset=utf-8"
+
+var (
+	errHistoryCrossSite  = errors.New("a history read was initiated cross-site")
+	errHistoryUnreadable = errors.New("the session's history could not be read")
+)
+
+// sessionHistory is GET /sessions/{id}/history: the session's scrollback as one
+// plain-text answer, stripped by the manager. It is sessionStream's first three
+// checks and no stream, because it reads once and changes nothing.
+//
+// The body is pane content, so the answer is text/plain and no-store, and a
+// failure answers a bare 500: the reason is on the record and the cause is
+// reported, never put in a response or an audit line.
+func (s *Server) sessionHistory(w http.ResponseWriter, r *http.Request) {
+	operator, ok := OperatorFrom(r.Context())
+	if !ok {
+		AuditFrom(r.Context()).Deny(errDashboardNoOperator.Error())
+		s.refuseBrowser(w)
+		return
+	}
+
+	if crossSite(r) {
+		AuditFrom(r.Context()).Deny(errHistoryCrossSite.Error())
+		s.refuseBrowser(w)
+		return
+	}
+
+	live, err := s.sessions.View(r.PathValue(pathValueID), operator.Owner)
+	if err != nil {
+		AuditFrom(r.Context()).Deny(resolveReason(err).Error())
+		s.renderNotFound(w, r, operator)
+		return
+	}
+	AuditFrom(r.Context()).SetSessionID(live.ID)
+
+	c, err := s.sessions.History(r.Context(), live)
+	if err != nil {
+		AuditFrom(r.Context()).Deny(errHistoryUnreadable.Error())
+		s.report(fmt.Errorf("read history of session %s: %w", live.ID, err))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set(headerContentType, contentTypePlain)
+	w.Header().Set(headerCacheControl, cacheControlNoStore)
+	if _, err := io.WriteString(w, c.Text); err != nil {
+		s.report(fmt.Errorf("write the history of session %s: %w", live.ID, err))
+	}
 }

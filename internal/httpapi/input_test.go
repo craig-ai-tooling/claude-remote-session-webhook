@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
@@ -452,4 +453,162 @@ func TestTypeAuditsNoText(t *testing.T) {
 	if strings.Contains(string(raw), canary) {
 		t.Errorf("the record carries the typed text: %s", raw)
 	}
+}
+
+// read gets the history route as the browser this daemon rendered the page for.
+func (ty *typer) read(t *testing.T, id, site string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return ty.send(t, http.MethodGet, "/sessions/"+id+"/history", site, url.Values{})
+}
+
+func TestHistoryAnswersStrippedText(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+	ty.fixture.tmux.SetHistory(live.TmuxName(), "\x1b[31mred\x1b[0m line\x1b]0;title\x07\nplain\n")
+
+	w := ty.read(t, live.ID, secFetchSiteSameOrigin)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusOK)
+	}
+	if got, want := w.Body.String(), "red line\nplain\n"; got != want {
+		t.Errorf("body = %q; want %q", got, want)
+	}
+	if got, want := w.Header().Get(headerContentType), contentTypePlain; got != want {
+		t.Errorf("%s = %q; want %q", headerContentType, got, want)
+	}
+	if got, want := w.Header().Get(headerCacheControl), cacheControlNoStore; got != want {
+		t.Errorf("%s = %q; want %q", headerCacheControl, got, want)
+	}
+}
+
+func TestHistoryAllowsAnAbsentFetchSite(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+
+	if w := ty.read(t, live.ID, absent); w.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusOK)
+	}
+}
+
+func TestHistoryRefusesCrossSite(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+	ty.fixture.tmux.SetHistory(live.TmuxName(), "scrollback-canary")
+
+	w := ty.read(t, live.ID, "cross-site")
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusUnauthorized)
+	}
+	if strings.Contains(w.Body.String(), "scrollback-canary") {
+		t.Errorf("a cross-site read was answered with history: %s", w.Body.String())
+	}
+	if ty.askedForHistory() {
+		t.Error("a cross-site read reached the host")
+	}
+	rec := ty.only(t)
+	if got, want := rec["reason"], errHistoryCrossSite.Error(); got != want {
+		t.Errorf("reason = %v; want %v", got, want)
+	}
+}
+
+func TestHistoryIsOwnerScoped(t *testing.T) {
+	t.Parallel()
+
+	const stranger auth.CallerID = "a-second-operator"
+	ty := newTyper(t)
+	theirs, _ := ty.fixture.plant(t, session.Session{Owner: stranger, Name: originalName, WorkDir: ty.fixture.repo})
+	ty.fixture.tmux.SetHistory(theirs.TmuxName(), "not-yours-canary")
+
+	w := ty.read(t, theirs.ID, secFetchSiteSameOrigin)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNotFound)
+	}
+	// An id that never existed is the baseline: a session someone else owns must
+	// be indistinguishable from it.
+	never := ty.read(t, strings.Repeat("c", session.IDLen), secFetchSiteSameOrigin)
+	if never.Code != w.Code || never.Body.String() != w.Body.String() {
+		t.Errorf("another operator's session answered %d (%d bytes); an unknown id answered %d (%d bytes)",
+			w.Code, w.Body.Len(), never.Code, never.Body.Len())
+	}
+	if strings.Contains(w.Body.String(), "not-yours-canary") {
+		t.Error("another operator's history was served")
+	}
+	if ty.askedForHistory() {
+		t.Error("another operator's session reached the host")
+	}
+	// The unknown-id read adds a second record, so the owner-scoped one is first.
+	rec := ty.records(t)[0]
+	if got, want := rec["reason"], session.ErrSessionNotFound.Error(); got != want {
+		t.Errorf("reason = %v; want %v", got, want)
+	}
+}
+
+func TestHistoryBoundIsA500(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+	ty.fixture.tmux.FailOp(tmuxctl.OpCaptureHistory, tmuxctl.ErrHistoryTooLarge)
+
+	w := ty.read(t, live.ID, secFetchSiteSameOrigin)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusInternalServerError)
+	}
+	if got := w.Body.String(); got != "" {
+		t.Errorf("body = %q; want none", got)
+	}
+	rec := ty.only(t)
+	if got, want := rec["reason"], errHistoryUnreadable.Error(); got != want {
+		t.Errorf("reason = %v; want %v", got, want)
+	}
+}
+
+func TestHistoryAuditsNoContent(t *testing.T) {
+	t.Parallel()
+
+	const canary = "canary-history-5c1e44"
+	ty := newTyper(t)
+	live := ty.live(t)
+	ty.fixture.tmux.SetHistory(live.TmuxName(), canary)
+
+	w := ty.read(t, live.ID, secFetchSiteSameOrigin)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusOK)
+	}
+
+	rec := ty.only(t)
+	if got, want := rec["action"], string(audit.ActionDashboardHistory); got != want {
+		t.Errorf("action = %v; want %v", got, want)
+	}
+	if got, want := rec["session_id"], live.ID; got != want {
+		t.Errorf("session_id = %v; want %v", got, want)
+	}
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatalf("re-encode the audit record %v: %v", rec, err)
+	}
+	if strings.Contains(string(raw), canary) {
+		t.Errorf("the record carries the history: %s", raw)
+	}
+}
+
+// askedForHistory is whether the host was ever asked for a scrollback.
+func (ty *typer) askedForHistory() bool {
+	for _, call := range ty.fixture.tmux.Calls() {
+		if call.Op == tmuxctl.OpCaptureHistory {
+			return true
+		}
+	}
+	return false
 }

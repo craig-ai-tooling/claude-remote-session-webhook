@@ -739,6 +739,10 @@ func newServer(
 	// operations, and a route authorised by an identity rather than a signature
 	// is not one of them.
 	s.handleBrowser(patternSessionStream, audit.ActionStreamOpen, s.sessionStream)
+	// The scrollback is a read on the same door and under its own action: it is
+	// not a stream, and an operator counting scrollback reads must not be
+	// counting watchers with them.
+	s.handleBrowser(patternSessionHistory, audit.ActionDashboardHistory, s.sessionHistory)
 	// The other stream, and the one that is about the fleet rather than about a
 	// session (#15). It goes on handleBrowser and not handleAction because it
 	// changes nothing: what admits it is layer 1 and the same-origin check the pane
