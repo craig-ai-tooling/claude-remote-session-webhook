@@ -36,14 +36,17 @@ func ArgvSendKeys(name string, keys ...string) []string { return argvSendKeys(na
 // There is no single paste builder, so this returns a pair rather than
 // composing one: a wrapper that joined the two would be an argv tmux never
 // receives.
-func ArgvPaste(name string) (loadBuffer, pasteBuffer []string) {
-	return argvLoadBuffer(name), argvPasteBuffer(name)
+func ArgvPaste(buffer, name string) (loadBuffer, pasteBuffer []string) {
+	return argvLoadBuffer(buffer), argvPasteBuffer(buffer, name)
 }
 
 // ArgvPasteBracketed is ArgvPaste with `paste-buffer -p` as the second command.
-func ArgvPasteBracketed(name string) (loadBuffer, pasteBuffer []string) {
-	return argvLoadBuffer(name), argvPasteBufferBracketed(name)
+func ArgvPasteBracketed(buffer, name string) (loadBuffer, pasteBuffer []string) {
+	return argvLoadBuffer(buffer), argvPasteBufferBracketed(buffer, name)
 }
+
+// ArgvDeleteBuffer is `tmux delete-buffer -b`, the cleanup after a failed paste.
+func ArgvDeleteBuffer(buffer string) []string { return argvDeleteBuffer(buffer) }
 
 // ArgvCapturePane is `tmux capture-pane -p`, without -e.
 func ArgvCapturePane(name string) []string { return argvCapturePane(name) }

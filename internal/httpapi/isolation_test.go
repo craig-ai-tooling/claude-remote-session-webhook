@@ -257,7 +257,11 @@ func TestNoRequestScopedToOneSessionAddressesAnothersWindow(t *testing.T) {
 				// capture that read the wrong pane.
 				issued := strings.Join(call.Argv, " ") + " " + string(call.Stdin)
 
-				if !strings.Contains(issued, f.b.TmuxName()) {
+				// load-buffer and delete-buffer name a buffer drawn per call, not
+				// a window, so there is no session in them to be the wrong one.
+				bufferOnly := len(call.Argv) > 3 && (call.Argv[1] == "load-buffer" || call.Argv[1] == "delete-buffer") &&
+					strings.HasPrefix(call.Argv[3], tmuxctl.BufferPrefix)
+				if !bufferOnly && !strings.Contains(issued, f.b.TmuxName()) {
 					t.Errorf("%s ran %s %v against a target the resolved session does not name; want %q",
 						route, call.Op, call.Argv, f.b.TmuxName())
 				}

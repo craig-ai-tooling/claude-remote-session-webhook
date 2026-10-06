@@ -1162,8 +1162,8 @@ func TestPromptPastesThenSubmits(t *testing.T) {
 	name := "crswd-" + s.ID
 	pane := "=" + name + ":"
 	want := []tmuxctl.Call{
-		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", name, "-"}, Stdin: []byte(payload)},
-		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", name, "-t", pane}},
+		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", tmuxctl.FakeBufferName(1), "-"}, Stdin: []byte(payload)},
+		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", tmuxctl.FakeBufferName(1), "-t", pane}},
 		{Op: tmuxctl.OpSendKeys, Argv: []string{"tmux", "send-keys", "-t", pane, "--", "Enter"}},
 	}
 
@@ -1269,8 +1269,8 @@ func TestCompactUsesBufferPath(t *testing.T) {
 	name := "crswd-" + s.ID
 	pane := "=" + name + ":"
 	want := []tmuxctl.Call{
-		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", name, "-"}, Stdin: []byte("/compact\n")},
-		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", name, "-t", pane}},
+		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", tmuxctl.FakeBufferName(1), "-"}, Stdin: []byte("/compact\n")},
+		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "paste-buffer", "-d", "-b", tmuxctl.FakeBufferName(1), "-t", pane}},
 	}
 
 	got := f.tmux.Calls()[before:]

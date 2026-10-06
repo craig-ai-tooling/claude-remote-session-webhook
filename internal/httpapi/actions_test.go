@@ -4392,8 +4392,14 @@ func observe(t *testing.T, n *renamer, op identifierOp, s session.Session, crede
 //   - What the trail recorded may carry the identifier only, for a second
 //     reason: a name is caller-supplied text, and no record is built from it
 //     (FR-042).
+var fakeBufferName = regexp.MustCompile(`crswd-in-[0-9a-f]{16}`)
+
 func (o observed) asAnySession(id, name string) observed {
-	anyID := func(s string) string { return strings.ReplaceAll(s, id, "<ID>") }
+	// A paste draws a buffer name of its own, so two runs differ by it and by
+	// nothing the label could have caused.
+	anyID := func(s string) string {
+		return fakeBufferName.ReplaceAllString(strings.ReplaceAll(s, id, "<ID>"), "<BUFFER>")
+	}
 	anySession := func(s string) string { return strings.ReplaceAll(anyID(s), name, "<NAME>") }
 
 	header := http.Header{}

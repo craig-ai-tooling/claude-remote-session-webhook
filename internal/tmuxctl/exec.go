@@ -3,9 +3,13 @@ package tmuxctl
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -179,30 +183,60 @@ func (e *Exec) SendKeys(ctx context.Context, name string, keys ...string) error 
 	return nil
 }
 
+// newBufferName draws a buffer name no other call shares: 16 random hex digits
+// behind BufferPrefix. Per call rather than per session, so a second paste into
+// the same session cannot overwrite the first one's text before it lands.
+func newBufferName() (string, error) {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("draw a tmux buffer name: %w", err)
+	}
+	return BufferPrefix + hex.EncodeToString(raw[:]), nil
+}
+
 // Paste runs the two commands the contract requires. The payload reaches tmux
 // on stdin, so it never becomes part of a command line and never touches disk.
 func (e *Exec) Paste(ctx context.Context, name string, payload []byte) error {
-	// tmux writes diagnostics to stderr, not an echo of what it read — but this
-	// is the one command carrying caller-supplied prompt text, which is secret
-	// under docs/security.md §3, so its error deliberately keeps tmux's message
-	// out rather than relying on that.
-	if _, _, err := e.run(ctx, argvLoadBuffer(name), payload); err != nil {
-		return fmt.Errorf("tmux load-buffer %s: %w", name, err)
-	}
-	if _, stderr, err := e.run(ctx, argvPasteBuffer(name), nil); err != nil {
-		return fmt.Errorf("tmux paste-buffer %s: %w", name, withStderr(err, stderr))
-	}
-	return nil
+	return e.paste(ctx, name, payload, false)
 }
 
-// PasteBracketed is Paste with the second command carrying -p. The load-buffer
-// error keeps tmux's stderr out for the same reason Paste's does.
+// PasteBracketed is Paste with the second command carrying -p.
 func (e *Exec) PasteBracketed(ctx context.Context, name string, payload []byte) error {
-	if _, _, err := e.run(ctx, argvLoadBuffer(name), payload); err != nil {
+	return e.paste(ctx, name, payload, true)
+}
+
+// paste loads the payload into a buffer of its own and pastes it.
+//
+// tmux writes diagnostics to stderr, not an echo of what it read, but this is
+// the one command carrying caller-supplied text, which is secret under
+// docs/security.md §3, so the load-buffer error deliberately keeps tmux's
+// message out rather than relying on that.
+//
+// paste-buffer -d removes the buffer only when the paste works. When it fails
+// the text would stay in the tmux server for anyone on the socket to read, so
+// the buffer is deleted on that path, and a failure of the cleanup joins the
+// paste's error instead of replacing it.
+func (e *Exec) paste(ctx context.Context, name string, payload []byte, bracketed bool) error {
+	buffer, err := newBufferName()
+	if err != nil {
+		return err
+	}
+	if _, _, err := e.run(ctx, argvLoadBuffer(buffer), payload); err != nil {
 		return fmt.Errorf("tmux load-buffer %s: %w", name, err)
 	}
-	if _, stderr, err := e.run(ctx, argvPasteBufferBracketed(name), nil); err != nil {
-		return fmt.Errorf("tmux paste-buffer -p %s: %w", name, withStderr(err, stderr))
+
+	argv, label := argvPasteBuffer(buffer, name), "paste-buffer"
+	if bracketed {
+		argv, label = argvPasteBufferBracketed(buffer, name), "paste-buffer -p"
+	}
+	if _, stderr, err := e.run(ctx, argv, nil); err != nil {
+		pasteErr := fmt.Errorf("tmux %s %s: %w", label, name, withStderr(err, stderr))
+		// A cancelled ctx would refuse the cleanup too, and the cleanup is the
+		// one command that must still run.
+		if _, delStderr, delErr := e.run(context.WithoutCancel(ctx), argvDeleteBuffer(buffer), nil); delErr != nil {
+			return errors.Join(pasteErr, fmt.Errorf("tmux delete-buffer %s: %w", name, withStderr(delErr, delStderr)))
+		}
+		return pasteErr
 	}
 	return nil
 }
@@ -262,17 +296,19 @@ func (e *Exec) CapturePane(ctx context.Context, name string) (string, error) {
 // screen out, so the two captures never overlap. Sizes are safe to name in the
 // error and the content is not (FR-042).
 func (e *Exec) CaptureHistory(ctx context.Context, name string) (string, error) {
-	stdout, stderr, err := e.run(ctx, argvCaptureHistory(name), nil)
+	// The byte bound is enforced while reading, not after: run buffers whatever
+	// tmux prints, so checking afterwards bounds the answer and not the memory.
+	stdout, stderr, exceeded, err := e.runBounded(ctx, argvCaptureHistory(name), maxHistoryBytes)
+	if exceeded {
+		return "", errors.Join(fmt.Errorf("tmux capture-pane history %s: %w: more than %d bytes, past the bound",
+			name, ErrHistoryTooLarge, maxHistoryBytes), err)
+	}
 	if err != nil {
 		return "", fmt.Errorf("tmux capture-pane history %s: %w", name, withStderr(err, stderr))
 	}
 	if lines := countLines(stdout); lines > HistoryLimit {
 		return "", fmt.Errorf("tmux capture-pane history %s: %w: %d lines past the %d-line bound",
 			name, ErrHistoryTooLarge, lines, HistoryLimit)
-	}
-	if len(stdout) > maxHistoryBytes {
-		return "", fmt.Errorf("tmux capture-pane history %s: %w: %d bytes past the %d-byte bound",
-			name, ErrHistoryTooLarge, len(stdout), maxHistoryBytes)
 	}
 	return stdout, nil
 }
@@ -551,18 +587,100 @@ func cutLast(s, sep string) (before, after string, found bool) {
 // error separately, so each method decides for itself what may appear in the
 // error it returns.
 func (e *Exec) run(ctx context.Context, argv []string, stdin []byte) (string, string, error) {
+	cmd, err := e.command(ctx, argv)
+	if err != nil {
+		return "", "", err
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+
+	err = cmd.Run()
+	return stdout.String(), strings.TrimSpace(stderr.String()), err
+}
+
+// maxStderrBytes bounds what a bounded run keeps of tmux's stderr.
+const maxStderrBytes = 64 << 10
+
+// capWriter keeps the first max bytes written and drops the rest while reporting
+// every write as complete, so a chatty child is never blocked on a full pipe.
+type capWriter struct {
+	buf bytes.Buffer
+	max int
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.buf.Len(); room > 0 {
+		w.buf.Write(p[:min(room, len(p))])
+	}
+	return len(p), nil
+}
+
+// runBounded is run for a command whose stdout is not trusted to be small. It
+// reads at most limit bytes: one byte past it, the process is killed and reaped
+// and exceeded is true, so memory stays at limit however much tmux would print.
+// stderr is bounded separately at maxStderrBytes.
+func (e *Exec) runBounded(ctx context.Context, argv []string, limit int) (stdout, stderr string, exceeded bool, err error) {
+	cmd, err := e.command(ctx, argv)
+	if err != nil {
+		return "", "", false, err
+	}
+	errOut := &capWriter{max: maxStderrBytes}
+	cmd.Stderr = errOut
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", "", false, fmt.Errorf("pipe tmux stdout: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return "", "", false, err
+	}
+
+	out, readErr := io.ReadAll(io.LimitReader(pipe, int64(limit)+1))
+	if len(out) > limit || readErr != nil {
+		// Wait would otherwise block on a child still writing to a full pipe.
+		reapErr := reap(cmd)
+		if len(out) > limit {
+			return "", "", true, reapErr
+		}
+		return "", "", false, errors.Join(fmt.Errorf("read tmux stdout: %w", readErr), reapErr)
+	}
+	waitErr := cmd.Wait()
+	return string(out), strings.TrimSpace(errOut.buf.String()), false, waitErr
+}
+
+// reap kills a child that is still running and waits for it. A process that had
+// already exited, and the exit status a kill produces, are the expected outcomes
+// and not errors.
+func reap(cmd *exec.Cmd) error {
+	var errs []error
+	if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		errs = append(errs, fmt.Errorf("kill tmux: %w", err))
+	}
+	var exit *exec.ExitError
+	if err := cmd.Wait(); err != nil && !errors.As(err, &exit) {
+		errs = append(errs, fmt.Errorf("wait for tmux: %w", err))
+	}
+	return errors.Join(errs...)
+}
+
+// command builds the guarded tmux invocation both run paths share.
+func (e *Exec) command(ctx context.Context, argv []string) (*exec.Cmd, error) {
 	// The zero Exec cannot reach tmux's default server. NewExec already refuses
 	// to build one, and this is the guard that makes that a property of the type
 	// rather than of its constructor — a struct literal is one keystroke away.
 	if e.socket == "" {
-		return "", "", ErrNoSocket
+		return nil, ErrNoSocket
 	}
 
 	// The guard that makes a scrubbed environment a property of the type rather
 	// than of its constructor, for ErrNoSocket's reason: a struct literal is one
 	// keystroke away, and the zero value of this field is the one that leaks.
 	if len(e.sessionEnv) == 0 {
-		return "", "", ErrNoSessionEnv
+		return nil, ErrNoSessionEnv
 	}
 
 	// G204 fires on any exec whose program or arguments are not literals here,
@@ -591,15 +709,7 @@ func (e *Exec) run(ctx context.Context, argv []string, stdin []byte) (string, st
 	// holds the old one — see env.go, which is the other half and not optional.
 	cmd.Env = e.sessionEnv
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
-
-	err := cmd.Run()
-	return stdout.String(), strings.TrimSpace(stderr.String()), err
+	return cmd, nil
 }
 
 // args prepends the server socket, the only tmux global flag this package uses,

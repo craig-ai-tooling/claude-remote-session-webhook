@@ -8,6 +8,9 @@ import (
 
 const argvTestName = "crswd-9f2c4a1b8e6d3f7a0c5b2e9d4f1a7c3b"
 
+// argvTestBuffer is the first buffer name a fresh Fake draws.
+const argvTestBuffer = "crswd-in-0000000000000001"
+
 // TestArgvWrappersEqualBuilders holds the one property the exported wrappers
 // have: each returns, element for element, what the unexported builder of the
 // same name returns. A second Controller runs these argv inside a pod, so a
@@ -34,6 +37,7 @@ func TestArgvWrappersEqualBuilders(t *testing.T) {
 		{"Resize", ArgvResize(argvTestName, 44, 24), argvResize(argvTestName, 44, 24)},
 		{"Resize below the floor", ArgvResize(argvTestName, 0, -3), argvResize(argvTestName, 0, -3)},
 		{"Resize above the ceiling", ArgvResize(argvTestName, 20000, 20000), argvResize(argvTestName, 20000, 20000)},
+		{"DeleteBuffer", ArgvDeleteBuffer(argvTestBuffer), argvDeleteBuffer(argvTestBuffer)},
 		{"Kill", ArgvKill(argvTestName), argvKill(argvTestName)},
 		{"Has", ArgvHas(argvTestName), argvHas(argvTestName)},
 		{"ReconcileEnv", ArgvReconcileEnv(), argvReconcileEnv()},
@@ -52,19 +56,19 @@ func TestArgvWrappersEqualBuilders(t *testing.T) {
 		})
 	}
 
-	load, paste := ArgvPaste(argvTestName)
-	if want := argvLoadBuffer(argvTestName); !slices.Equal(load, want) {
+	load, paste := ArgvPaste(argvTestBuffer, argvTestName)
+	if want := argvLoadBuffer(argvTestBuffer); !slices.Equal(load, want) {
 		t.Errorf("ArgvPaste load-buffer = %q, builder = %q", load, want)
 	}
-	if want := argvPasteBuffer(argvTestName); !slices.Equal(paste, want) {
+	if want := argvPasteBuffer(argvTestBuffer, argvTestName); !slices.Equal(paste, want) {
 		t.Errorf("ArgvPaste paste-buffer = %q, builder = %q", paste, want)
 	}
 
-	load, paste = ArgvPasteBracketed(argvTestName)
-	if want := argvLoadBuffer(argvTestName); !slices.Equal(load, want) {
+	load, paste = ArgvPasteBracketed(argvTestBuffer, argvTestName)
+	if want := argvLoadBuffer(argvTestBuffer); !slices.Equal(load, want) {
 		t.Errorf("ArgvPasteBracketed load-buffer = %q, builder = %q", load, want)
 	}
-	if want := argvPasteBufferBracketed(argvTestName); !slices.Equal(paste, want) {
+	if want := argvPasteBufferBracketed(argvTestBuffer, argvTestName); !slices.Equal(paste, want) {
 		t.Errorf("ArgvPasteBracketed paste-buffer = %q, builder = %q", paste, want)
 	}
 }
@@ -113,7 +117,7 @@ func TestArgvWrappersMatchWhatTheFakeRecords(t *testing.T) {
 		{OpSetOption, func() error { return f.SetOption(ctx, argvTestName, OptionName, "label") }, [][]string{ArgvSetOption(argvTestName, OptionName, "label")}},
 		{OpSendKeys, func() error { return f.SendKeys(ctx, argvTestName, "Enter") }, [][]string{ArgvSendKeys(argvTestName, "Enter")}},
 		{OpPaste, func() error { return f.Paste(ctx, argvTestName, []byte("hi")) }, func() [][]string {
-			load, paste := ArgvPaste(argvTestName)
+			load, paste := ArgvPaste(argvTestBuffer, argvTestName)
 			return [][]string{load, paste}
 		}()},
 		{OpCapturePane, func() error { _, err := f.CapturePane(ctx, argvTestName); return err }, [][]string{ArgvCapturePane(argvTestName)}},
