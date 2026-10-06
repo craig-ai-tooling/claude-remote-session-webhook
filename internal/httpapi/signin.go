@@ -39,6 +39,7 @@ import (
 	"net/url"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
@@ -133,7 +134,7 @@ func (p *signInPanel) SignedInTrue() bool {
 // answer both without either lying to the other.
 func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperator) *signInPanel {
 	panel := &signInPanel{}
-	if s.signin == nil {
+	if s.signins[harness.Claude] == nil {
 		// A daemon whose start command names nothing runnable. The panel says so
 		// rather than offering a button that would refuse, which is the same rule
 		// the edit form follows about a field that could not be submitted.
@@ -147,7 +148,7 @@ func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperat
 	// would be handing out a token for a page it is not going to serve.
 	panel.Token, _ = s.mintPageToken(r, operator)
 
-	switch state := s.refreshAuthCache(r.Context()); state {
+	switch state := s.refreshAuthCache(r.Context(), harness.Claude); state {
 	case authOK:
 		signedIn := true
 		panel.SignedIn = &signedIn
@@ -164,7 +165,7 @@ func (s *Server) signInPanelFor(r *http.Request, operator *access.VerifiedOperat
 		panel.AuthState = authUnknown
 	}
 
-	state, err := s.signin.State(r.Context())
+	state, err := s.signins[harness.Claude].State(r.Context())
 	if err != nil {
 		s.report(fmt.Errorf("read the sign-in window: %w", err))
 		return panel
@@ -236,7 +237,7 @@ func (s *Server) signInFromBrowser(w http.ResponseWriter, r *http.Request) {
 	// unconditionally rather than only on the branch that actually touched the
 	// relay: the next ask is one cheap exec, and a stale "ok" surviving a
 	// refused or half-run attempt is the failure worth avoiding.
-	s.authCache.invalidate()
+	s.authCaches[harness.Claude].invalidate()
 
 	// The confirming step first, ahead of anything else, which is this door's
 	// ordering rule throughout. A sign-in started by accident is a window holding
@@ -247,13 +248,13 @@ func (s *Server) signInFromBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.signin == nil {
+	if s.signins[harness.Claude] == nil {
 		AuditFrom(r.Context()).Deny(errSignInUnwired.Error())
 		s.redirectSignIn(w, r, outcomeSignInRefused)
 		return
 	}
 
-	switch err := s.signin.Start(r.Context()); {
+	switch err := s.signins[harness.Claude].Start(r.Context()); {
 	case errors.Is(err, loginrelay.ErrAlreadyRunning):
 		// Not an error and not a success: the operator asked for something that
 		// is already true, and the reason it is refused rather than restarted is
@@ -284,9 +285,9 @@ func (s *Server) signInCodeFromBrowser(w http.ResponseWriter, r *http.Request) {
 		s.refuseBrowser(w)
 		return
 	}
-	s.authCache.invalidate()
+	s.authCaches[harness.Claude].invalidate()
 
-	if s.signin == nil {
+	if s.signins[harness.Claude] == nil {
 		AuditFrom(r.Context()).Deny(errSignInUnwired.Error())
 		s.redirectSignIn(w, r, outcomeSignInRefused)
 		return
@@ -296,7 +297,7 @@ func (s *Server) signInCodeFromBrowser(w http.ResponseWriter, r *http.Request) {
 	// beside it IS the confirmation — a second one would be a dialog between an
 	// operator and the thing they just typed, and docs/auth-and-sessions.md's
 	// rule is that nothing is auto-submitted, not that everything is asked twice.
-	switch err := s.signin.Deliver(r.Context(), r.PostForm.Get(fieldCode)); {
+	switch err := s.signins[harness.Claude].Deliver(r.Context(), r.PostForm.Get(fieldCode)); {
 	case errors.Is(err, loginrelay.ErrEmptyCode):
 		AuditFrom(r.Context()).Deny(errSignInNoCode.Error())
 		s.redirectSignIn(w, r, outcomeSignInNoCode)
@@ -329,9 +330,9 @@ func (s *Server) signInCancelFromBrowser(w http.ResponseWriter, r *http.Request)
 		s.refuseBrowser(w)
 		return
 	}
-	s.authCache.invalidate()
+	s.authCaches[harness.Claude].invalidate()
 
-	if s.signin == nil {
+	if s.signins[harness.Claude] == nil {
 		AuditFrom(r.Context()).Deny(errSignInUnwired.Error())
 		s.redirectSignIn(w, r, outcomeSignInRefused)
 		return
@@ -342,7 +343,7 @@ func (s *Server) signInCancelFromBrowser(w http.ResponseWriter, r *http.Request)
 	// challenge they can replace by pressing start again, and putting a
 	// confirmation in front of the way out of a flow is how people get stuck in
 	// one.
-	if err := s.signin.Stop(r.Context()); err != nil {
+	if err := s.signins[harness.Claude].Stop(r.Context()); err != nil {
 		s.report(err)
 		AuditFrom(r.Context()).Deny(errSignInCancel.Error())
 		s.redirectSignIn(w, r, outcomeSignInRefused)

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 )
 
 // signInViewPath is derived from the pattern the server registers rather than
@@ -233,14 +235,14 @@ func TestSignInViewAsksFreshAndStoresIntoTheCache(t *testing.T) {
 
 	d := newSignInDoor(t)
 	relay := &fakeRelay{signedIn: true}
-	d.signin = relay
+	d.signins[harness.Claude] = relay
 	d.clock = fixedClock{at: testTime}
 
 	// Primed stale on purpose, with the opposite answer, so a fragment that
 	// merely read the cache instead of asking would report it.
-	d.authCache.state = authBad
-	d.authCache.fetched = testTime
-	d.authCache.has = true
+	d.authCaches[harness.Claude].state = authBad
+	d.authCaches[harness.Claude].fetched = testTime
+	d.authCaches[harness.Claude].has = true
 
 	w := d.get(t, signInViewPath)
 	if w.Code != http.StatusOK {

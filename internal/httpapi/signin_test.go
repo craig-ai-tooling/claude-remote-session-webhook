@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
@@ -48,7 +49,7 @@ func newSignInDoor(t *testing.T) *signInDoor {
 	if err != nil {
 		t.Fatalf("build the test relay: %v", err)
 	}
-	d.signin = relay
+	d.signins[harness.Claude] = relay
 	return d
 }
 

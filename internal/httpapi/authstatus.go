@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
@@ -112,19 +113,23 @@ func (c *authCache) invalidate() {
 // now is read from s.clock and not from time.Now, so a test can move the
 // clock without waiting on the wall one (server.go's own reason for that
 // field).
-func (s *Server) authStateCached(ctx context.Context) authState {
-	s.authCache.mu.Lock()
-	defer s.authCache.mu.Unlock()
+func (s *Server) authStateCached(ctx context.Context, h harness.Name) authState {
+	c := s.authCaches[h]
+	if c == nil {
+		return authUnknown
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	now := s.clock.Now()
-	if s.authCache.has && now.Sub(s.authCache.fetched) < authCacheTTL {
-		return s.authCache.state
+	if c.has && now.Sub(c.fetched) < authCacheTTL {
+		return c.state
 	}
 
-	state := s.askAuthState(ctx)
-	s.authCache.state = state
-	s.authCache.fetched = now
-	s.authCache.has = true
+	state := s.askAuthState(ctx, h)
+	c.state = state
+	c.fetched = now
+	c.has = true
 	return state
 }
 
@@ -138,14 +143,18 @@ func (s *Server) authStateCached(ctx context.Context) authState {
 // cached — the two questions look the same and are not: the panel is answering
 // "is this host signed in right now", and the pill is answering "was it,
 // recently enough".
-func (s *Server) refreshAuthCache(ctx context.Context) authState {
-	state := s.askAuthState(ctx)
+func (s *Server) refreshAuthCache(ctx context.Context, h harness.Name) authState {
+	c := s.authCaches[h]
+	if c == nil {
+		return authUnknown
+	}
+	state := s.askAuthState(ctx, h)
 
-	s.authCache.mu.Lock()
-	s.authCache.state = state
-	s.authCache.fetched = s.clock.Now()
-	s.authCache.has = true
-	s.authCache.mu.Unlock()
+	c.mu.Lock()
+	c.state = state
+	c.fetched = s.clock.Now()
+	c.has = true
+	c.mu.Unlock()
 
 	return state
 }
@@ -157,12 +166,13 @@ func (s *Server) refreshAuthCache(ctx context.Context) authState {
 // A nil relay is a daemon whose configured start command names nothing
 // runnable (server.go's own comment on the field) — not a fault to report
 // again here, since New already reported it once at construction.
-func (s *Server) askAuthState(ctx context.Context) authState {
-	if s.signin == nil {
+func (s *Server) askAuthState(ctx context.Context, h harness.Name) authState {
+	relay := s.signins[h]
+	if relay == nil {
 		return authUnknown
 	}
 
-	signedIn, err := s.signin.SignedIn(ctx)
+	signedIn, err := relay.SignedIn(ctx)
 	if err != nil {
 		// The same report signInPanelFor always made for this exact failure,
 		// kept to one call site now that there is one place that makes it.
@@ -185,7 +195,7 @@ func (s *Server) askAuthState(ctx context.Context) authState {
 // is for the two embedded assets, so nothing about this answer is cached past
 // the request that asked for it.
 func (s *Server) dashboardAuth(w http.ResponseWriter, r *http.Request) {
-	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context())})
+	s.writeJSON(w, r, http.StatusOK, authStatusResponse{State: s.authStateCached(r.Context(), harness.Claude)})
 }
 
 // ---------------------------------------------------------------- create gate
@@ -243,7 +253,7 @@ var errCreateSignedOut = errors.New("this host is signed out of Claude, so the s
 // where a refusal is certainly right. A host that cannot be asked keeps the
 // backstop it already had, which is the needs-auth card.
 func (s *Server) createRefusedWhileSignedOut(ctx context.Context) bool {
-	return s.authStateCached(ctx) == authBad
+	return s.authStateCached(ctx, harness.Claude) == authBad
 }
 
 // failSignedOut writes the API door's 503 and records why.

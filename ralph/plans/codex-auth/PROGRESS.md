@@ -27,6 +27,15 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: nothing in `httpapi` calls `NewCodex` yet. T022a to T022c wire it.
 - Left: T022a to T026.
 
+## Iteration 3 (T022a, 10/6/26)
+
+- `Server.signin` and `Server.authCache` became `signins map[harness.Name]signInRelay` and `authCaches map[harness.Name]*authCache`. `newWithLayer1` allocates both eagerly (Claude cache only); `New` writes `signins[harness.Claude]`. No mutex added.
+- `authStateCached`, `refreshAuthCache` and `askAuthState` take `h harness.Name` after ctx. An absent cache or relay reads `authUnknown`. Every caller passes `harness.Claude`; routes, responses and audit records are unchanged.
+- Tests written first (`TestSignInsDefaultToNil`, `TestAuthCachesHaveClaudeEntry`); they failed to compile before the change, then passed. Existing tests got only the mechanical `signins[harness.Claude]` / `authCaches[harness.Claude]` edits.
+- Not run: `-tags tmux`, `-tags quickstart`, `k8s/` checks (task touched none of them).
+- Not fixed: no Codex relay or cache is wired yet. T022b does that.
+- Left: T022b to T026.
+
 ## NEEDS CLARIFICATION
 
 (none yet)

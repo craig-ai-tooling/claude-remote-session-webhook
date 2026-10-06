@@ -21,6 +21,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 )
 
@@ -56,8 +57,8 @@ func TestKubernetesModeWiresNoRelayAndNoReleaseFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New = _, %v; want a server", err)
 		}
-		if srv.signin != nil {
-			t.Errorf("signin = %T; want nil, since there is no tmux window on this host to sign in from", srv.signin)
+		if srv.signins[harness.Claude] != nil {
+			t.Errorf("signin = %T; want nil, since there is no tmux window on this host to sign in from", srv.signins[harness.Claude])
 		}
 		if srv.releaseFeed != nil {
 			t.Error("releaseFeed is wired; want nil, since a pod's binary is an image and there is nothing to update")
@@ -71,7 +72,7 @@ func TestKubernetesModeWiresNoRelayAndNoReleaseFeed(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New = _, %v; want a server", err)
 		}
-		if srv.signin == nil {
+		if srv.signins[harness.Claude] == nil {
 			t.Error("signin is nil in host mode; the mode switch has switched off the host's own sign-in")
 		}
 		if srv.releaseFeed == nil {

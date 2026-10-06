@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 )
 
@@ -110,7 +111,7 @@ func TestAuthStatusStates(t *testing.T) {
 			t.Parallel()
 
 			f := newFleet(t)
-			f.signin = tc.relay
+			f.signins[harness.Claude] = tc.relay
 
 			if got := authAnswer(t, f.open(t, authPath)); got.State != tc.want {
 				t.Errorf("GET %s = %q; want %q", authPath, got.State, tc.want)
@@ -135,7 +136,7 @@ func TestAuthStatusNeverCarriesTheSignInLink(t *testing.T) {
 	const link = "https://claude.ai/oauth/authorize?code_challenge=test-only-pkce-canary"
 
 	f := newFleet(t)
-	f.signin = &fakeRelay{
+	f.signins[harness.Claude] = &fakeRelay{
 		signedIn: false,
 		state: loginrelay.State{
 			Running: true,
@@ -227,7 +228,7 @@ func TestAuthCacheServesWithinTTL(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{signedIn: true}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	authAnswer(t, f.open(t, authPath))
@@ -245,7 +246,7 @@ func TestAuthCacheAsksAgainAfterTTL(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{signedIn: true}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	authAnswer(t, f.open(t, authPath))
@@ -272,7 +273,7 @@ func TestAuthCacheSharesOneExecAmongConcurrentCallers(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{signedIn: true}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	const n = 20
@@ -281,7 +282,7 @@ func TestAuthCacheSharesOneExecAmongConcurrentCallers(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			f.authStateCached(context.Background())
+			f.authStateCached(context.Background(), harness.Claude)
 		}()
 	}
 	wg.Wait()
@@ -300,7 +301,7 @@ func TestAuthCacheCachesCouldNotAskToo(t *testing.T) {
 
 	f := newFleet(t)
 	relay := &fakeRelay{err: errors.New("exec failed")}
-	f.signin = relay
+	f.signins[harness.Claude] = relay
 	f.clock = fixedClock{at: testTime}
 
 	authAnswer(t, f.open(t, authPath))
@@ -331,7 +332,7 @@ func TestTheThreeSignInPostsInvalidateTheAuthCache(t *testing.T) {
 
 			d := newSignInDoor(t)
 			relay := &fakeRelay{signedIn: true}
-			d.signin = relay
+			d.signins[harness.Claude] = relay
 			d.clock = fixedClock{at: testTime}
 
 			if got := authAnswer(t, d.get(t, authPath)); got.State != authOK {
@@ -379,7 +380,7 @@ func TestSignedOutRefusesTheCreateOnTheAPIDoor(t *testing.T) {
 	t.Parallel()
 
 	s := newAuditedServer(t)
-	s.signin = &fakeRelay{signedIn: false}
+	s.signins[harness.Claude] = &fakeRelay{signedIn: false}
 
 	before := len(s.fixture.tmux.Calls())
 	got := postSessions(t, s, createBody(s.fixture))
@@ -412,7 +413,7 @@ func TestSignedOutRefusalNeverCarriesTheAccount(t *testing.T) {
 	t.Parallel()
 
 	s := newAuditedServer(t)
-	s.signin = &fakeRelay{signedIn: false}
+	s.signins[harness.Claude] = &fakeRelay{signedIn: false}
 
 	body := postSessions(t, s, createBody(s.fixture)).answer.Body.String()
 	for _, leak := range []string{"@", "claude auth", "loggedIn", "oauth", "subscription"} {
@@ -430,7 +431,7 @@ func TestSignedInStillCreates(t *testing.T) {
 	t.Parallel()
 
 	s := newAuditedServer(t)
-	s.signin = &fakeRelay{signedIn: true}
+	s.signins[harness.Claude] = &fakeRelay{signedIn: true}
 
 	if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
 		t.Fatalf("create on a signed-in host = %d (%q); want %d",
@@ -470,7 +471,7 @@ func TestOnlyADefinitiveNoRefusesTheCreate(t *testing.T) {
 			t.Parallel()
 
 			s := newAuditedServer(t)
-			s.signin = relay
+			s.signins[harness.Claude] = relay
 
 			if got := postSessions(t, s, createBody(s.fixture)); got.answer.Code != http.StatusCreated {
 				t.Fatalf("create = %d (%q); want %d — only a definitive signed-out refuses",
@@ -490,7 +491,7 @@ func TestSignedOutRefusesTheCreateOnTheBrowserDoor(t *testing.T) {
 	t.Parallel()
 
 	c := newCreator(t)
-	c.signin = &fakeRelay{signedIn: false}
+	c.signins[harness.Claude] = &fakeRelay{signedIn: false}
 
 	before := len(c.fixture.tmux.Calls())
 	w := c.post(t, c.wellFormed(t))
@@ -542,7 +543,7 @@ func TestBothDoorsShareOneAnswerAboutThisHost(t *testing.T) {
 
 	c := newCreator(t)
 	relay := &fakeRelay{signedIn: false}
-	c.signin = relay
+	c.signins[harness.Claude] = relay
 
 	if got := outcomeOf(t, c.post(t, c.wellFormed(t))); got != string(outcomeSignedOut) {
 		t.Fatalf("browser create = %q; want %q", got, outcomeSignedOut)
@@ -553,5 +554,41 @@ func TestBothDoorsShareOneAnswerAboutThisHost(t *testing.T) {
 	}
 	if n := relay.callCount(); n != 1 {
 		t.Errorf("SignedIn ran %d times for two creates; want 1 — both doors share one window", n)
+	}
+}
+
+// TestSignInsDefaultToNil: a server built by NewWith has no relay for any
+// harness. Relays are wired in New only, so no test server ever opens a tmux
+// window on the developer's own host.
+//
+// **Must fail when** NewWith wires a relay for either harness.
+func TestSignInsDefaultToNil(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	for _, h := range []harness.Name{harness.Claude, harness.Codex} {
+		if f.signins[h] != nil {
+			t.Errorf("signins[%s] = %T; want nil on a NewWith server", h, f.signins[h])
+		}
+	}
+}
+
+// TestAuthCachesHaveClaudeEntry: the Claude cache exists from construction and
+// the Codex one does not until a later task wires it, because authStateCached
+// treats an absent cache as unknown rather than creating one lazily.
+//
+// **Must fail when** the Claude cache is missing or a Codex cache appears early.
+func TestAuthCachesHaveClaudeEntry(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	if f.authCaches[harness.Claude] == nil {
+		t.Error("authCaches[claude] is nil; the existing pill would read unknown forever")
+	}
+	if f.authCaches[harness.Codex] != nil {
+		t.Error("authCaches[codex] is non-nil on a NewWith server; T022b owns that wiring")
+	}
+	if got := f.authStateCached(context.Background(), harness.Codex); got != authUnknown {
+		t.Errorf("authStateCached(codex) = %q; want %q for an absent cache", got, authUnknown)
 	}
 }
