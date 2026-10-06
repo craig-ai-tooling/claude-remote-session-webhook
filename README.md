@@ -418,8 +418,12 @@ kubectl create namespace crswd
 kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
 SESSION_NODE=$(kubectl get nodes -l kubernetes.io/arch=amd64 -o name | head -1 | cut -d/ -f2)  # every session pod runs on this node, beside the session disk
 helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode="$SESSION_NODE"
+kubectl -n crswd rollout status deploy/crswd
+kubectl -n crswd-reconciler rollout status deploy/crswd-reconciler
 kubectl -n crswd port-forward deploy/crswd 8765
 ```
+
+Do not add `--wait`: the session claim uses a `WaitForFirstConsumer` storage class and binds when the first session pod mounts it, so Helm would wait on a claim that stays Pending until then.
 
 The dashboard is then at `http://127.0.0.1:8765`. The chart creates no Service by default and
 the daemon listens on loopback inside its pod, so `port-forward` is the way in. `service.enabled`

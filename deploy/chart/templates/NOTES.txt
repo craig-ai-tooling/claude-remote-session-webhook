@@ -5,3 +5,5 @@ The daemon listens on loopback inside its pod. Reach the dashboard with:
   kubectl -n {{ .Release.Namespace }} port-forward deploy/crswd 8765
 
 Then open http://127.0.0.1:8765. See docs/k8s-mode.md for sign-in Secrets, upgrade and uninstall.
+
+The session claim stays Pending until the first session is created; that is expected, and the first session pod binds it.

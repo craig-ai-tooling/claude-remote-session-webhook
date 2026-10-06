@@ -146,9 +146,13 @@ kubectl create namespace crswd
 kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
 SESSION_NODE=$(kubectl get nodes -l kubernetes.io/arch=amd64 -o name | head -1 | cut -d/ -f2)  # every session pod runs on this node, beside the session disk
 helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode="$SESSION_NODE"
+kubectl -n crswd rollout status deploy/crswd
+kubectl -n crswd-reconciler rollout status deploy/crswd-reconciler
 helm upgrade crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --reuse-values
 helm uninstall crswd -n crswd
 ```
+
+Do not add `--wait`: the session claim uses a `WaitForFirstConsumer` storage class and binds when the first session pod mounts it, so Helm would wait on a claim that stays Pending until then.
 
 The CRD is in the chart's `crds/` directory, and Helm installs it once and never upgrades or
 deletes it. The claim carries `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it and
