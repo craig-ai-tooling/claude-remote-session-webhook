@@ -6,8 +6,10 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/k8s/internal/podctl"
 )
 
 // No test in this package calls t.Parallel, and TestClusterBuildIsRunnable stays
@@ -66,5 +68,14 @@ func TestReconcileRefusesBadConfig(t *testing.T) {
 	err := runReconciler(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "CRSW_SESSION_NAMESPACE") {
 		t.Fatalf("runReconciler = %v; want ConfigFromEnv's error", err)
+	}
+}
+
+func TestStartDeadlineOutlastsTheReadyWait(t *testing.T) {
+	if got, want := startDeadline(0), podctl.DefaultReadyTimeout+time.Minute; got != want {
+		t.Errorf("startDeadline(0) = %v; want the podctl default plus a minute, %v", got, want)
+	}
+	if got, want := startDeadline(2*time.Minute), 3*time.Minute; got != want {
+		t.Errorf("startDeadline(2m) = %v; want %v", got, want)
 	}
 }

@@ -29,7 +29,9 @@ const (
 )
 
 const (
-	defaultReadyTimeout = 90 * time.Second // D8b cold start is 45 to 52 s
+	// DefaultReadyTimeout is how long New waits for a pod; the daemon sizes its
+	// create deadline from it.
+	DefaultReadyTimeout = 90 * time.Second // D8b cold start is 45 to 52 s
 	defaultKillTimeout  = 60 * time.Second
 	defaultPollInterval = time.Second
 	defaultStreamIdle   = 30 * time.Second
@@ -55,6 +57,10 @@ type Config struct {
 	StreamIdle   time.Duration
 	Now          func() time.Time
 }
+
+// ErrNotReady is returned when a lookup needs the session container of a pod
+// that is not running it yet.
+var ErrNotReady = errors.New("podctl: session container is not running")
 
 var _ tmuxctl.Controller = (*Controller)(nil)
 
@@ -89,7 +95,7 @@ func New(sessions *agentsession.Client, pods kubernetes.Interface, exec Executor
 		return nil, errors.New("podctl: negative duration")
 	}
 	if cfg.ReadyTimeout == 0 {
-		cfg.ReadyTimeout = defaultReadyTimeout
+		cfg.ReadyTimeout = DefaultReadyTimeout
 	}
 	if cfg.KillTimeout == 0 {
 		cfg.KillTimeout = defaultKillTimeout

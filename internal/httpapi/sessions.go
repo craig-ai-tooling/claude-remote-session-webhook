@@ -409,6 +409,23 @@ var (
 	errOutputUncaptured = errors.New("the session's output could not be captured")
 )
 
+// errCreateDeadline is what a create is recorded as when its response could not
+// be given the longer write deadline a pod-backed start needs. Refusing before
+// anything starts is the fail-closed answer: the session would otherwise be
+// created and its response cut off, which is the failure this exists to end.
+var errCreateDeadline = errors.New("the create's write deadline could not be extended")
+
+// allowSlowStart gives this one response the deadline a slow start needs, in
+// place of the server's WriteTimeout. It does nothing when the field is zero,
+// so a host daemon's create keeps the deadline it always had.
+func (s *Server) allowSlowStart(w http.ResponseWriter) error {
+	if s.slowStartDeadline == 0 {
+		return nil
+	}
+	rc := http.NewResponseController(w) //nolint:bodyclose // false positive: a ResponseController is not a response and has no body to close.
+	return rc.SetWriteDeadline(time.Now().Add(s.slowStartDeadline))
+}
+
 // createSession is POST /sessions: validate, start, and hand back the only copy
 // of the token (contracts/http-api.md).
 //
@@ -442,6 +459,12 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	// already sit, for the same reason.
 	if h := s.harnessOfStartName(req.StartCommand); s.createRefusedWhileSignedOut(r.Context(), h) {
 		s.failSignedOut(w, r, h)
+		return
+	}
+
+	if err := s.allowSlowStart(w); err != nil {
+		s.report(fmt.Errorf("extend the create's write deadline: %w", err))
+		s.failInternal(w, r, errCreateDeadline)
 		return
 	}
 

@@ -113,6 +113,14 @@ var routes = []Route{
 // holds no session state — that lives in internal/session — and every field is
 // read-only after Listen, so the handlers it serves need no lock to reach it.
 type Server struct {
+	// slowStartDeadline, when non-zero, is how long a create route may take to
+	// answer, and replaces the server's WriteTimeout for that one response. It is
+	// zero in host mode, where a create is one tmux exec and the 30 seconds is
+	// ample. A pod-backed create waits for the pod to start, and a cold image
+	// pull outlasts that; the same per-response lift stream.go uses, and for the
+	// same reason, rather than loosening the timeout for every route.
+	slowStartDeadline time.Duration
+
 	// releases caches what the release feed last said, so a page an operator
 	// leaves open does not poll somebody else's API forever (settings.go).
 	releases releaseCache

@@ -62,11 +62,13 @@ func runDaemon(ctx context.Context, stderr io.Writer) error {
 		return err
 	}
 	exec := &podctl.RemoteExecutor{Config: rc, Client: kc, Namespace: ns}
-	ctl, err := podctl.New(sessions, kc, exec, podctl.Config{Namespace: ns, PaneBound: cfg.PaneBound})
+	podCfg := podctl.Config{Namespace: ns, PaneBound: cfg.PaneBound}
+	ctl, err := podctl.New(sessions, kc, exec, podCfg)
 	if err != nil {
 		return err
 	}
 	srv, err := httpapi.NewForCluster(cfg, ctl, httpapi.ClusterHooks{
+		StartDeadline: startDeadline(podCfg.ReadyTimeout),
 		CodexConversation: func(ctx context.Context, s session.Session) (string, error) {
 			return ctl.CodexConversation(ctx, s.TmuxName())
 		},
@@ -112,4 +114,14 @@ func runDaemon(ctx context.Context, stderr io.Writer) error {
 		serveErr = <-serving
 	}
 	return errors.Join(serveErr, shutdownErr)
+}
+
+// startDeadline is how long a create may take to answer: the time New waits for
+// the pod, plus a minute for the API calls around it. A zero ready timeout is
+// podctl's default, because that is what podctl.New applied.
+func startDeadline(ready time.Duration) time.Duration {
+	if ready == 0 {
+		ready = podctl.DefaultReadyTimeout
+	}
+	return ready + time.Minute
 }
