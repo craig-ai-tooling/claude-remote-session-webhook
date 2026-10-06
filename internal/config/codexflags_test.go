@@ -144,3 +144,30 @@ func TestLoadRefusesCodexRemoteControlCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestCodexExecutableMustBeShellSafe(t *testing.T) {
+	t.Parallel()
+
+	bad := []string{
+		"/tmp/$(touch${IFS}/tmp/pwn)/codex",
+		"/tmp/`id`/codex",
+		"/tmp/a$HOME/codex",
+		"/tmp/a&b/codex",
+		"/tmp/a|b/codex",
+		"/tmp/a(b/codex",
+		"/tmp/a;b/codex",
+		"/tmp/a>b/codex",
+	}
+	for _, command := range bad {
+		err := validateCodexUpdateCheck("VAR", "n", command)
+		if !errors.Is(err, ErrCodexExecutable) {
+			t.Errorf("validateCodexUpdateCheck(%q) = %v, want ErrCodexExecutable", command, err)
+		}
+	}
+	// A space ends the token, so the executable itself is still safe.
+	for _, command := range []string{"codex", "/opt/sf-cli/bin/codex --yolo", "/usr/local/bin/codex-1.2+x"} {
+		if err := validateCodexUpdateCheck("VAR", "n", command); err != nil {
+			t.Errorf("validateCodexUpdateCheck(%q) = %v, want nil", command, err)
+		}
+	}
+}

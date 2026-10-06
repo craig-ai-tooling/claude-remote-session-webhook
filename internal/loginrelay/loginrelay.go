@@ -297,7 +297,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		// Top-level -c, before the subcommand. The update menu is a blocking
 		// screen whose first item runs a global npm install (research M12), and
 		// nothing here may answer it.
-		command = r.executable + " -c check_for_update_on_startup=false login --device-auth"
+		command = shellQuote(r.executable) + " -c check_for_update_on_startup=false login --device-auth"
 	}
 	if err := r.tmux.SendKeys(ctx, r.window, command, "Enter"); err != nil {
 		// A window holding a shell that was never given its command is not a
@@ -505,4 +505,10 @@ func (b *boundedBuffer) Write(p []byte) (int, error) {
 		b.buf.Write(p[:room])
 	}
 	return len(p), nil
+}
+
+// shellQuote makes s one literal shell word, so a configured path can never be
+// read as a substitution or a separator when the line is typed.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

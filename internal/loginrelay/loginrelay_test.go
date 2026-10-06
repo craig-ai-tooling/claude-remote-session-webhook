@@ -523,7 +523,7 @@ func TestCodexStartTypesTheAbsolutePathAndTheDeviceFlag(t *testing.T) {
 		}
 	}
 	joined := strings.Join(typed, "\n")
-	want := "/opt/sf-cli/bin/codex -c check_for_update_on_startup=false login --device-auth"
+	want := "'/opt/sf-cli/bin/codex' -c check_for_update_on_startup=false login --device-auth"
 	if !strings.Contains(joined, want) {
 		t.Errorf("typed:\n%s\nwant a line containing %q", joined, want)
 	}
@@ -668,5 +668,27 @@ func TestCodexSignedIn(t *testing.T) {
 				t.Errorf("error %q lacks its context", err)
 			}
 		})
+	}
+}
+
+// TestCodexStartQuotesTheExecutable pins that the configured path is typed as one
+// literal word: a substitution in it must not be left for the shell to run.
+func TestCodexStartQuotesTheExecutable(t *testing.T) {
+	t.Parallel()
+
+	fake := tmuxctl.NewFake()
+	r := newCodexRelay(t, fake, "/tmp/$(touch${IFS}/tmp/pwn)/codex")
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	var typed []string
+	for _, call := range fake.Calls() {
+		if call.Op == tmuxctl.OpSendKeys {
+			typed = append(typed, strings.Join(call.Argv, " "))
+		}
+	}
+	want := "'/tmp/$(touch${IFS}/tmp/pwn)/codex' -c check_for_update_on_startup=false login --device-auth"
+	if !strings.Contains(strings.Join(typed, "\n"), want) {
+		t.Errorf("typed:\n%s\nwant a line containing %q", strings.Join(typed, "\n"), want)
 	}
 }
