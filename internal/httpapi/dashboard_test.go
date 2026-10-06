@@ -1091,6 +1091,35 @@ func TestTheSessionPageNamesTheDialogAParkedSessionIsOn(t *testing.T) {
 	}
 }
 
+// TestCodexPaneOnTrustRendersBlocked is the same fix for a Codex session: its
+// own trust prompt is not Claude's, and the page must read it through the
+// harness the session runs under.
+func TestCodexPaneOnTrustRendersBlocked(t *testing.T) {
+	t.Parallel()
+
+	pane, err := os.ReadFile(filepath.Join("..", "session", "testdata", "codex-trust.pane"))
+	if err != nil {
+		t.Fatalf("read the Codex trust fixture: %v", err)
+	}
+
+	f := newFleet(t)
+	f.fixture.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --yolo",
+	}))
+	live, _ := f.fixture.plant(t, session.Session{Name: "a codex session", WorkDir: f.fixture.repo, StartCommand: "codex"})
+	f.fixture.tmux.SetPane(live.TmuxName(), string(pane))
+
+	card := cardFor(t, f.viewOf(t, live.ID).Body.String(), live.ID)
+
+	if !strings.Contains(card, ">"+string(session.DisplayBlocked)+"<") {
+		t.Errorf("the card does not show %q for a Codex session on its trust prompt:\n%s", session.DisplayBlocked, card)
+	}
+	if !strings.Contains(card, "codex-trust") {
+		t.Errorf("the card does not name the dialog:\n%s", card)
+	}
+}
+
 // TestAnUncatalogedDialogRendersUnknownNeverRunning is the registry's own
 // fail-closed rule (internal/session/dialog.go): a pane that looks
 // dialog-shaped but matches no named signature must never render as the

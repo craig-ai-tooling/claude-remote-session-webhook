@@ -1,6 +1,10 @@
 package session
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
+)
 
 // dialog.go answers one question — "is this pane sitting on a TUI dialog crswd
 // did not spawn and cannot answer?" — for callers that already hold stripped
@@ -100,6 +104,62 @@ var suspiciousMarkers = []string{
 	"Esc to continue",
 	"Esc to cancel",
 	"Esc to exit",
+}
+
+// codexDialogSignatures are the dialogs Codex draws over its input box, each
+// phrase copied from a captured screen (specs/019-codex-runtime/research.md
+// section F; fixtures in testdata/). Matching is case-sensitive, so Claude's
+// "Enter to confirm" markers and Codex's "Press enter to confirm" never cross.
+var codexDialogSignatures = []dialogSignature{
+	{name: "codex-trust", phrases: []string{"Do you trust the contents of this directory?"}},
+	{name: "codex-hooks-review", phrases: []string{"Hooks need review"}},
+	{name: "codex-approval", phrases: []string{"Would you like to run the following command?"}},
+	{name: "codex-update", phrases: []string{"Update now (runs"}},
+}
+
+// codexSuspiciousMarkers are the footers Codex's dialogs share. Like
+// suspiciousMarkers, none may appear in a signature's own phrases.
+var codexSuspiciousMarkers = []string{
+	"Press enter to continue",
+	"Press enter to confirm or esc to cancel",
+	"Press enter to confirm or esc to go back",
+}
+
+// DetectDialogFor is DetectDialog for the registry of the harness the session
+// runs: Claude reads Claude's, Codex reads Codex's, and a harness this daemon
+// has no registry for tries Claude's and then Codex's, so a dialog from either
+// is still seen.
+func DetectDialogFor(h harness.Name, paneText string) (name string, dialog bool) {
+	switch h {
+	case harness.Claude:
+		return DetectDialog(paneText)
+	case harness.Codex:
+		return detectCodexDialog(paneText)
+	default:
+		if name, dialog := DetectDialog(paneText); dialog {
+			return name, dialog
+		}
+		return detectCodexDialog(paneText)
+	}
+}
+
+func detectCodexDialog(paneText string) (name string, dialog bool) {
+	if paneText == "" {
+		return "", false
+	}
+	for _, sig := range codexDialogSignatures {
+		for _, phrase := range sig.phrases {
+			if strings.Contains(paneText, phrase) {
+				return sig.name, true
+			}
+		}
+	}
+	for _, marker := range codexSuspiciousMarkers {
+		if strings.Contains(paneText, marker) {
+			return "", true
+		}
+	}
+	return "", false
 }
 
 // dialogSignature is one entry in the registry above: a name a card and an API

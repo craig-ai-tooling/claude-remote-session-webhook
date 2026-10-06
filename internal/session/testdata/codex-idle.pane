@@ -1,0 +1,10 @@
+╭──────────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.153.4)                               │
+│                                                          │
+│ model:       gpt-5.6-sol   /model to change              │
+│ directory:   /home/op/code/repo                          │
+│ permissions: YOLO mode                                   │
+╰──────────────────────────────────────────────────────────╯
+  Tip: See the Codex keymap documentation for supported actions and examples.
+› Ask Codex to do anything
+  gpt-5.6-sol default · /home/op/code/repo

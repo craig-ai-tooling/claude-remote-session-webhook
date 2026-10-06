@@ -171,3 +171,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: the Codex fixture's fake pane reports `claude`, so a sweep judges it stopped and gives up; the rig sets the pane command to `codex`. The replay test needed no code change, since `reviveRecord` already carries `Conversation`. I added `TestSweepRefusesAnInvalidDiscoveredID` beyond the task's list to cover the `ValidateResume` branch.
 - A discovery error is returned from `judge` and joined by `Sweep`, but leaves the verdict healthy.
 - Left: T013 onward. No findings unfixed.
+
+## Iteration 20 (T013)
+
+- Wrote `TestDetectDialogForCodex`, `TestCodexIdleAndWorkingAreNotDialogs`, `TestDetectDialogForClaudeIsUnchanged`, `TestDetectDialogForOtherFallsBack` and (httpapi) `TestCodexPaneOnTrustRendersBlocked` first, plus the six `testdata/*.pane` fixtures and `testdata/README.md`; the session tests failed to compile on the old code (no `DetectDialogFor`). Then added `codexDialogSignatures`, `codexSuspiciousMarkers`, `DetectDialogFor` (dialog.go) and `Manager.SpecOf` (manager.go), gave `cardOf` and `effectiveDisplayState` a harness parameter, and pointed the fleet card, the session page and `paneDialogState` at it. The three `cardOf` calls in `partials_test.go` pass `harness.Claude`.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: goimports in the edit hook strips an import that is not yet used, so add the import and its first use in one edit. The fixture read needs `//nolint:gosec` (G304), as in iteration 15.
+- The fleet grid still passes an empty pane, so Codex cards read `running` there until the session page opens, same as Claude.
+- Left: T014 onward. No findings unfixed.

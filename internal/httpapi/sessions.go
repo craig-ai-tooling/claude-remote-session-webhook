@@ -786,7 +786,7 @@ func (s *Server) paneDialogState(ctx context.Context, resolved session.Session) 
 	if err != nil {
 		return "", false
 	}
-	name, dialog := session.DetectDialog(capture.Text)
+	name, dialog := session.DetectDialogFor(s.sessions.SpecOf(resolved).Name, capture.Text)
 	if !dialog {
 		return "", false
 	}

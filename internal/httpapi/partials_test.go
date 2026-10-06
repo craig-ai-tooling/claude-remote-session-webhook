@@ -26,6 +26,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 	"github.com/nctiggy/claude-remote-session-webhook/web"
@@ -3033,7 +3034,7 @@ func TestCardShowsMode(t *testing.T) {
 				StartCommand: tc.start,
 				CreatedAt:    now.Add(-time.Hour),
 				LastActivity: now,
-			}, now, testCardToken, remoteCommand, "")
+			}, now, testCardToken, remoteCommand, "", harness.Claude)
 
 			if card.Mode != tc.want {
 				t.Fatalf("cardOf projected mode %q for a session running %q, want %q", card.Mode, tc.start, tc.want)
@@ -3114,7 +3115,7 @@ func TestCardShowsItsDeadline(t *testing.T) {
 				Lifetime:     tc.lifetime,
 				CreatedAt:    now.Add(-time.Hour),
 				LastActivity: now,
-			}, now, testCardToken, "rc", "")
+			}, now, testCardToken, "rc", "", harness.Claude)
 
 			out := renderComponent(t, "session-card", card)
 			found := cardLifetimeRow.FindStringSubmatch(out)
@@ -4061,7 +4062,7 @@ func TestACardSaysHowOldItIsWhatStartedItAndWhetherItDies(t *testing.T) {
 			adopted.Adopted = true
 
 			for what, s := range map[string]session.Session{"created": live, "adopted": adopted} {
-				out := renderComponent(t, "session-card", cardOf(s, now, testCardToken, "rc", ""))
+				out := renderComponent(t, "session-card", cardOf(s, now, testCardToken, "rc", "", harness.Claude))
 
 				for _, row := range []struct {
 					fact  string

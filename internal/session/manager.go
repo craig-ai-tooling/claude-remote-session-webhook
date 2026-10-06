@@ -1157,6 +1157,9 @@ func (m *Manager) specOf(s Session) harness.Spec {
 	return harness.For(harness.Of(cmd))
 }
 
+// SpecOf is specOf for callers outside the package.
+func (m *Manager) SpecOf(s Session) harness.Spec { return m.specOf(s) }
+
 // paste delivers a payload the way the session's harness submits it: Codex
 // swallows the Enter after a plain paste (research M3), so it gets a bracketed
 // one. It serves Prompt and Compact only. Type is bracketed for every harness
