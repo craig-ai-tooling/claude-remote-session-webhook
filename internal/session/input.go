@@ -1,7 +1,9 @@
 package session
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"unicode/utf8"
 )
 
@@ -77,6 +79,81 @@ func ValidateTyped(text string) error {
 		if (b < 0x20 && b != '\t' && b != '\n') || b == 0x7f {
 			return ErrInputInvalid
 		}
+	}
+	return nil
+}
+
+// Type delivers operator text into a session by bracketed paste, then presses
+// Enter when submit is true. The paste is bracketed for every session whatever
+// it runs: research.md R1 measured that a plain paste submits line one early on
+// Claude Code, so a per-runtime choice here would break multi-line text there.
+//
+// Input is never gated on what the pane shows, and the text is never audited,
+// logged or named in an error, for the reason Prompt's is not.
+func (m *Manager) Type(ctx context.Context, s Session, text string, submit bool) error {
+	if err := guardDelivery(s); err != nil {
+		return fmt.Errorf("type into session: %w", err)
+	}
+	if err := ValidateTyped(text); err != nil {
+		return fmt.Errorf("type into session %s: %w", s.ID, err)
+	}
+	if err := m.recordDriving(s); err != nil {
+		return fmt.Errorf("type into session %s: %w", s.ID, err)
+	}
+	if err := m.tmux.PasteBracketed(ctx, s.TmuxName(), []byte(text)); err != nil {
+		return fmt.Errorf("type into session %s: %w", s.ID, err)
+	}
+	if submit {
+		if err := m.tmux.SendKeys(ctx, s.TmuxName(), enterKey); err != nil {
+			return fmt.Errorf("submit typed text in session %s: %w", s.ID, err)
+		}
+	}
+	return nil
+}
+
+// PressKey sends one key from the closed set. The tmux name is looked up here
+// and nowhere a caller's string can reach.
+func (m *Manager) PressKey(ctx context.Context, s Session, key Key) error {
+	if err := guardDelivery(s); err != nil {
+		return fmt.Errorf("press a key: %w", err)
+	}
+	name, ok := tmuxKeys[key]
+	if !ok {
+		return fmt.Errorf("press a key in session %s: %w", s.ID, ErrUnknownKey)
+	}
+	if err := m.recordDriving(s); err != nil {
+		return fmt.Errorf("press a key in session %s: %w", s.ID, err)
+	}
+	if err := m.tmux.SendKeys(ctx, s.TmuxName(), name); err != nil {
+		return fmt.Errorf("press a key in session %s: %w", s.ID, err)
+	}
+	return nil
+}
+
+// guardDelivery is Compact's two guards: an empty ID would build the bare
+// prefix as a tmux target, and a dead session's window is already gone.
+func guardDelivery(s Session) error {
+	if s.ID == "" {
+		return ErrSessionNotFound
+	}
+	if s.State == StateDead {
+		return ErrSessionDead
+	}
+	return nil
+}
+
+// recordDriving moves the clock before the bytes do, as Compact does: Touch is
+// the store's own answer to whether the record is still live, so a session the
+// reaper collected is refused before anything is delivered.
+func (m *Manager) recordDriving(s Session) error {
+	now := m.clock.Now()
+	displayed := s.DisplayState(now)
+	if err := m.store.Touch(s.ID, now); err != nil {
+		return err
+	}
+	s.LastActivity = now
+	if after := s.DisplayState(now); after != displayed {
+		m.emit(FleetChanged, s)
 	}
 	return nil
 }
