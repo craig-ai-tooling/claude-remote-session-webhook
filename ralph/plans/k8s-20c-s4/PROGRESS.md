@@ -35,3 +35,15 @@ Unblock: add `Bash(go -C k8s:*)` (and `go -C k8s get`, `go -C k8s mod tidy`) to 
 ## Operator (10/6/26)
 
 Unblocked: `.claude/settings.json` now allows `go -C k8s:*`, `go get:*` and `go list:*`. Skip linting inside `k8s/` (PROMPT step 4 of the cluster gate); the operator runs it. Start T1 from the committed `k8s/go.mod` and `kube_test.go`.
+
+## Iteration 3 (T1)
+
+Wrote `k8s/internal/kube/kube.go` (InCluster, ElectorConfig, NewElector), ran the `go get` pins and `go mod tidy`. `go 1.23.0` held, no `toolchain` line. Tidy dropped the root `require` from `k8s/go.mod` (nothing under `k8s/` imports the root yet), as Design §1 step 8 allows; the `replace` line stays.
+
+Failing first: `go -C k8s test ./internal/kube` before the change: `no required module provides package k8s.io/apimachinery/pkg/apis/meta/v1 ... [setup failed]`. After: `TestNewElectorRefusesEmptyFields` and `TestExactlyOneLeads` pass (3.0s).
+
+Gate: `go -C k8s vet/test/build` pass. Root `go build`, `go vet`, `go test`, `-tags tmux`, `-tags quickstart ./cmd/crswd` (127.0.0.1:8765 was free) and `golangci-lint run` (0 issues) pass. `test ! -e go.sum` ok, `grep -c require go.mod` prints 0. `k8s/` was not linted, per the operator note.
+
+Rediscovery traps: root `golangci-lint run` refuses with "parallel golangci-lint is running" while another session lints; wait with `until ! pgrep -x golangci-lint; do sleep 3; done` rather than skipping. A `cd` in a compound command is refused by the sandbox even for a sed edit; use Edit.
+
+Noticed, not fixed: none.
