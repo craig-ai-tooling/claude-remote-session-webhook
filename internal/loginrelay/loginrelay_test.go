@@ -9,10 +9,14 @@ package loginrelay_test
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/loginrelay"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
@@ -106,14 +110,14 @@ func TestStartNeverTouchesASession(t *testing.T) {
 func TestTheWindowIsNotASession(t *testing.T) {
 	t.Parallel()
 
-	name := loginrelay.WindowName
-
-	id, hasPrefix := strings.CutPrefix(name, "crswd-")
-	if !hasPrefix {
-		t.Errorf("the window name %q does not carry the daemon's prefix, so an operator reading `tmux ls` cannot tell who made it", name)
-	}
-	if len(id) == 32 {
-		t.Errorf("the window name %q is the shape adoption accepts; it would come back as a session across a restart", name)
+	for _, name := range []string{loginrelay.WindowName, loginrelay.CodexWindowName} {
+		id, hasPrefix := strings.CutPrefix(name, "crswd-")
+		if !hasPrefix {
+			t.Errorf("the window name %q does not carry the daemon's prefix, so an operator reading `tmux ls` cannot tell who made it", name)
+		}
+		if len(id) == 32 {
+			t.Errorf("the window name %q is the shape adoption accepts; it would come back as a session across a restart", name)
+		}
 	}
 
 	fake := tmuxctl.NewFake()
@@ -462,4 +466,198 @@ func TestDeliverTrimsTheWhitespaceAPhonePasteCarries(t *testing.T) {
 		}
 	}
 	t.Fatal("nothing was pasted")
+}
+
+// codexBin writes a fake codex at an absolute path under t.TempDir(), which is
+// not on PATH, that prints out and exits with code.
+func codexBin(t *testing.T, out string, code int) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "codex")
+	script := "#!/bin/sh\necho " + strconv.Quote(out) + "\nexit " + strconv.Itoa(code) + "\n"
+	//nolint:gosec // G306: the script must be executable.
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil {
+		t.Fatalf("write fake codex: %v", err)
+	}
+	return path
+}
+
+func newCodexRelay(t *testing.T, fake *tmuxctl.Fake, command string) *loginrelay.Relay {
+	t.Helper()
+
+	r, err := loginrelay.NewCodex(fake, command, t.TempDir(), []string{"HOME=" + t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewCodex: %v", err)
+	}
+	return r
+}
+
+// TestCodexStartTypesTheAbsolutePathAndTheDeviceFlag pins the typed line.
+//
+// The update menu is the dangerous screen (research M12), so the check is
+// switched off, and the configured path is kept whole because the daemon's PATH
+// does not hold it.
+func TestCodexStartTypesTheAbsolutePathAndTheDeviceFlag(t *testing.T) {
+	t.Parallel()
+
+	fake := tmuxctl.NewFake()
+	r := newCodexRelay(t, fake, "/opt/sf-cli/bin/codex --yolo")
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	var typed, created []string
+	for _, call := range fake.Calls() {
+		switch call.Op {
+		case tmuxctl.OpSendKeys:
+			typed = append(typed, strings.Join(call.Argv, " "))
+		case tmuxctl.OpNew:
+			created = append(created, strings.Join(call.Argv, " "))
+		}
+	}
+	joined := strings.Join(typed, "\n")
+	want := "/opt/sf-cli/bin/codex -c check_for_update_on_startup=false login --device-auth"
+	if !strings.Contains(joined, want) {
+		t.Errorf("typed:\n%s\nwant a line containing %q", joined, want)
+	}
+	if strings.Contains(joined, "--yolo") {
+		t.Errorf("the session's flags reached the sign-in line: %s", joined)
+	}
+	if !strings.Contains(strings.Join(created, "\n"), loginrelay.CodexWindowName) {
+		t.Errorf("window not made under %q: %v", loginrelay.CodexWindowName, created)
+	}
+}
+
+func TestCodexAndClaudeRelaysDoNotShareAWindow(t *testing.T) {
+	t.Parallel()
+
+	fake := tmuxctl.NewFake()
+	claude := newRelay(t, fake)
+	codex := newCodexRelay(t, fake, "codex")
+	if err := claude.Start(context.Background()); err != nil {
+		t.Fatalf("claude Start: %v", err)
+	}
+	if err := codex.Start(context.Background()); err != nil {
+		t.Fatalf("codex Start while claude is up: %v", err)
+	}
+	if err := codex.Start(context.Background()); !errors.Is(err, loginrelay.ErrAlreadyRunning) {
+		t.Errorf("second codex Start = %v, want ErrAlreadyRunning", err)
+	}
+}
+
+func TestNewCodexRefusals(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		command string
+		wantErr error
+	}{
+		{name: "empty", command: "", wantErr: loginrelay.ErrNoBinary},
+		{name: "relative with slash", command: "bin/codex --yolo", wantErr: loginrelay.ErrNoBinary},
+		{name: "dot relative", command: "./codex", wantErr: loginrelay.ErrNoBinary},
+		{name: "bare name", command: "codex --yolo"},
+		{name: "absolute", command: "/home/x/bin/codex"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := loginrelay.NewCodex(tmuxctl.NewFake(), tc.command, t.TempDir(), nil)
+			if !errors.Is(err, tc.wantErr) {
+				t.Errorf("NewCodex(%q) = %v, want %v", tc.command, err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestCodexStateReadsTheDeviceScreen(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(filepath.Join("..", "codexauth", "testdata", "device-code-cli.pane"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	fake := tmuxctl.NewFake()
+	r := newCodexRelay(t, fake, "codex")
+
+	got, err := r.State(context.Background())
+	if err != nil || got.Running {
+		t.Fatalf("State before Start = %+v, %v; want not running", got, err)
+	}
+
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got, err = r.State(context.Background())
+	if err != nil {
+		t.Fatalf("State: %v", err)
+	}
+	if !got.Running || got.Device != nil || got.Prompt != nil {
+		t.Errorf("State before the screen draws = %+v, want running and no prompt", got)
+	}
+
+	fake.SetPane(loginrelay.CodexWindowName, string(body))
+	got, err = r.State(context.Background())
+	if err != nil {
+		t.Fatalf("State: %v", err)
+	}
+	if got.Device == nil || got.Device.Kind != codexauth.KindDeviceCode || got.Device.Code == "" || got.Device.URL == "" {
+		t.Errorf("State on the device screen = %+v, want a device-code prompt with link and code", got)
+	}
+	if got.Prompt != nil {
+		t.Errorf("a Codex relay filled the Claude prompt: %+v", got.Prompt)
+	}
+}
+
+func TestCodexDeliverRefuses(t *testing.T) {
+	t.Parallel()
+
+	fake := tmuxctl.NewFake()
+	r := newCodexRelay(t, fake, "codex")
+	if err := r.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	before := len(fake.Calls())
+	if err := r.Deliver(context.Background(), "ABCD-EFGH1"); !errors.Is(err, loginrelay.ErrNoCodeToDeliver) {
+		t.Errorf("Deliver = %v, want ErrNoCodeToDeliver", err)
+	}
+	for _, call := range fake.Calls()[before:] {
+		if call.Op == tmuxctl.OpPaste || call.Op == tmuxctl.OpSendKeys {
+			t.Errorf("a refused Deliver still typed into the window: %s %v", call.Op, call.Argv)
+		}
+	}
+}
+
+func TestCodexSignedIn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		out     string
+		code    int
+		want    bool
+		wantErr bool
+	}{
+		{name: "signed in", out: "Logged in using ChatGPT", code: 0, want: true},
+		{name: "signed out", out: "Not logged in", code: 1},
+		{name: "exit 1 without the phrase", out: "boom", code: 1, wantErr: true},
+		{name: "exit 2", out: "Not logged in", code: 2, wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := newCodexRelay(t, tmuxctl.NewFake(), codexBin(t, tc.out, tc.code))
+			got, err := r.SignedIn(context.Background())
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Errorf("SignedIn = %v, want %v", got, tc.want)
+			}
+			if err != nil && !strings.Contains(err.Error(), "read the Codex sign-in state") {
+				t.Errorf("error %q lacks its context", err)
+			}
+		})
+	}
 }

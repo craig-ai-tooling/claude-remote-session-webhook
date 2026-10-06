@@ -63,6 +63,8 @@ import (
 	"strings"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
@@ -75,6 +77,12 @@ import (
 // concurrent sign-ins to one credential store is a race with a worse prize than
 // the one that made the fleet log out in the first place.
 const WindowName = "crswd-login"
+
+// CodexWindowName is the Codex flow's window. Same reasoning as WindowName: the
+// prefix, no 32-hex identifier, never the @crswd-managed option. A separate name
+// so a Claude sign-in and a Codex one, which touch different credential stores,
+// do not refuse each other.
+const CodexWindowName = "crswd-login-codex"
 
 // maxCodeBytes bounds what Deliver will carry.
 //
@@ -110,6 +118,10 @@ var (
 	// runnable. It is a startup-shaped problem surfaced here rather than a
 	// refusal an operator can act on in the moment.
 	ErrNoBinary = errors.New("no usable claude binary in the configured start command")
+
+	// ErrNoCodeToDeliver is Deliver on the Codex flow. Codex's device sign-in is
+	// answered in a browser and the CLI polls, so there is nothing to paste.
+	ErrNoCodeToDeliver = errors.New("this sign-in takes no code from the dashboard")
 )
 
 // Controller is the part of tmuxctl.Controller this package uses.
@@ -133,6 +145,14 @@ type Relay struct {
 	binary  string
 	workDir string
 
+	// flow is which harness this relay signs in, window is the tmux session it
+	// drives, and executable is the configured command's first token as written.
+	// binary is the base name, kept for the Claude flow; Codex is run by
+	// executable because the operator's path need not be on the daemon's PATH.
+	flow       harness.Name
+	window     string
+	executable string
+
 	// env is the composed session environment, used for the one command this
 	// package runs outside tmux. It is the same environment a session gets, so
 	// `auth status` reads the same credential store a session would — asking
@@ -155,6 +175,9 @@ type State struct {
 	// says "waiting" rather than "no link", because the two mean different
 	// things to somebody deciding whether to press again.
 	Prompt *claudeauth.Prompt
+
+	// Device is the Codex screen, once it has drawn. Only the Codex flow sets it.
+	Device *codexauth.Prompt
 }
 
 // New builds a Relay.
@@ -169,7 +192,31 @@ func New(tmux Controller, startCommand, workDir string, env []string) (*Relay, e
 	if binary == "" {
 		return nil, ErrNoBinary
 	}
-	return &Relay{tmux: tmux, binary: binary, workDir: workDir, env: env}, nil
+	return &Relay{
+		tmux: tmux, binary: binary, workDir: workDir, env: env,
+		flow: harness.Claude, window: WindowName, executable: binary,
+	}, nil
+}
+
+// NewCodex builds the Codex Relay.
+//
+// The first token of startCommand is kept as written, so an absolute path to a
+// binary outside the daemon's PATH is the one that runs. A relative token with a
+// slash would resolve against whatever directory the window opens in, so it is
+// refused.
+func NewCodex(tmux Controller, startCommand, workDir string, env []string) (*Relay, error) {
+	binary := binaryOf(startCommand)
+	if binary == "" {
+		return nil, ErrNoBinary
+	}
+	executable := strings.Fields(startCommand)[0]
+	if strings.Contains(executable, "/") && !filepath.IsAbs(executable) {
+		return nil, ErrNoBinary
+	}
+	return &Relay{
+		tmux: tmux, binary: binary, workDir: workDir, env: env,
+		flow: harness.Codex, window: CodexWindowName, executable: executable,
+	}, nil
 }
 
 // binaryOf is the command's program name, with the same rules internal/session
@@ -213,7 +260,7 @@ func (r *Relay) running(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("ask the host for its sessions: %w", err)
 	}
 	for _, s := range sessions {
-		if s.Name == WindowName {
+		if s.Name == r.window {
 			return true, nil
 		}
 	}
@@ -232,7 +279,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		return ErrAlreadyRunning
 	}
 
-	if err := r.tmux.New(ctx, WindowName, r.workDir); err != nil {
+	if err := r.tmux.New(ctx, r.window, r.workDir); err != nil {
 		return fmt.Errorf("create the sign-in window: %w", err)
 	}
 
@@ -246,7 +293,13 @@ func (r *Relay) Start(ctx context.Context) error {
 	// choosing a billing arrangement on the operator's behalf, and Craig's is a
 	// subscription. An operator who wants the other one runs it on the host.
 	command := r.binary + " auth login --claudeai"
-	if err := r.tmux.SendKeys(ctx, WindowName, command, "Enter"); err != nil {
+	if r.flow == harness.Codex {
+		// Top-level -c, before the subcommand. The update menu is a blocking
+		// screen whose first item runs a global npm install (research M12), and
+		// nothing here may answer it.
+		command = r.executable + " -c check_for_update_on_startup=false login --device-auth"
+	}
+	if err := r.tmux.SendKeys(ctx, r.window, command, "Enter"); err != nil {
 		// A window holding a shell that was never given its command is not a
 		// sign-in, and leaving it behind makes every later Start refuse with
 		// ErrAlreadyRunning — a relay that is permanently "already running" and
@@ -256,7 +309,7 @@ func (r *Relay) Start(ctx context.Context) error {
 		// the difference between "try again" and "there is a window on this host
 		// you will have to kill by hand", and only the operator can act on the
 		// second.
-		if killErr := r.tmux.Kill(ctx, WindowName); killErr != nil {
+		if killErr := r.tmux.Kill(ctx, r.window); killErr != nil {
 			return fmt.Errorf("start the sign-in: %w; the half-made window could not be removed either, "+
 				"so later attempts will report one already running until it is killed by hand: %w", err, killErr)
 		}
@@ -275,7 +328,7 @@ func (r *Relay) State(ctx context.Context) (State, error) {
 		return State{}, nil
 	}
 
-	pane, err := r.tmux.CapturePane(ctx, WindowName)
+	pane, err := r.tmux.CapturePane(ctx, r.window)
 	if err != nil {
 		// The window is there and could not be read. Reported as running with no
 		// prompt, which is what the page already renders as "waiting" — a
@@ -283,6 +336,14 @@ func (r *Relay) State(ctx context.Context) (State, error) {
 		// same thing to somebody looking at the page, and neither is a reason to
 		// tell them the sign-in died.
 		return State{Running: true}, nil
+	}
+
+	if r.flow == harness.Codex {
+		device, found := codexauth.DetectPrompt(pane)
+		if !found {
+			return State{Running: true}, nil
+		}
+		return State{Running: true, Device: device}, nil
 	}
 
 	prompt, found := claudeauth.DetectPrompt(pane)
@@ -300,6 +361,9 @@ func (r *Relay) State(ctx context.Context) (State, error) {
 // what makes a delivery that half-failed leave the code visible on the screen
 // for the operator, rather than submitted in some truncated form.
 func (r *Relay) Deliver(ctx context.Context, code string) error {
+	if r.flow == harness.Codex {
+		return ErrNoCodeToDeliver
+	}
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return ErrEmptyCode
@@ -325,13 +389,13 @@ func (r *Relay) Deliver(ctx context.Context, code string) error {
 		return ErrNotRunning
 	}
 
-	if err := r.tmux.Paste(ctx, WindowName, []byte(code)); err != nil {
+	if err := r.tmux.Paste(ctx, r.window, []byte(code)); err != nil {
 		// Deliberately not wrapped with the paste's own error text. That is the
 		// one call carrying the credential, and tmuxctl.Paste already withholds
 		// tmux's stderr for the same reason.
 		return errors.New("the code could not be delivered to the sign-in window")
 	}
-	if err := r.tmux.SendKeys(ctx, WindowName, "Enter"); err != nil {
+	if err := r.tmux.SendKeys(ctx, r.window, "Enter"); err != nil {
 		return fmt.Errorf("submit the code: %w", err)
 	}
 	return nil
@@ -350,7 +414,7 @@ func (r *Relay) Stop(ctx context.Context) error {
 	if !up {
 		return nil
 	}
-	if err := r.tmux.Kill(ctx, WindowName); err != nil {
+	if err := r.tmux.Kill(ctx, r.window); err != nil {
 		return fmt.Errorf("end the sign-in window: %w", err)
 	}
 	return nil
@@ -369,6 +433,9 @@ func (r *Relay) Stop(ctx context.Context) error {
 // Fixed argv, no operator input, and the composed session environment so that
 // the credential store it reports on is the one a session would use.
 func (r *Relay) SignedIn(ctx context.Context) (bool, error) {
+	if r.flow == harness.Codex {
+		return r.codexSignedIn(ctx)
+	}
 	cmd := exec.CommandContext(ctx, r.binary, "auth", "status", "--json") //nolint:gosec // binary is binaryOf's output, argv is constant
 	cmd.Env = r.env
 
@@ -391,4 +458,22 @@ func (r *Relay) SignedIn(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("read %s's authentication status: %w", r.binary, err)
 	}
 	return status.LoggedIn, nil
+}
+
+// codexSignedIn runs `codex login status`: exit 0 is signed in, exit 1 with
+// "Not logged in" on stdout is signed out (research M14), anything else is a
+// host problem. The output is matched, never echoed.
+func (r *Relay) codexSignedIn(ctx context.Context) (bool, error) {
+	cmd := exec.CommandContext(ctx, r.executable, "login", "status") //nolint:gosec // executable is the operator's configured command, argv is constant
+	cmd.Env = r.env
+
+	out, err := cmd.Output()
+	if err == nil {
+		return true, nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 && strings.Contains(string(out), "Not logged in") {
+		return false, nil
+	}
+	return false, fmt.Errorf("read the Codex sign-in state: %w", err)
 }
