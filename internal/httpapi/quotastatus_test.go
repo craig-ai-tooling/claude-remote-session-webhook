@@ -97,7 +97,7 @@ func TestQuotaStatusRefusesRatherThanGuesses(t *testing.T) {
 			if got.State != quotaUnknown {
 				t.Fatalf("state = %q; want %q", got.State, quotaUnknown)
 			}
-			if got.PercentUsed != nil || got.ResetsAt != nil || got.RefreshedAt != nil || got.Stale != nil {
+			if got.PercentUsed != nil {
 				t.Errorf("an unknown reading carries a value field: %+v", got)
 			}
 		})
@@ -177,7 +177,7 @@ func TestDashboardQuotaCodexMissingIsUnknown(t *testing.T) {
 	f.quotaCachePath = writeQuotaCache(t, quotaCacheOK)
 
 	got := quotaAnswer(t, f.open(t, quotaPath+"?harness=codex"))
-	if got.State != quotaUnknown || got.PercentUsed != nil {
+	if got.State != quotaUnknown || got.PercentUsed != nil || got.ResetsAt != nil || got.RefreshedAt != nil || got.Stale != nil {
 		t.Errorf("answer = %+v; want unknown with no value fields", got)
 	}
 }
@@ -191,6 +191,8 @@ func TestDashboardQuotaHarnessInvalid(t *testing.T) {
 		"unknown":   "?harness=gemini",
 		"empty":     "?harness=",
 		"duplicate": "?harness=codex&harness=claude",
+		// url.Values drops the pair after the semicolon, leaving one valid value.
+		"malformed": "?harness=codex&harness=claude;ignored=x",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -375,8 +377,21 @@ func TestScriptRepaintsBothTheMeterAndTheLabel(t *testing.T) {
 func TestQuotaScriptHidesCodexWithoutWindow(t *testing.T) {
 	t.Parallel()
 
-	if !strings.Contains(script(t), "label.hidden = meter.hidden") {
-		t.Error("crswd.js does not tie the Codex label's visibility to its meter's")
+	source := script(t)
+	settle := jsBlock(t, source, "const settle = () =>")
+	if !strings.Contains(settle, "label.hidden = meter.hidden") {
+		t.Errorf("settle does not tie the Codex label's visibility to its meter's: %q", settle)
+	}
+	// Both paints must call settle: deleting the call from the unknown branch
+	// leaves the label visible under a hidden meter.
+	unknown := jsBlock(t, source, "const paintUnknown = () =>")
+	for _, want := range []string{"meter.hidden = true", "settle()"} {
+		if !strings.Contains(unknown, want) {
+			t.Errorf("the unknown branch does not carry %q: %q", want, unknown)
+		}
+	}
+	if ok := jsBlock(t, source, "const paintOk = (said) =>"); !strings.Contains(ok, "settle()") {
+		t.Errorf("the ok branch does not settle: %q", ok)
 	}
 }
 
@@ -386,9 +401,18 @@ func TestQuotaScriptFetchesPerHarness(t *testing.T) {
 	t.Parallel()
 
 	source := script(t)
-	for _, want := range []string{"fetch('/dashboard/quota?harness=codex'", "[data-quota-label][data-harness="} {
-		if !strings.Contains(source, want) {
-			t.Errorf("crswd.js does not carry %q", want)
+	// The asker list, whole: dropping 'codex' leaves the Codex fetch below unused.
+	if !strings.Contains(source, "const askers = ['claude', 'codex'].map(makeAsker)") {
+		t.Error("the asker list does not carry both 'claude' and 'codex'")
+	}
+	get := source[strings.Index(source, "const get = () =>"):]
+	get = get[:strings.Index(get, ";")]
+	for _, want := range []string{"h === 'codex'", "fetch('/dashboard/quota?harness=codex'", "fetch('/dashboard/quota'"} {
+		if !strings.Contains(get, want) {
+			t.Errorf("the per-harness fetch does not carry %q: %q", want, get)
 		}
+	}
+	if !strings.Contains(source, "[data-quota-label][data-harness=") {
+		t.Error("crswd.js does not select the label per harness")
 	}
 }

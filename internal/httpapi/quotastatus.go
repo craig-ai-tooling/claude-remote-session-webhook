@@ -86,7 +86,7 @@ func (s *Server) readQuota(h harness.Name) (quota.Reading, error) {
 // not having run yet is the ordinary state of a freshly installed host, not a
 // fault this daemon should narrate on every poll.
 func (s *Server) dashboardQuota(w http.ResponseWriter, r *http.Request) {
-	h, err := parseHarness(r.URL.Query(), "harness")
+	h, _, err := parseHarnessQuery(r, "harness")
 	if err != nil {
 		s.rejectBadRequest(w, r, errHarnessParam)
 		return

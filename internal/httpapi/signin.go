@@ -205,7 +205,7 @@ func (s *Server) signInView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h, err := parseHarness(r.URL.Query(), fieldHarness)
+	h, _, err := parseHarnessQuery(r, fieldHarness)
 	if err != nil {
 		s.rejectBadRequest(w, r, errHarnessParam)
 		return

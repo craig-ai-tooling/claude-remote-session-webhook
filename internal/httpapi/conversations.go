@@ -58,11 +58,10 @@ type conversationsResponse struct {
 // route a way to ask which directories exist, which is the enumeration every
 // other refusal in this package is shaped to prevent.
 func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
 	// The one reader of a harness value (T014). The 400 is the only refusal this
 	// route has: a harness that names nothing is the caller's error, where an
 	// empty history is not.
-	h, err := parseHarness(query, fieldHarness)
+	h, query, err := parseHarnessQuery(r, fieldHarness)
 	if err != nil {
 		s.rejectBadRequest(w, r, err)
 		return

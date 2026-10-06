@@ -208,7 +208,7 @@ func (s *Server) askAuthState(ctx context.Context, h harness.Name) authState {
 // is for the two embedded assets, so nothing about this answer is cached past
 // the request that asked for it.
 func (s *Server) dashboardAuth(w http.ResponseWriter, r *http.Request) {
-	h, err := parseHarness(r.URL.Query(), fieldHarness)
+	h, _, err := parseHarnessQuery(r, fieldHarness)
 	if err != nil {
 		s.rejectBadRequest(w, r, errHarnessParam)
 		return
