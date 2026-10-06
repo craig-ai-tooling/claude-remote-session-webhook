@@ -96,6 +96,16 @@ func TestHeaderUnchangedWithoutCodex(t *testing.T) {
 	if strings.Contains(without, codexPill) {
 		t.Errorf("a header with CodexConfigured false drew the Codex pill:\n%s", without)
 	}
+
+	// The golden is origin/main's header.html rendered by this same helper
+	// before the Codex pill existed, so any stray byte (a lost newline) shows.
+	golden, err := os.ReadFile("testdata/header_no_codex.golden.html")
+	if err != nil {
+		t.Fatalf("read the golden header: %v", err)
+	}
+	if without != string(golden) {
+		t.Errorf("the no-Codex header differs from the pre-Codex render\n got: %q\nwant: %q", without, string(golden))
+	}
 }
 
 // **Must fail when** headerFor reads anything but the Codex relay, or invents a
