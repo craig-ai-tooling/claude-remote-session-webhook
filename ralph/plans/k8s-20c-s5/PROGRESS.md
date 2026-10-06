@@ -78,3 +78,11 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - Behaviour to know: the Codex branch of `TranscriptExists` compares against the resolved workdir (Design §3). `(*Manager).hasTranscriptFor` is untouched and still uses `m.codexHome` and the unresolved `s.WorkDir`.
 - Rediscovery savings: use the Write tool for test files; a bash heredoc containing a brace next to a quote is refused. `writeRollout`, `codexMetaLine` and `codexTestID` are reusable from any new file in package `session`. `claudeProjectDir` in `inpod_test.go` copies the unexported `projectDirFor`.
 - Nothing noticed to fix.
+
+## Iteration 4: T4 Manager hooks
+- Added `SetCodexConversationFinder`, `SetTranscriptChecker`, `PodRecord`, `transcriptFor`; supervisor rule 6 now goes through `m.workDir`, rule 7 through `transcriptFor` (an error returns before the revive bound is written).
+- Failing first: `go test ./internal/session -run 'CodexConversationFinder|TranscriptChecker|PodRecord|SuperviseLexical'` failed by not compiling: `sup.mgr.SetCodexConversationFinder undefined`, `f.mgr.transcriptFor undefined`, `f.mgr.PodRecord undefined`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- For S7, other callers of `hasTranscriptFor` that keep the host check and ignore the checker: `manager.go` near line 2702 (the continue path, `!m.hasTranscriptFor(s, checked)`). Only supervisor rule 7 uses `transcriptFor`.
+- Rediscovery savings: `supervisorAt` builds a second Manager via `managerAt`, which has no Codex start command. For a Codex sweep build `NewSupervisor(f.mgr, ...)` on the fixture's own manager (see `newSweepRig`). `TestSuperviseLexicalWorkDir` needs `SetTranscriptChecker` because the host transcript check resolves the (deleted) workdir with `ResolveWorkDir` and would give up for that reason instead.
+- Nothing noticed to fix.

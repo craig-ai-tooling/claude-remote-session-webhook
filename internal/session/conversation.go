@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -322,6 +323,15 @@ func (m *Manager) hasTranscriptFor(s Session, id string) bool {
 	default:
 		return false
 	}
+}
+
+// transcriptFor is hasTranscriptFor with the answer the checker gives, when one
+// is set, and the error that answer can carry.
+func (m *Manager) transcriptFor(ctx context.Context, s Session, id string) (bool, error) {
+	if m.checkTranscript != nil {
+		return m.checkTranscript(ctx, s, id)
+	}
+	return m.hasTranscriptFor(s, id), nil
 }
 
 // HasTranscript reports whether a conversation this daemon recorded still has a

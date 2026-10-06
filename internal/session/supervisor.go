@@ -189,7 +189,7 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 	}
 	// 6 — the allowlist may have shrunk since this session was created, and a
 	// session it no longer covers is one this daemon may not start a shell in.
-	if _, err := ResolveWorkDir(sess.WorkDir, s.mgr.roots); err != nil {
+	if _, err := s.mgr.workDir(sess.WorkDir); err != nil {
 		return s.giveUp(sess, reasonWorkDirRefused)
 	}
 	// 7 — nothing to resume. Resuming an identifier with no transcript behind it
@@ -197,7 +197,11 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 	if sess.ConversationID == "" {
 		return s.giveUp(sess, reasonNoConversation)
 	}
-	if !s.mgr.hasTranscriptFor(sess, sess.ConversationID) {
+	ok, err := s.mgr.transcriptFor(ctx, sess, sess.ConversationID)
+	if err != nil {
+		return fmt.Errorf("ask whether session %s has a transcript: %w", sess.ID, err)
+	}
+	if !ok {
 		return s.giveUp(sess, reasonNoTranscript)
 	}
 	// The cap covers a recreate, which adds a shell to the host. A revive in
