@@ -218,3 +218,23 @@ For the next iteration (T7):
 - The quickstart cap flake (`TestDashboardQuickstartStory2Cap`) did not fire this time; if it does, rerun alone.
 
 Noticed, not fixed: none.
+
+## Iteration 8 (T7, validation contract): done
+
+Ran every command in VALIDATION_CONTRACT.md on the branch. Results:
+- `test ! -e go.sum` ok; `grep -c require go.mod` printed `0`.
+- Root gate: gofmt clean, build, vet, `go test ./...`, `-tags tmux`, `-tags quickstart ./cmd/crswd` (48s, port free), `golangci-lint run` (0 issues): all exit 0.
+- Cluster module: `go -C k8s vet`, `test`, `build` exit 0.
+- `Kubernetes|HostNeverBuildsKubernetes` pass in `./cmd/crswd` and `./internal/config`.
+- `ClusterBuildIsRunnable` and `DaemonRefusesHostConfig` pass in `k8s/cmd/crswd`.
+- `NewForCluster` tests pass (5).
+- `grep -c '^COPY'` session Dockerfile printed `2`; the Codex sha256 appears `1` time in fetch-codex.sh.
+- `-run Dockerfile ./deploy/image ./internal/sessionpod` pass.
+- `go run ./deploy/k8s/gen` then `git status --porcelain deploy/k8s` printed nothing.
+- `grep -c REPLACE deploy/k8s/crswd-next/daemon.json` printed `1`.
+- `grep -rniE 'lawnmower|\.claude' deploy/k8s/` printed nothing, exit 1.
+- `grep -c '^## ' docs/k8s-mode.md` printed `7`.
+
+Not run: images, cluster acceptance (operator-run per the plan). The cluster module is not linted here (CI does it).
+
+RALPH_COMPLETE
