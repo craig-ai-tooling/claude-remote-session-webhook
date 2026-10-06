@@ -91,3 +91,23 @@ Next iteration would waste time on:
 - No Go test was added in T3 (the plan's T3 verify is helm lint). `deploy/chart/doc.go` is the only
   Go file there, and `chart_test.go` arrives in T4.
 - Gate steps 1 to 9 passed, including `helm lint` with the secret set.
+
+## Iteration 4 (T4, namespaces, ServiceAccounts, RBAC)
+
+Done: `templates/namespace.yaml` (reconciler namespace when `reconciler.createNamespace`) and
+`templates/rbac.yaml` (SAs `crswd` and `crswd-reconciler`, Roles `crswd`, `crswd-reconciler`,
+`crswd-reconciler-lease`, three RoleBindings). Every `rules:` line is a `.Files.Get "files/rules.json"`
+expression. No ClusterRole. `deploy/chart/chart_test.go` holds `TestChartRBACReadsGeneratedRules`.
+
+Failing first: `go test -run ChartRBAC ./deploy/chart` printed
+`chart_test.go:24: read template rbac.yaml: open templates/rbac.yaml: no such file or directory`.
+After: passes, and `helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s` renders
+the Namespace, 2 SAs, 3 Roles and 3 RoleBindings.
+
+Next iteration would waste time on:
+- The test bans the substring `secrets` in every file under `templates/`, including NOTES.txt and
+  comments. T5 must not write that word in a template (say "Secret" singular, or put the prose in values).
+- `readTemplate` in `chart_test.go` is the helper T5's `TestChartWorkloadsAreLockedDown` should reuse.
+- The Bash sandbox refuses heredocs and commands containing braces plus quotes. Write template files
+  with the Write tool, and avoid `${PIPESTATUS[0]}` style expansions.
+- Gate steps 1 to 9 passed (gosec G304 on the test's ReadFile needed a `//nolint:gosec` with a reason).

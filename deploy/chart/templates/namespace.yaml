@@ -1,0 +1,8 @@
+{{- if .Values.reconciler.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "crswd.reconcilerNamespace" . }}
+  labels:
+    {{- include "crswd.labels" (dict "root" . "component" "reconciler") | nindent 4 }}
+{{- end }}
