@@ -1,7 +1,10 @@
 package session
 
 import (
+	"bytes"
+	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
@@ -178,5 +181,133 @@ func TestClaudeFlagConstantsUnchanged(t *testing.T) {
 	}
 	if got := harness.For(harness.Claude).ResumeArgs("x"); len(got) != 2 || got[0] != ResumeOneFlag {
 		t.Errorf("Claude ResumeArgs = %v, want [%s x]", got, ResumeOneFlag)
+	}
+}
+
+// codexFixture is a manager that knows a codex entry, and a session started
+// under it.
+func codexFixture(t *testing.T) (managerFixture, *Session) {
+	t.Helper()
+
+	f := newManagerFixture(t)
+	f.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: claudeStartCommand,
+		"codex":                        "codex --dangerously-bypass-approvals-and-sandbox",
+	}))
+	req := f.request()
+	req.StartCommand = "codex"
+	s, _ := mustCreate(t, f, req)
+	return f, s
+}
+
+func opsOf(calls []tmuxctl.Call) []tmuxctl.Op {
+	ops := make([]tmuxctl.Op, len(calls))
+	for i, c := range calls {
+		ops[i] = c.Op
+	}
+	return ops
+}
+
+func TestPromptCodexIsBracketed(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.Prompt(context.Background(), *s, "say hi"); err != nil {
+		t.Fatalf("Prompt() unexpected error: %v", err)
+	}
+
+	got := f.tmux.Calls()[before:]
+	want := []tmuxctl.Op{tmuxctl.OpPasteBracketed, tmuxctl.OpPasteBracketed, tmuxctl.OpSendKeys}
+	if !slices.Equal(opsOf(got), want) {
+		t.Fatalf("Prompt() ran %v, want %v", opsOf(got), want)
+	}
+	if !slices.Contains(got[1].Argv, "-p") {
+		t.Errorf("paste argv %q lacks -p", got[1].Argv)
+	}
+	if last := got[2].Argv[len(got[2].Argv)-1]; last != "Enter" {
+		t.Errorf("send-keys ends in %q, want Enter", last)
+	}
+}
+
+func TestPromptClaudeUnchanged(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.Prompt(context.Background(), *s, "say hi"); err != nil {
+		t.Fatalf("Prompt() unexpected error: %v", err)
+	}
+	for _, c := range f.tmux.Calls()[before:] {
+		if c.Op == tmuxctl.OpPasteBracketed || slices.Contains(c.Argv, "-p") {
+			t.Errorf("a Claude prompt used bracketed paste: %s %q", c.Op, c.Argv)
+		}
+	}
+}
+
+func TestCompactCodexSubmitsWithEnter(t *testing.T) {
+	t.Parallel()
+
+	f, s := codexFixture(t)
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.Compact(context.Background(), *s); err != nil {
+		t.Fatalf("Compact() unexpected error: %v", err)
+	}
+
+	got := f.tmux.Calls()[before:]
+	want := []tmuxctl.Op{tmuxctl.OpPasteBracketed, tmuxctl.OpPasteBracketed, tmuxctl.OpSendKeys}
+	if !slices.Equal(opsOf(got), want) {
+		t.Fatalf("Compact() ran %v, want %v", opsOf(got), want)
+	}
+	if !bytes.Equal(got[0].Stdin, []byte("/compact")) {
+		t.Errorf("stdin = %q, want %q with no newline", got[0].Stdin, "/compact")
+	}
+	if last := got[2].Argv[len(got[2].Argv)-1]; last != "Enter" {
+		t.Errorf("send-keys ends in %q, want Enter", last)
+	}
+}
+
+func TestCompactClaudeUnchanged(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.Compact(context.Background(), *s); err != nil {
+		t.Fatalf("Compact() unexpected error: %v", err)
+	}
+
+	got := f.tmux.Calls()[before:]
+	if want := []tmuxctl.Op{tmuxctl.OpPaste, tmuxctl.OpPaste}; !slices.Equal(opsOf(got), want) {
+		t.Fatalf("Compact() ran %v, want %v", opsOf(got), want)
+	}
+	if !bytes.Equal(got[0].Stdin, []byte("/compact\n")) {
+		t.Errorf("stdin = %q, want %q", got[0].Stdin, "/compact\n")
+	}
+}
+
+// Spec 018's Type is bracketed for every harness. Claude's own BracketedPaste
+// is false, so routing Type through paste would break multi-line input.
+func TestTypeStaysBracketedForClaude(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	s, _ := mustCreate(t, f, f.request())
+	before := len(f.tmux.Calls())
+
+	if err := f.mgr.Type(context.Background(), *s, "a\nb", true); err != nil {
+		t.Fatalf("Type() unexpected error: %v", err)
+	}
+	var bracketed bool
+	for _, c := range f.tmux.Calls()[before:] {
+		bracketed = bracketed || (c.Op == tmuxctl.OpPasteBracketed && slices.Contains(c.Argv, "-p"))
+	}
+	if !bracketed {
+		t.Error("Type on a Claude session did not use paste-buffer -p")
 	}
 }

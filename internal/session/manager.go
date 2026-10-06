@@ -1056,13 +1056,39 @@ func (m *Manager) Prompt(ctx context.Context, s Session, text string) error {
 	// The error deliberately names the session and nothing else. Prompt text is
 	// secret under docs/security.md §3, so it may not travel back to a caller in
 	// an error string any more than it may reach the trail (FR-042).
-	if err := m.tmux.Paste(ctx, name, []byte(text)); err != nil {
+	if err := m.paste(ctx, s, []byte(text)); err != nil {
 		return fmt.Errorf("paste the prompt into session %s: %w", s.ID, err)
 	}
 	if err := m.tmux.SendKeys(ctx, name, enterKey); err != nil {
 		return fmt.Errorf("submit the prompt in session %s: %w", s.ID, err)
 	}
 	return nil
+}
+
+// specOf is the harness facts for a session, derived from its configured start
+// command each time (research D1). A name the operator has since removed reads
+// as Other, whose spec asks for nothing special.
+func (m *Manager) specOf(s Session) harness.Spec {
+	name := s.StartCommand
+	if name == "" {
+		name = config.DefaultStartCommandName
+	}
+	cmd, err := m.resolveStartCommand(name)
+	if err != nil {
+		return harness.For(harness.Other)
+	}
+	return harness.For(harness.Of(cmd))
+}
+
+// paste delivers a payload the way the session's harness submits it: Codex
+// swallows the Enter after a plain paste (research M3), so it gets a bracketed
+// one. It serves Prompt and Compact only. Type is bracketed for every harness
+// and must not route through here, because Claude's BracketedPaste is false.
+func (m *Manager) paste(ctx context.Context, s Session, payload []byte) error {
+	if m.specOf(s).BracketedPaste {
+		return m.tmux.PasteBracketed(ctx, s.TmuxName(), payload)
+	}
+	return m.tmux.Paste(ctx, s.TmuxName(), payload)
 }
 
 // Compact asks a session to compact itself, by delivering Claude Code's own
@@ -1134,6 +1160,18 @@ func (m *Manager) Compact(ctx context.Context, s Session) error {
 	// the record changed on the line above.
 	if after := s.DisplayState(now); after != displayed {
 		m.emit(FleetChanged, s)
+	}
+
+	// Codex takes the command bracketed and a separate Enter (research M5): a
+	// newline inside a bracketed paste is text, not a submit.
+	if m.specOf(s).BracketedPaste {
+		if err := m.paste(ctx, s, []byte("/compact")); err != nil {
+			return fmt.Errorf("deliver the compact command to session %s: %w", s.ID, err)
+		}
+		if err := m.tmux.SendKeys(ctx, s.TmuxName(), enterKey); err != nil {
+			return fmt.Errorf("submit the compact command in session %s: %w", s.ID, err)
+		}
+		return nil
 	}
 
 	// One call, and nothing after it. The newline is in the payload, so there is
