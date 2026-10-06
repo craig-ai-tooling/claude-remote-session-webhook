@@ -41,7 +41,16 @@ func newTyper(t *testing.T) *typer {
 	keys := newKeyServer(t)
 	cfg := testConfig(loopbackListen)
 	cfg.MaxBodyBytes = config.DefaultMaxBodyBytes
-	return &typer{compactor: &compactor{testServer: newAuditedServerOn(t, cfg, keys.validator(t)), keys: keys}}
+	ts := newAuditedServerOn(t, cfg, keys.validator(t))
+	// Pinned for the reason newTestServer pins the create bucket: on the host
+	// clock the bucket refills two tokens a second, so a budget test that takes
+	// longer than half a second to spend 120 finds one back and is admitted.
+	inputs, err := newLimiter[auth.CallerID]("input", inputRatePerMin, fixedClock{at: testTime})
+	if err != nil {
+		t.Fatalf("newLimiter(input) = _, %v; want a limiter", err)
+	}
+	ts.inputs = inputs
+	return &typer{compactor: &compactor{testServer: ts, keys: keys}}
 }
 
 // typed posts one form at the type route as the browser this daemon rendered the
