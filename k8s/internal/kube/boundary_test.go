@@ -96,7 +96,7 @@ func TestBoundaryRootImportsNothingFromK8s(t *testing.T) {
 		if filepath.Ext(path) != ".go" {
 			return nil
 		}
-		src, err := os.ReadFile(path)
+		src, err := os.ReadFile(path) //nolint:gosec // path comes from walking this repo's own tree, not from input
 		if err != nil {
 			return err
 		}
