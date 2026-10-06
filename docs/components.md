@@ -1023,6 +1023,58 @@ And these are the lifetime override's:
   is `--s4` square. Sizing the row rather than the box is the same statement the
   bullet above makes, in geometry.
 
+### Radio group
+
+One choice from a short, closed list, where every option should be visible at once.
+It is the create form's **Runtime** control (spec 019): Claude Code or Codex. Use it
+for two to four options a person compares by reading them. A longer list is a
+`<select>`, and an on/off choice is the switch above.
+
+Specified here before it is built. The first markup that uses it, and the CSS for
+the classes below, arrive together in spec 019 T015, because the stylesheet test
+fails on a class no template renders.
+
+```html
+<fieldset class="radio-group">
+  <legend class="radio-group-legend">Runtime</legend>
+  <label class="radio-option"><input type="radio" name="harness" value="claude" checked> <span>Claude Code</span></label>
+  <label class="radio-option"><input type="radio" name="harness" value="codex"> <span>Codex</span></label>
+  <p class="field-hint">…</p>
+</fieldset>
+```
+
+| Class | What it is |
+|---|---|
+| `.radio-group` | The `<fieldset>`. No border, no padding, no margin, like the switch's container |
+| `.radio-group-legend` | The `<legend>`. Same font, size and colour tokens as `.switch-label` |
+| `.radio-option` | One label wrapping one native radio and its text. Inline flex, gap `--s2`, `min-block-size: var(--tap)`, pointer cursor |
+
+Rules:
+- **Native `<input type="radio">` inside `<label>`, and no ARIA added.** The
+  fieldset and legend already give the group its name, and the browser already
+  gives the arrow-key movement and the checked state. A `role="radiogroup"` on top
+  would say the same thing a second time and invite the two to disagree.
+- **The input shares the name and differs by value.** The browser sends one value
+  or none. The server treats the value as one of a fixed set of literals, never a
+  configured name, as it does for the remote-control switch.
+- **Exactly one option ships `checked`**, the less privileged or existing
+  behaviour (Claude Code). Unlike the switch there is no "none" state to lose, so
+  the default is stated in the markup rather than left to a missing field.
+- **Themed, not replaced.** `.radio-option input` takes `accent-color:
+  var(--phosphor)`, the switch's on-state token, and no `appearance: none`. The
+  filled dot is a shape, and the colour only reinforces it. No new token.
+- **Focus uses the global ring.** `.radio-option input:focus-visible` gets the same
+  focus-ring rule the switch uses, and nothing removes the outline.
+- **The label is the target.** The pointer is on the whole `.radio-option`, and on
+  a touch pointer the row is at least `--tap` tall, as the switch's row is.
+- **Disabled** options take `.button:disabled`'s treatment: `--dim` text and the
+  default cursor, never an opacity. The switch has no disabled rule of its own
+  today, so that is the nearest existing one. Add no new token.
+- **It wraps, it never scrolls.** Under the phone breakpoint the create form
+  already uses, each option takes its own line.
+- **No inline style, and the CSP is unchanged.** The hint is a plain
+  `.field-hint` inside the fieldset.
+
 ## Command preview
 
 The create form's readout of the line it will run (milestone 15,
