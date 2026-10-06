@@ -1,0 +1,103 @@
+{{- include "crswd.validate" . }}
+{{- $_ := required "sharedSecret.existingSecret is required (a Secret with key secret: openssl rand -hex 32)" .Values.sharedSecret.existingSecret }}
+{{- if and .Values.service.enabled (not .Values.access.teamDomain) (not .Values.dashboardPassword.existingSecret) }}{{ fail "service.enabled needs a browser door: set access.* or dashboardPassword.existingSecret" }}{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crswd
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "crswd.labels" (dict "root" . "component" "daemon") | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate: a second daemon beside the first is never wanted.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "crswd.selectorLabels" (dict "root" . "component" "daemon") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "crswd.selectorLabels" (dict "root" . "component" "daemon") | nindent 8 }}
+    spec:
+      serviceAccountName: crswd
+      containers:
+        - name: daemon
+          image: {{ include "crswd.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: work
+              mountPath: /work
+          env:
+            - name: CRSW_EXECUTION_MODE
+              value: kubernetes
+            - name: CRSW_SESSION_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            # Loopback unless a Service is on; the guard above refuses a Service with no browser door.
+            - name: CRSW_LISTEN
+              value: {{ ternary (printf "0.0.0.0:%v" .Values.service.port) "127.0.0.1:8765" .Values.service.enabled | quote }}
+            # config.Load needs every root to exist on the daemon's own filesystem; the sessions' real /work is in their pods.
+            - name: CRSW_ALLOWED_ROOTS
+              value: {{ .Values.allowedRoots | quote }}
+            - name: CRSW_MAX_SESSIONS
+              value: {{ .Values.maxSessions | quote }}
+            - name: CRSW_START_COMMANDS
+              value: {{ .Values.startCommands | quote }}
+            - name: CRSW_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sharedSecret.existingSecret | quote }}
+                  key: secret
+            {{- if .Values.dashboardPassword.existingSecret }}
+            - name: CRSW_DASHBOARD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dashboardPassword.existingSecret | quote }}
+                  key: password
+            {{- end }}
+            {{- if .Values.access.teamDomain }}
+            - name: CRSW_ACCESS_TEAM_DOMAIN
+              value: {{ .Values.access.teamDomain | quote }}
+            - name: CRSW_ACCESS_AUD
+              value: {{ .Values.access.aud | quote }}
+            - name: CRSW_ACCESS_ALLOWED_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "access.allowedEmailsSecret.name is required with access.teamDomain: the allow list is a secret and comes from an existing Secret" .Values.access.allowedEmailsSecret.name | quote }}
+                  key: {{ required "access.allowedEmailsSecret.key is required with access.teamDomain" .Values.access.allowedEmailsSecret.key | quote }}
+            {{- end }}
+        {{- if .Values.cloudflared.enabled }}
+        - name: cloudflared
+          image: {{ .Values.cloudflared.image | quote }}
+          args: ["tunnel", "--no-autoupdate", "run"]
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "cloudflared.tokenSecret is required when cloudflared.enabled" .Values.cloudflared.tokenSecret | quote }}
+                  key: token
+        {{- end }}
+      volumes:
+        - name: work
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -5,6 +5,7 @@
       "Bash(go mod:*)", "Bash(go build:*)", "Bash(go test:*)", "Bash(go vet:*)",
       "Bash(go fmt:*)", "Bash(go run:*)", "Bash(go env:*)", "Bash(go version)",
       "Bash(go get:*)", "Bash(go -C k8s:*)", "Bash(go list:*)",
+      "Bash(helm lint:*)", "Bash(helm template:*)", "Bash(bash -n:*)", "Bash(shellcheck:*)",
       "Bash(gofmt:*)", "Bash(goimports:*)", "Bash(golangci-lint:*)",
       "Bash(git add:*)", "Bash(git commit:*)", "Bash(git status:*)",
       "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",

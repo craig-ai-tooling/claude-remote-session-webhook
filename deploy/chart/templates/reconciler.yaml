@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crswd-reconciler
+  namespace: {{ include "crswd.reconcilerNamespace" . }}
+  labels:
+    {{- include "crswd.labels" (dict "root" . "component" "reconciler") | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate: a second reconciler beside the first is never wanted.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "crswd.selectorLabels" (dict "root" . "component" "reconciler") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "crswd.selectorLabels" (dict "root" . "component" "reconciler") | nindent 8 }}
+    spec:
+      serviceAccountName: crswd-reconciler
+      containers:
+        - name: reconciler
+          image: {{ include "crswd.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["reconcile"]
+          securityContext:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: CRSW_SESSION_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: CRSW_RECONCILER_NAMESPACE
+              value: {{ include "crswd.reconcilerNamespace" . | quote }}
+            - name: CRSW_SESSION_IMAGE
+              value: {{ include "crswd.sessionImage" . | quote }}
+            - name: CRSW_SESSION_NODE
+              value: {{ .Values.sessionNode | quote }}
+            - name: CRSW_SESSION_CLAIM
+              value: crswd-sessions
+            - name: CRSW_MAX_SESSIONS
+              value: {{ .Values.maxSessions | quote }}
+            - name: CRSW_CLAUDE_SECRET
+              value: {{ .Values.claudeCredentials.secretName | quote }}
+            - name: CRSW_CODEX_SECRET
+              value: {{ .Values.codexAuth.secretName | quote }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

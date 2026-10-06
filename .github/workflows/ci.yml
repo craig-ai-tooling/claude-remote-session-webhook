@@ -262,3 +262,23 @@ jobs:
       - name: Build (k8s)
         if: steps.k8s.outputs.present == 'true'
         run: go -C k8s build ./...
+
+      # The chart is rendered here, in the required job, for the same reason the
+      # cluster module's steps are: a chart that no longer renders must block the
+      # merge, not surface on someone's helm install. The last command inverts
+      # the check on purpose: a Service with no browser door must NOT render.
+      - name: Set up helm
+        if: hashFiles('deploy/chart/Chart.yaml') != ''
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.16.3
+
+      - name: Chart (lint and render)
+        if: hashFiles('deploy/chart/Chart.yaml') != ''
+        run: |
+          helm lint deploy/chart --set sharedSecret.existingSecret=s --set sessionNode=n
+          helm template t deploy/chart -n crswd --include-crds --set sharedSecret.existingSecret=s --set sessionNode=n > /dev/null
+          helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s --set sessionNode=n --set service.enabled=true --set dashboardPassword.existingSecret=p --set cloudflared.enabled=true --set cloudflared.tokenSecret=t > /dev/null
+          if helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s --set sessionNode=n --set service.enabled=true > /dev/null 2>&1; then echo "service without a browser door rendered"; exit 1; fi
+          if helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s --set sessionNode=n --set reconciler.namespace=crswd > /dev/null 2>&1; then echo "reconciler in the release namespace rendered"; exit 1; fi
+          if helm template t deploy/chart -n crswd --set sharedSecret.existingSecret=s > /dev/null 2>&1; then echo "chart without sessionNode rendered"; exit 1; fi

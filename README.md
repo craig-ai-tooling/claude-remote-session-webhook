@@ -137,6 +137,9 @@ lifetime enforced by a reaper — deadlines a create can switch off only as far 
 
 ## Install
 
+This section is the host install (binary and systemd). The Kubernetes install is
+[Install on Kubernetes](#install-on-kubernetes).
+
 **There are two deployments, and choosing between them comes before anything you
 type.** Both run the same installer and the same daemon; what differs is which
 door the dashboard has, and therefore where the daemon is allowed to listen.
@@ -396,6 +399,43 @@ bit, so install it rather than copying it:
 ```bash
 install -m 0755 crswd-api ~/.local/bin/crswd-api
 ```
+
+---
+
+## Install on Kubernetes
+
+crswd has two supported installs, and both run Claude Code and Codex sessions. The host
+install above is a binary under systemd. The Kubernetes install is a Helm chart: one
+`AgentSession` object per session, one pod per session, a daemon Deployment for the
+dashboard and API, and a reconciler Deployment in its own namespace that creates the pods.
+Neither is a reduced version of the other.
+
+You need a cluster, a storage class that can provide a `ReadWriteOnce` volume, `kubectl`,
+and `helm` 3.
+
+```bash
+kubectl create namespace crswd
+kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
+SESSION_NODE=$(kubectl get nodes -l kubernetes.io/arch=amd64 -o name | head -1 | cut -d/ -f2)  # every session pod runs on this node, beside the session disk
+helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode="$SESSION_NODE"
+kubectl -n crswd port-forward deploy/crswd 8765
+```
+
+The dashboard is then at `http://127.0.0.1:8765`. The chart creates no Service by default and
+the daemon listens on loopback inside its pod, so `port-forward` is the way in. `service.enabled`
+adds a ClusterIP Service, and the chart refuses it unless a browser door is configured
+(`access.teamDomain` or `dashboardPassword.existingSecret`).
+
+- **Both runtimes are on by default.** `startCommands` offers a Claude Code entry and a
+  `codex` entry. Codex in a pod signs in with the namespace's own `codex-auth` Secret, never a
+  copy of a host's `~/.codex/auth.json`.
+- **`sessionNode`** is required: the amd64 node that holds the claim. The session image is amd64 only
+  and the claim is `ReadWriteOnce`, so every session pod runs there.
+- **Upgrade** with `helm upgrade`. The dashboard's Update button is off in this mode.
+- **Uninstall** with `helm uninstall`. The `crswd-sessions` claim is kept, so every conversation
+  survives. Delete it by hand when you are sure.
+
+The values, the Secrets you create, and teardown are in [`docs/k8s-mode.md`](docs/k8s-mode.md).
 
 ---
 

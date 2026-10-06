@@ -35,8 +35,8 @@ crswd ships two supported deployments, and both run Claude Code and Codex sessio
 | Upgrade | the dashboard's self-updater | the chart (FR-003) |
 | Sign-in | the host's own logins and the dashboard relays | per-namespace logins (FR-015, FR-016, FR-022) |
 
-Neither is a reduced version of the other. The host install is unchanged. Until the Helm chart
-exists, the Kubernetes column is this document.
+Neither is a reduced version of the other. The host install is unchanged. The Kubernetes column is
+[Install with Helm](#install-with-helm), or the hand install above it.
 
 ## Images and how to build them
 
@@ -89,6 +89,71 @@ that change uncommitted. A test fails if a real tag reaches the tree.
 
 Sessions run on `lm-amd64-1`, because the session image is amd64 only and the claim is
 `ReadWriteOnce` on one node (FR-008). The claim `crswd-sessions` is 50Gi on `linstor-replicated`.
+
+## Install with Helm
+
+The chart is `deploy/chart`, published as an OCI artifact. Images and chart share one version,
+`2.0.N` for commit count N, built by `.github/workflows/images.yml` and pushed to `ghcr.io`.
+Make the three packages (`crswd`, `crswd-session`, `charts/crswd`) public once, because the
+cluster has no pull secret.
+
+The chart creates no secret values. It references Secrets you create in the release namespace:
+
+| Secret | Key | Needed |
+|---|---|---|
+| `sharedSecret.existingSecret` | `secret` (`openssl rand -hex 32`) | always |
+| `dashboardPassword.existingSecret` | `password` | for the password door |
+| `access.allowedEmailsSecret.name` | `access.allowedEmailsSecret.key` (comma-separated addresses) | for the Cloudflare Access door |
+| `claudeCredentials.secretName` (default `claude-credentials`) | the keeper login | for Claude Code sessions |
+| `codexAuth.secretName` (default `codex-auth`) | the namespace's Codex login | for Codex sessions |
+| `cloudflared.tokenSecret` | `token` | when `cloudflared.enabled` |
+
+Values:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `image.repository`, `image.tag`, `image.pullPolicy` | `ghcr.io/craig-ai-tooling/crswd`, chart `appVersion`, `IfNotPresent` | daemon and reconciler image |
+| `sessionImage.repository`, `sessionImage.tag` | `ghcr.io/craig-ai-tooling/crswd-session`, chart `appVersion` | what a session pod runs |
+| `reconciler.namespace` | `<release namespace>-reconciler` | where the reconciler and its Lease live |
+| `reconciler.createNamespace` | `true` | create that namespace |
+| `sharedSecret.existingSecret` | none, required | HMAC secret for the API |
+| `dashboardPassword.existingSecret` | none | the password door, no Access |
+| `startCommands` | Claude Code and `codex` | `CRSW_START_COMMANDS`, both runtimes (FR-021) |
+| `sessionNode` | none, required | the amd64 node that holds the claim; every session pod runs there |
+| `claudeCredentials.secretName`, `codexAuth.secretName` | `claude-credentials`, `codex-auth` | per-namespace logins (FR-022) |
+| `allowedRoots` | `/work` | `CRSW_ALLOWED_ROOTS` |
+| `maxSessions` | `10` | `CRSW_MAX_SESSIONS` |
+| `storage.storageClassName`, `storage.size` | `linstor-replicated`, `50Gi` | the claim `crswd-sessions` |
+| `nodeSelector`, `tolerations` | none, the DRBD lost-quorum toleration | daemon pod placement |
+| `service.enabled`, `service.port` | `false`, `8765` | ClusterIP Service, and the listener moves to `0.0.0.0` |
+| `access.teamDomain`, `access.aud`, `access.allowedEmailsSecret.name`, `access.allowedEmailsSecret.key` | none | the Cloudflare Access door; the allow list is read from an existing Secret, never a literal value |
+| `cloudflared.enabled`, `cloudflared.image`, `cloudflared.tokenSecret` | `false`, image pinned by digest, none | tunnel sidecar over loopback |
+
+`reconciler.namespace` must differ from the release namespace, and `sessionNode` must be set;
+the chart fails at render time otherwise.
+
+To bump cloudflared, look up the digest of the new tag with
+`docker buildx imagetools inspect docker.io/cloudflare/cloudflared:<tag>`, then set
+`cloudflared.image` to `docker.io/cloudflare/cloudflared@sha256:<digest>` in
+`deploy/chart/values.yaml` and keep the tag in the comment beside it.
+
+`service.enabled` fails at render time unless `access.teamDomain` or
+`dashboardPassword.existingSecret` is set, because the daemon refuses a non-loopback listener
+with no browser door.
+
+```
+kubectl create namespace crswd
+kubectl -n crswd create secret generic crswd-shared-secret --from-literal=secret="$(openssl rand -hex 32)"
+SESSION_NODE=$(kubectl get nodes -l kubernetes.io/arch=amd64 -o name | head -1 | cut -d/ -f2)  # every session pod runs on this node, beside the session disk
+helm install crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --set sharedSecret.existingSecret=crswd-shared-secret --set sessionNode="$SESSION_NODE"
+helm upgrade crswd oci://ghcr.io/craig-ai-tooling/charts/crswd -n crswd --reuse-values
+helm uninstall crswd -n crswd
+```
+
+The CRD is in the chart's `crds/` directory, and Helm installs it once and never upgrades or
+deletes it. The claim carries `helm.sh/resource-policy: keep`, so `helm uninstall` leaves it and
+every conversation. Finish with the Teardown steps below for the claim, the reconciler namespace
+and the retained volume.
 
 ## Runtimes
 

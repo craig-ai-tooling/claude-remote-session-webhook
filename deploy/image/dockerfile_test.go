@@ -2,6 +2,7 @@ package image
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -52,8 +53,8 @@ func TestCrswdImageDockerfileShape(t *testing.T) {
 		return out
 	}
 
-	if from := byWord("FROM"); len(from) != 1 || from[0] != "FROM gcr.io/distroless/static-debian12:nonroot" {
-		t.Errorf("FROM = %q, want the one distroless static nonroot line", from)
+	if from := byWord("FROM"); len(from) != 1 || !regexp.MustCompile(`^FROM gcr\.io/distroless/static-debian12:nonroot@sha256:[0-9a-f]{64}$`).MatchString(from[0]) {
+		t.Errorf("FROM = %q, want the one distroless static nonroot line pinned tag@sha256:<digest>", from)
 	}
 	if copies := byWord("COPY"); len(copies) != 1 || copies[0] != "COPY --chmod=0755 crswd-${TARGETARCH} /usr/local/bin/crswd" {
 		t.Errorf("COPY = %q, want exactly the one per-arch binary", copies)
