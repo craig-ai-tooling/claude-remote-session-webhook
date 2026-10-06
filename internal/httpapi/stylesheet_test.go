@@ -2709,6 +2709,12 @@ func TestTheReflowIsOfferedRatherThanTaken(t *testing.T) {
 	if !found {
 		t.Fatal("crswd.js carries no reflow module at all, so the offer the pane renders is never revealed to anybody")
 	}
+	// The module is closed by its own IIFE. It used to be the last thing in the
+	// file, so "the rest of the file" was the module; the input client now follows
+	// it, and its fetch and requestSubmit are not this control's.
+	if end := strings.Index(module, "})();"); end >= 0 {
+		module = module[:end]
+	}
 
 	query := regexp.MustCompile(`querySelectorAll\(\s*['"][^'"]*data-reflow[^'"]*['"]\s*\)`)
 	if query.FindString(module) == "" {
@@ -4087,4 +4093,91 @@ func blockAfter(t *testing.T, source, marker string) string {
 	}
 	t.Fatalf("the block introduced by %q is never closed", marker)
 	return ""
+}
+
+// inputClient is the session page's input module, cut out of the script by its
+// leading comment, so a claim about it cannot be satisfied by the shared handler
+// that sits fifteen hundred lines above.
+func inputClient(t *testing.T) string {
+	t.Helper()
+
+	js, err := web.Static.ReadFile("static/crswd.js")
+	if err != nil {
+		t.Fatalf("read the embedded script: %v", err)
+	}
+	const marker = "/* The session page's input panel (spec 018). */"
+	whole := string(js)
+	at := strings.Index(whole, marker)
+	if at < 0 {
+		t.Fatalf("crswd.js carries no %q, so the input client cannot be read", marker)
+	}
+	rest := whole[at+len(marker):]
+	end := strings.Index(rest, "})();")
+	if end < 0 {
+		t.Fatal("the input client is never closed")
+	}
+	return jsComment.ReplaceAllString(rest[:end], "")
+}
+
+// TestTheInputClientSkipsTheSharedHandler holds the early return that keeps the
+// shared dashboard handler off the two input forms. Their answer is a 204 with
+// no banner, which that handler would turn into "The host answered without a
+// message" after the input module had already handled it.
+func TestTheInputClientSkipsTheSharedHandler(t *testing.T) {
+	t.Parallel()
+
+	if !strings.Contains(script(t), "hasAttribute('data-session-input')") {
+		t.Error("the shared submit handler does not skip forms marked data-session-input")
+	}
+}
+
+func TestTheInputClientPostsSameOrigin(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	for _, want := range []string{"credentials: 'same-origin'", "data-session-input"} {
+		if !strings.Contains(client, want) {
+			t.Errorf("the input client does not carry %q", want)
+		}
+	}
+	if strings.Contains(client, "innerHTML") {
+		t.Error("the input client reaches for innerHTML")
+	}
+}
+
+func TestTheScrollbackIsText(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	if !strings.Contains(client, "textContent =") {
+		t.Error("the input client never assigns textContent, so scrollback reaches the page some other way")
+	}
+	for _, sink := range []string{"innerHTML", "insertAdjacentHTML", "outerHTML"} {
+		if strings.Contains(client, sink) {
+			t.Errorf("the input client uses %s, and scrollback is pane content", sink)
+		}
+	}
+}
+
+func TestCtrlEnterSends(t *testing.T) {
+	t.Parallel()
+
+	if !strings.Contains(inputClient(t), "event.ctrlKey || event.metaKey") {
+		t.Error("the input client does not send on Ctrl or Cmd+Enter")
+	}
+}
+
+func TestTheInputClientRemembersTheClickedButton(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	for _, want := range []string{
+		"new WeakMap()",
+		"lastClicked.set(",
+		"event.submitter || lastClicked.get(form)",
+	} {
+		if !strings.Contains(client, want) {
+			t.Errorf("the input client does not carry %q, so a browser without SubmitEvent.submitter loses the pressed key", want)
+		}
+	}
 }
