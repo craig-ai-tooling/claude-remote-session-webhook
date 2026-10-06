@@ -154,3 +154,26 @@ For the next iteration:
 - `go -C k8s` works for the cluster module; the sandbox refuses `(...)` groups, so run commands one per call.
 
 Noticed, not fixed: none.
+
+## Iteration 5 (T4, images): written, NOT ticked
+
+Wrote `deploy/image/{Dockerfile,doc.go,dockerfile_test.go}`, `deploy/session-image/fetch-codex.sh`,
+and edited `deploy/session-image/Dockerfile` (second COPY, new tag scheme, build block, CA note) and
+`internal/sessionpod/dockerfile_test.go` (two COPY lines, new tag string).
+
+Failing first: `internal/sessionpod/dockerfile_test.go:69: COPY = ["COPY --chmod=0755 crswd /usr/local/bin/crswd"], want exactly the crswd binary then the codex binary`, and for the new package `dockerfile_test.go:43: read Dockerfile: open Dockerfile: no such file or directory`.
+
+Passing: `go test -run Dockerfile ./internal/sessionpod ./deploy/image -v`. Full pre-commit list passed
+(`-tags quickstart` failed once on the known `TestDashboardQuickstartStory2Cap` flake, passed on the
+rerun, 120s; `127.0.0.1:8765` was free).
+
+Not done, why: the sandbox refused `bash -n deploy/session-image/fetch-codex.sh` (the other half of
+T4's verify) and `chmod +x deploy/session-image/fetch-codex.sh`. I did not try another interpreter to
+get around it. So the script's syntax is unchecked and the file is mode 0644, and the Dockerfile
+build block calls it as `deploy/session-image/fetch-codex.sh "$BIN"`. T4 stays `- [ ]`.
+
+For the next iteration (an operator or a session with those two permitted):
+- Run `bash -n deploy/session-image/fetch-codex.sh`, then `chmod +x` it (or `git update-index --chmod=+x`). If both pass, tick T4; nothing else is left in it.
+- Do not rewrite the Dockerfiles or tests; they are done and green.
+
+Noticed, not fixed: the quickstart cap flake again (2nd time, Iterations 2 and 5).
