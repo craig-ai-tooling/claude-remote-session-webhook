@@ -17,7 +17,7 @@ None. This slice does not need S2 or S3 code.
 Take the topmost open task. One per iteration.
 
 - [x] T1: Create the nested module and its first package per Design §1 and §2: `k8s/go.mod`, `k8s/go.sum`, `k8s/internal/kube/kube.go`, `k8s/internal/kube/kube_test.go`. Verify: `go -C k8s vet ./... && go -C k8s test ./...` exits 0, and `test ! -e go.sum` exits 0 at the repo root.
-- [ ] T2: Add the `/k8s` gomod entry to `.github/dependabot.yml` per Design §3. Verify: `python3 -c "import yaml" 2>/dev/null` is not required; `grep -n 'directory: "/k8s"' .github/dependabot.yml` prints one line.
+- [x] T2: Add the `/k8s` gomod entry to `.github/dependabot.yml` per Design §3. Verify: `python3 -c "import yaml" 2>/dev/null` is not required; `grep -n 'directory: "/k8s"' .github/dependabot.yml` prints one line.
 - [ ] T3: Add `k8s/internal/kube/boundary_test.go` per Design §4. Verify: `go -C k8s test ./internal/kube -run Boundary -v` passes.
 - [ ] T4: Run every command in VALIDATION_CONTRACT.md and record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go -C k8s test ./... && go test ./...` exits 0.
 

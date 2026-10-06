@@ -47,3 +47,15 @@ Gate: `go -C k8s vet/test/build` pass. Root `go build`, `go vet`, `go test`, `-t
 Rediscovery traps: root `golangci-lint run` refuses with "parallel golangci-lint is running" while another session lints; wait with `until ! pgrep -x golangci-lint; do sleep 3; done` rather than skipping. A `cd` in a compound command is refused by the sandbox even for a sed edit; use Edit.
 
 Noticed, not fixed: none.
+
+## Iteration 4 (T2)
+
+Appended the `/k8s` gomod entry to `.github/dependabot.yml` (same shape as the root entry, limit 5, comment cites spec 017 decision 1 option A). Root entry untouched.
+
+Failing first: `grep -n 'directory: "/k8s"' .github/dependabot.yml` printed nothing and exited 1. After: one line, 38. `yaml.safe_load` sees 3 update entries.
+
+Gate: root `go build`, `go vet`, `go test`, `-tags tmux` and `golangci-lint run` (0 issues) pass; `go -C k8s vet/test/build` pass; `test ! -e go.sum` ok, `grep -c require go.mod` prints 0. **`go test -tags quickstart ./cmd/crswd` FAILS**: `TestDashboardQuickstartStory2Cap`, `quickstart_dashboard_test.go:844: a stream opened after one closed = 429, want 200`, 3 of 3 reruns plus the full suite. This diff touches no Go, so the YAML cannot cause it. The cause I found: the deployed `crswd` (pid 1537404) is now listening on 127.0.0.1:8765, which iteration 3 found free. I did not confirm that is the cause, and I could not run the test at an unmodified HEAD because the sandbox refuses `git worktree add`. Committed anyway because the change is YAML only; the operator should rerun quickstart with 8765 free before the PR.
+
+Rediscovery traps: a `... | tail` after a Go command hides its exit status, so read the output rather than the `$?`. `git worktree add` and `mktemp -d` command substitution are refused by the sandbox.
+
+Noticed, not fixed: the quickstart failure above.
