@@ -106,7 +106,14 @@
                     ],
                     "type": "string"
                   },
+                  "podRecreates": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "reason": {
+                    "type": "string"
+                  },
+                  "recreateOf": {
                     "type": "string"
                   }
                 },

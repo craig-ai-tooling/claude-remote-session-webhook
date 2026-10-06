@@ -2,7 +2,6 @@ package reconcile
 
 import (
 	"context"
-	"strconv"
 	"testing"
 	"time"
 
@@ -143,8 +142,8 @@ func TestReconcileFailedPodDeletedOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o.Metadata.Annotations[AnnotationRecreates] != "1" {
-		t.Errorf("recreates = %q, want 1", o.Metadata.Annotations[AnnotationRecreates])
+	if o.Status.PodRecreates != 1 {
+		t.Errorf("recreates = %d, want 1", o.Status.PodRecreates)
 	}
 }
 
@@ -257,17 +256,15 @@ func TestReconcileAlreadyExistsIsNotAnError(t *testing.T) {
 
 func TestReconcileRecreateCapReached(t *testing.T) {
 	t.Parallel()
-	for name, val := range map[string]string{
-		"at the cap":                       strconv.Itoa(MaxRecreates),
-		"garbage recreates annotation":     "three",
-		"empty recreates annotation":       "",
-		"negative recreates annotation":    "-1",
-		"overflowing recreates annotation": "99999999999999999999",
+	for name, n := range map[string]int{
+		"at the cap":   MaxRecreates,
+		"over the cap": MaxRecreates + 3,
+		"negative":     -1,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			o := podObj()
-			o.Metadata.Annotations = map[string]string{AnnotationRecreates: val}
+			o.Status.PodRecreates = n
 			g := newRig(t, podCfg(), []v1alpha1.AgentSession{o}, ownedPod(t, corev1.PodFailed))
 			if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
 				t.Fatal(err)
@@ -285,7 +282,7 @@ func TestReconcileRecreateCapReached(t *testing.T) {
 func TestReconcileRunningPodClearsRecreateCount(t *testing.T) {
 	t.Parallel()
 	o := podObj()
-	o.Metadata.Annotations = map[string]string{AnnotationRecreates: "2"}
+	o.Status.PodRecreates, o.Status.RecreateOf = 2, "pu0"
 	g := newRig(t, podCfg(), []v1alpha1.AgentSession{o}, ownedPod(t, corev1.PodRunning))
 	if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
 		t.Fatal(err)
@@ -294,8 +291,8 @@ func TestReconcileRunningPodClearsRecreateCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := got.Metadata.Annotations[AnnotationRecreates]; ok {
-		t.Error("recreate count not cleared")
+	if got.Status.PodRecreates != 0 || got.Status.RecreateOf != "" {
+		t.Errorf("recreate state not cleared: %+v", got.Status)
 	}
 	if got.Status.Phase != v1alpha1.PhaseRunning {
 		t.Errorf("phase = %q, want Running", got.Status.Phase)

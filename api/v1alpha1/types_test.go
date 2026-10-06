@@ -30,7 +30,7 @@ func TestSpecAndStatusFieldAllowlist(t *testing.T) {
 		{"spec", reflect.TypeOf(AgentSessionSpec{}),
 			[]string{"conversation", "lifetime", "owner", "sessionName", "startCommand", "workDir"}},
 		{"status", reflect.TypeOf(AgentSessionStatus{}),
-			[]string{"conversation", "phase", "reason"}},
+			[]string{"conversation", "phase", "podRecreates", "reason", "recreateOf"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

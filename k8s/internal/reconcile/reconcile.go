@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"github.com/nctiggy/claude-remote-session-webhook/api/v1alpha1"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/admit"
@@ -17,13 +16,8 @@ import (
 )
 
 const (
-	// AnnotationRecreates counts consecutive pod recreates for one object.
-	AnnotationRecreates = v1alpha1.Group + "/pod-recreates"
 	// MaxRecreates bounds a pod that fails at every start.
 	MaxRecreates = 5
-	// AnnotationRecreateOf records the UID of the failed pod whose recreate has
-	// been counted, which makes the count-then-delete step idempotent.
-	AnnotationRecreateOf = v1alpha1.Group + "/pod-recreate-of"
 	// AnnotationConversation is the key podctl writes for @crswd-conversation.
 	AnnotationConversation = v1alpha1.Group + "/conversation"
 
@@ -54,10 +48,23 @@ func New(kube kubernetes.Interface, dyn dynamic.Interface, cfg Config) (*Reconci
 // recorded on the object. It is the only writer of status.conversation (spec
 // 017 FR-005). A write that would change nothing is skipped.
 func (r *Reconciler) setStatus(ctx context.Context, obj v1alpha1.AgentSession, phase v1alpha1.Phase, reason string) error {
-	want := v1alpha1.AgentSessionStatus{Phase: phase, Reason: reason, Conversation: obj.Status.Conversation}
+	return r.writeStatus(ctx, obj, statusFor(obj, phase, reason))
+}
+
+// statusFor is obj's status with a new verdict. The recreate count and
+// reservation ride along unchanged.
+func statusFor(obj v1alpha1.AgentSession, phase v1alpha1.Phase, reason string) v1alpha1.AgentSessionStatus {
+	want := obj.Status
+	want.Phase, want.Reason = phase, reason
 	if c := obj.Metadata.Annotations[AnnotationConversation]; c != "" {
 		want.Conversation = c
 	}
+	return want
+}
+
+// writeStatus is the one status write, bound to the object that was read. A
+// write that would change nothing is skipped.
+func (r *Reconciler) writeStatus(ctx context.Context, obj v1alpha1.AgentSession, want v1alpha1.AgentSessionStatus) error {
 	if want == obj.Status {
 		return nil
 	}
@@ -165,53 +172,42 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 			return r.rejectLive(ctx, obj, pod, reason)
 		}
 	}
-	_, counted := obj.Metadata.Annotations[AnnotationRecreates]
-	_, reserved := obj.Metadata.Annotations[AnnotationRecreateOf]
 
 	switch pod.Status.Phase {
 	case corev1.PodFailed, corev1.PodSucceeded:
 		if pod.Status.Phase == corev1.PodFailed && pod.Status.Reason == "DeadlineExceeded" {
 			return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, reasonLifetime)
 		}
-		n := recreateCount(obj.Metadata.Annotations)
-		reservedHere := obj.Metadata.Annotations[AnnotationRecreateOf] == string(pod.UID)
+		n := obj.Status.PodRecreates
+		reservedHere := obj.Status.RecreateOf == string(pod.UID)
 		// An attempt already reserved for this pod passed the cap when it was made.
-		if n >= MaxRecreates && !reservedHere {
+		// A negative count is corrupt, and for a bound the safe reading is "full".
+		if (n >= MaxRecreates || n < 0) && !reservedHere {
 			return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, fmt.Sprintf("the session pod failed %d times in a row", MaxRecreates))
 		}
 		// Reserve the attempt before the pod goes: a crash between the two
 		// writes then costs a retry of the delete, not an uncounted recreate.
 		// The pod's UID marks the reservation, so a second pass over the same
-		// failed pod deletes without counting again.
+		// failed pod deletes without counting again. It is written to status,
+		// which only the reconciler can write; an annotation could be forged.
 		if !reservedHere {
-			var err error
-			obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
-				if o.Metadata.Annotations == nil {
-					o.Metadata.Annotations = map[string]string{}
-				}
-				o.Metadata.Annotations[AnnotationRecreates] = strconv.Itoa(n + 1)
-				o.Metadata.Annotations[AnnotationRecreateOf] = string(pod.UID)
-			})
-			if err != nil {
+			want := obj.Status
+			want.PodRecreates, want.RecreateOf = n+1, string(pod.UID)
+			want.Phase, want.Reason = v1alpha1.PhaseReviving, ""
+			if err := r.writeStatus(ctx, obj, want); err != nil {
 				return err
 			}
+			return r.deletePod(ctx, pod)
 		}
 		if err := r.deletePod(ctx, pod); err != nil {
 			return err
 		}
 		return r.setStatus(ctx, obj, v1alpha1.PhaseReviving, "")
 	case corev1.PodRunning:
-		if counted || reserved {
-			var err error
-			obj, err = r.sessions.Update(ctx, obj, func(o *v1alpha1.AgentSession) {
-				delete(o.Metadata.Annotations, AnnotationRecreates)
-				delete(o.Metadata.Annotations, AnnotationRecreateOf)
-			})
-			if err != nil {
-				return err
-			}
-		}
-		return r.setStatus(ctx, obj, v1alpha1.PhaseRunning, "")
+		// A pod that runs ends the streak.
+		want := statusFor(obj, v1alpha1.PhaseRunning, "")
+		want.PodRecreates, want.RecreateOf = 0, ""
+		return r.writeStatus(ctx, obj, want)
 	default:
 		// A Pending pod is left alone, never recreated in a loop.
 		if obj.Status.Phase == "" {
@@ -245,20 +241,4 @@ func ownedBy(pod *corev1.Pod, obj v1alpha1.AgentSession) bool {
 	ref := metav1.GetControllerOf(pod)
 	return ref != nil && string(ref.UID) == obj.Metadata.UID &&
 		pod.Labels[LabelManagedBy] == ManagedByValue
-}
-
-// recreateCount reads the pod-recreates annotation. Absent means no recreate
-// yet. Present but not a non-negative integer is corrupt state, and for a
-// counter that bounds recreation the safe reading is "already at the cap", so
-// the session fails instead of being recreated without limit.
-func recreateCount(annotations map[string]string) int {
-	raw, ok := annotations[AnnotationRecreates]
-	if !ok {
-		return 0
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 0 {
-		return MaxRecreates
-	}
-	return n
 }

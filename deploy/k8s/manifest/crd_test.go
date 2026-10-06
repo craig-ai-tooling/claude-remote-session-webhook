@@ -252,3 +252,15 @@ func TestCRDImmutableSpecFields(t *testing.T) {
 		t.Errorf("rules = %d, want 5 (conversation must stay mutable): %v", len(got), got)
 	}
 }
+
+func TestCRDStatusRecreateFields(t *testing.T) {
+	t.Parallel()
+	props := dig(t, decodedCRD(t), "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "status", "properties")
+	n := asObject(t, dig(t, props, "podRecreates"))
+	if n["type"] != "integer" || n["minimum"] != float64(0) {
+		t.Errorf("podRecreates = %v, want an integer with minimum 0", n)
+	}
+	if got := asObject(t, dig(t, props, "recreateOf"))["type"]; got != "string" {
+		t.Errorf("recreateOf type = %v, want string", got)
+	}
+}

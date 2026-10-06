@@ -77,6 +77,8 @@ func CRD() map[string]any {
 										},
 										"reason":       str,
 										"conversation": str,
+										"podRecreates": map[string]any{"type": "integer", "minimum": 0},
+										"recreateOf":   str,
 									},
 								},
 							},

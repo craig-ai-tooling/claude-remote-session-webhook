@@ -63,6 +63,12 @@ type AgentSessionStatus struct {
 	Phase        Phase  `json:"phase,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Conversation string `json:"conversation,omitempty"`
+	// PodRecreates counts consecutive pod recreates and RecreateOf names the
+	// failed pod whose recreate is counted. They live in status because only the
+	// reconciler can write it; an annotation is writable by anyone who can
+	// update the object, and a forged one would bypass the recreate cap.
+	PodRecreates int    `json:"podRecreates,omitempty"`
+	RecreateOf   string `json:"recreateOf,omitempty"`
 }
 
 // Phase is the reconciler's verdict on one AgentSession.
