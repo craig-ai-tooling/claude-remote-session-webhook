@@ -121,3 +121,12 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - Beyond the design: a frame stream with no separator for more than 4 MiB is dropped and the next frame reads as `ErrPaneTooLarge`, so a broken pane-loop cannot grow memory. A partial frame is discarded when the exec is reopened.
 - For T9/T10: test helpers `fnExec` (function Executor taking a stdout writer), `clock`, `captureRig` and `eventually` are in `capture_test.go`. `CapturePane` caller cancellation returns an error but leaves the stream running by design.
 - Nothing noticed to fix.
+
+## T9 (podctl List)
+
+- Added `k8s/internal/podctl/list.go` (`List`, `rowFromObject`, `observe`, `listRow`, `drifted`, `replay`) and `list_test.go`.
+- Failing first: `go -C k8s test ./internal/podctl -run List` failed by not compiling: `r.c.List undefined (type *Controller has no field or method List)`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, `go -C k8s test -race ./internal/podctl` green, no root go.sum, `grep -c require go.mod` is 0.
+- Behaviour: the replay writes only options whose annotation exists (owner, name, workdir, start, lifetime, conversation, binary, width), then `@crswd-managed` last. Any failure on one pod (pod get, exec, parse, replay, second list) leaves that row as the annotation base row with `LivenessUnknown`; only `sessions.List` fails `List`. Repair runs only when the base row is managed. A Running pod being deleted is not asked.
+- For T10: `seqList` and `listRow`/`annotations` helpers are in `list_test.go`; `r.setOptions()` and `r.listCalls()` hang off `rig` there.
+- Nothing noticed to fix.
