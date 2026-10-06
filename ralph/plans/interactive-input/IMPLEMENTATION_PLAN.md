@@ -87,5 +87,5 @@ The loop may create or edit these paths and no others:
 - [x] **T012** Make the leak suite type a canary and prove it reaches no record. Done when `go test ./internal/audit -run 'Leak|Secret|Drives'` passes.
 - [x] **T013** Add the input panel, key bar and Scrollback disclosure to the pane partial, with five classes from existing tokens. Done when `go test ./internal/httpapi` passes, including the stylesheet sweeps.
 - [x] **T014** Add the input client to `crswd.js` (204 handling, Ctrl/Cmd+Enter, scrollback on toggle) and make the shared handler skip it. Done when `go test ./internal/httpapi -run 'Input|Scrollback|CtrlEnter'` passes.
-- [ ] **T015** Amend the never-types rule in AGENTS.md and security.md, and update components.md, the mobile Q4/Q5 and the tmuxctl contract. Done when `grep -c 'on its own initiative' AGENTS.md` prints `1` and `go test ./...` passes.
+- [x] **T015** Amend the never-types rule in AGENTS.md and security.md, and update components.md, the mobile Q4/Q5 and the tmuxctl contract. Done when `grep -c 'on its own initiative' AGENTS.md` prints `1` and `go test ./...` passes.
 - [ ] **T016** Run the full gate, including `-tags tmux` and `-tags dev`, and break and restore the five guards. Done when `go test -tags tmux ./...` exits 0 and PROGRESS.md lists five failed-then-restored guards.

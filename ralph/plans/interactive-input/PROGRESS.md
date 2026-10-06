@@ -283,3 +283,12 @@ Added the input client to `crswd.js`: the shared handler's `data-session-input` 
 - Next iteration (T015): `TestTheReflowIsOfferedRatherThanTaken` took "the reflow module" as everything after `REFLOW_CELLS` to end of file, so appending the new IIFE made it see `fetch(` and `requestSubmit`. It now cuts the module at the first `})();`. The task did not list this edit; it was forced by the append.
 - `script()` strips comments, so a test cannot anchor on the new IIFE's leading comment through it. `inputClient` reads the raw file for that.
 - Not run in a browser: the client is checked only as bytes, like the rest of the file.
+
+## Iteration 17: T015 (2026-10-06)
+
+Amended the never-types rule in `AGENTS.md` and `docs/security.md` §2 (the stale `send-keys` bullet became two bullets plus the FR-001 rule), rewrote the Pane viewer scrollback bullet and added `### Input panel (spec 018)` to `components.md`, appended Q4 and Q5 to `mobile-open-questions.md`, and updated the tmuxctl contract.
+
+- No test guards these docs, so no guard was broken. Checked by command: `grep -c 'on its own initiative'` prints 1 for `AGENTS.md` and for `docs/security.md`; `UNANSWERED` went from 4 to 6.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T016): FR-021 gives only the Q4/Q5 titles and fallbacks, not question prose, so the "How it gets answered" and body paragraphs are mine. Edit them if the operator wants other wording. The closing paragraph of `mobile-open-questions.md` still says "all three" for milestone 7, which is correct for that milestone and was left alone.
+- `git -C` and `git commit` with a heredoc are refused by the sandbox here; use bare `git` from the worktree and `-m` flags.
