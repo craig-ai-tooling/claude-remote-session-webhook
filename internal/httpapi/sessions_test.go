@@ -2632,6 +2632,7 @@ func TestSessionEntryHarnessField(t *testing.T) {
 	claude, _ := s.fixture.plant(t, session.Session{Name: "a", WorkDir: s.fixture.repo, State: session.StateRunning})
 	codex, _ := s.fixture.plant(t, session.Session{Name: "b", WorkDir: s.fixture.repo, State: session.StateRunning, StartCommand: codexStartCommandName})
 	other, _ := s.fixture.plant(t, session.Session{Name: "c", WorkDir: s.fixture.repo, State: session.StateRunning, StartCommand: "removed"})
+	adopted, _ := s.fixture.plant(t, session.Session{Name: "d", WorkDir: s.fixture.repo, State: session.StateRunning, Adopted: true})
 
 	_, body := getSessions(t, s, testTime)
 
@@ -2648,6 +2649,9 @@ func TestSessionEntryHarnessField(t *testing.T) {
 	}
 	if got := byID[codex.ID]["harness"]; got != "codex" {
 		t.Errorf("a Codex entry carries harness %v; want %q", got, "codex")
+	}
+	if got, present := byID[adopted.ID]["harness"]; present {
+		t.Errorf("an adopted entry with no start command carries harness %v; want the key omitted", got)
 	}
 	if got, present := byID[other.ID]["harness"]; present {
 		t.Errorf("an entry for a command no longer configured carries harness %v; want the key omitted", got)

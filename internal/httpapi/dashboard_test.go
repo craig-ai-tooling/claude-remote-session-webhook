@@ -2147,3 +2147,17 @@ func plantCodexRolloutFile(t *testing.T, home, id, cwd string) {
 		t.Fatalf("record a Codex conversation: %v", err)
 	}
 }
+
+// TestCardOmitsHarnessForAdoptedWithoutAStartCommand: an adopted session that
+// recorded no start-command name is Other, not whatever the default is now.
+func TestCardOmitsHarnessForAdoptedWithoutAStartCommand(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	live, _ := f.fixture.plant(t, session.Session{Name: "adopted", WorkDir: f.fixture.repo, Adopted: true})
+
+	card := cardFor(t, f.open(t, "/").Body.String(), live.ID)
+	if strings.Contains(card, "card-harness") {
+		t.Errorf("an adopted session with no start command is labelled with the default harness:\n%s", card)
+	}
+}

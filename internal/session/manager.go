@@ -1146,6 +1146,11 @@ func (m *Manager) Prompt(ctx context.Context, s Session, text string) error {
 // command each time (research D1). A name the operator has since removed reads
 // as Other, whose spec asks for nothing special.
 func (m *Manager) specOf(s Session) harness.Spec {
+	// An adopted session that recorded no start-command name has no known
+	// harness: labelling it with whatever the default is now would be a guess.
+	if s.Adopted && s.StartCommand == "" {
+		return harness.For(harness.Other)
+	}
 	name := s.StartCommand
 	if name == "" {
 		name = config.DefaultStartCommandName
