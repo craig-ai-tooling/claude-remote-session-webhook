@@ -174,3 +174,25 @@ Next iteration would waste time on:
 - Gate steps 1 to 9 passed. Quickstart passed with 127.0.0.1:8765 free.
 
 Noticed, not fixed: the values table in docs/k8s-mode.md restates values.yaml by hand, so it can drift. No test covers it.
+
+## Iteration 8 (T8, validation contract)
+
+Dependency check passed. Each VALIDATION_CONTRACT.md command, run from the repo root:
+
+- Root gate: `go build ./... && go vet ./... && go test ./... && golangci-lint run` exit 0 (0 issues). `test ! -e go.sum` exit 0. `grep -c require go.mod` printed `0`.
+- `helm lint deploy/chart --set sharedSecret.existingSecret=s`: exit 0 (icon is recommended only).
+- Render, default shape with `--include-crds`: exit 0. Render with service, dashboard password and cloudflared set: exit 0.
+- `helm template t deploy/chart -n crswd` (no secret): exit 1, stderr `sharedSecret.existingSecret is required`.
+- `go run ./deploy/k8s/gen` then `git status --porcelain deploy/k8s deploy/chart`: empty. `cmp` of the two CRD files: exit 0.
+- No ClusterRole or `"secrets"` outside secretKeyRef: printed `0`.
+- `service.enabled=true` with no door: exit 1, `service.enabled needs a browser door`.
+- `codex=/usr/local/bin/codex` count: `1`. `namespace: crswd-reconciler` count: `6` (needs at least 3).
+- `helm.sh/resource-policy: keep` in claim.yaml: `1`.
+- `helm lint deploy/chart` in ci.yml: `1`. `packages: write` in images.yml: `1`. Diff of release.yml against origin/main: empty.
+- `## Install on Kubernetes` in README.md: `1`. `## Install with Helm` in docs/k8s-mode.md: `1`.
+- Extra gate steps: `gofmt -l .` empty, `go test -tags tmux ./...` exit 0, `go test -tags quickstart ./cmd/crswd` exit 0 (port free), `go -C k8s test ./...` exit 0.
+- T8 verify: `go test ./... && helm lint deploy/chart` exit 0. Bare `helm lint` prints an INFO line for the missing shared secret and still passes.
+
+Not run: `actionlint` on the two workflows (not allowed in the loop sandbox), and the operator-run cluster acceptance (IMPLEMENTATION_PLAN.md "Operator-run acceptance"). Nothing was pushed. The `.github/workflows/**` change needs the App token at push time.
+
+RALPH_COMPLETE
