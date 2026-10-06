@@ -225,3 +225,15 @@ registered it after the compact line in `server.go`, and wrote the eight tests t
 - The task cites `server.go:806` for the compact line; it is at 817. A bare `cd` persists across Bash calls here, so use
   absolute paths or stay at the worktree root.
 - The task's `TestTypeRefusesLikeEveryAction` also asserts no PasteBracketed or SendKeys reached the host on every refusal row.
+
+## Iteration 12: T010 (2026-10-06)
+
+Added `keyFromBrowser`, `patternDashboardKey`, `fieldKey` and `errKeyRefused` to `internal/httpapi/input.go`, registered the route after
+the type route in `server.go`, and wrote the five tests the task names (plus a `pressed` helper on `typer`).
+
+- Guards proven: with the `handleAction(patternDashboardKey...)` line commented out, 29 Key tests FAILED; with the budget check made
+  `if false && ...`, `TestKeyAndTypeShareOneBudget` FAILED. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`.
+  `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T011): `typer` and `newTyper` in `input_test.go` are reusable for the history route; `ty.send` takes the
+  `Sec-Fetch-Site` value, but a GET has no form, so check how `stream` tests build theirs before copying `typed`.
