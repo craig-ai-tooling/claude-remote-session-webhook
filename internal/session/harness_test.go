@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -594,5 +595,137 @@ func TestModeTargetResolvingToCodexIsRefused(t *testing.T) {
 	}
 	if _, err := f.mgr.RemoteStartCommand(); !errors.Is(err, ErrModeUnavailable) {
 		t.Errorf("RemoteStartCommand() = %v, want ErrModeUnavailable", err)
+	}
+}
+
+// blockedWithin reports whether done stays open for a short while. The wait is
+// only ever a way to let a goroutine that is going to be refused the lock get
+// as far as the lock; a goroutine that is not refused finishes in microseconds
+// on the fake host.
+func blockedWithin(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return false
+	case <-time.After(150 * time.Millisecond):
+		return true
+	}
+}
+
+// TestContinueExcludesTypingWhileTheShellIsVerified is 019 core review #8:
+// Continue confirms the shell and then writes the store, the option and the
+// journal before typing the start line. A Type that lands in that window feeds
+// a shell Continue believes is idle.
+func TestContinueExcludesTypingWhileTheShellIsVerified(t *testing.T) {
+	f, s, _ := continueFixture(t)
+	f.tmux.SetPaneCommand(s.TmuxName(), "codex")
+	f.tmux.QuitAfterInterrupts(s.TmuxName(), 2)
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.mgr.sleep = func(context.Context, time.Duration) error {
+		once.Do(func() { close(entered) })
+		<-release
+		return nil
+	}
+	before := len(f.tmux.Calls())
+
+	contDone := make(chan error, 1)
+	go func() {
+		_, err := f.mgr.Continue(context.Background(), *s, harnessTestConversation)
+		contDone <- err
+	}()
+	<-entered
+
+	typeDone := make(chan struct{})
+	var typeErr error
+	go func() {
+		defer close(typeDone)
+		typeErr = f.mgr.Type(context.Background(), *s, "hello", true)
+	}()
+	if !blockedWithin(typeDone) {
+		t.Error("Type completed while Continue held the session")
+	}
+	close(release)
+	if err := <-contDone; err != nil {
+		t.Fatalf("Continue() unexpected error: %v", err)
+	}
+	<-typeDone
+	if typeErr != nil {
+		t.Fatalf("Type() unexpected error: %v", typeErr)
+	}
+
+	calls := f.tmux.Calls()[before:]
+	start, paste := -1, -1
+	for i, c := range calls {
+		switch {
+		case c.Op == tmuxctl.OpSendKeys && start < 0 && strings.Contains(strings.Join(c.Argv, " "), "--dangerously-bypass"):
+			start = i
+		case c.Op == tmuxctl.OpPasteBracketed && paste < 0:
+			paste = i
+		}
+	}
+	if start < 0 || paste < 0 || paste < start {
+		t.Errorf("the typed text (call %d) did not wait for the start line (call %d): %v", paste, start, opsOf(calls))
+	}
+}
+
+// TestSessionOperationsWaitForTheLifecycleLock holds the one per-session lock
+// and asks each operation to run. None may complete until it is released.
+func TestSessionOperationsWaitForTheLifecycleLock(t *testing.T) {
+	ops := map[string]func(f managerFixture, s Session) error{
+		"Type": func(f managerFixture, s Session) error {
+			return f.mgr.Type(context.Background(), s, "x", false)
+		},
+		"PressKey": func(f managerFixture, s Session) error {
+			return f.mgr.PressKey(context.Background(), s, KeyEnter)
+		},
+		"Prompt": func(f managerFixture, s Session) error {
+			return f.mgr.Prompt(context.Background(), s, "x")
+		},
+		"Compact": func(f managerFixture, s Session) error {
+			return f.mgr.Compact(context.Background(), s)
+		},
+		"SetMode": func(f managerFixture, s Session) error {
+			_, err := f.mgr.SetMode(context.Background(), s, ModeRemote)
+			return err
+		},
+		"Destroy": func(f managerFixture, s Session) error {
+			return f.mgr.Destroy(context.Background(), s)
+		},
+		"Continue": func(f managerFixture, s Session) error {
+			_, err := f.mgr.Continue(context.Background(), s, harnessTestConversation)
+			return err
+		},
+	}
+	for name, op := range ops {
+		t.Run(name, func(t *testing.T) {
+			f, s, _ := continueFixture(t)
+			f.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+				config.DefaultStartCommandName: claudeStartCommand,
+				"rc":                           claudeStartCommand + " --remote-control",
+				"codex":                        "codex --dangerously-bypass-approvals-and-sandbox",
+			}))
+			f.mgr.SetRemoteControlCommand("rc")
+			sess := *s
+			if name == "SetMode" {
+				// SetMode refuses a Codex session before it reaches the lock.
+				sess.StartCommand = config.DefaultStartCommandName
+			}
+			f.tmux.SetPaneCommand(sess.TmuxName(), "codex")
+			f.tmux.QuitAfterInterrupts(sess.TmuxName(), 1)
+
+			unlock := f.mgr.lockSession(sess.ID)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_ = op(f, sess)
+			}()
+			held := blockedWithin(done)
+			unlock()
+			<-done
+			if !held {
+				t.Errorf("%s ran while the session lock was held", name)
+			}
+		})
 	}
 }

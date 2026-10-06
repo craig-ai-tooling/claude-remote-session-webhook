@@ -249,6 +249,18 @@ func (s *Supervisor) discover(ctx context.Context, sess Session) error {
 	if s.mgr.specOf(sess).Name != harness.Codex || sess.ConversationID != "" {
 		return nil
 	}
+	// Under the lifecycle lock, and judged on the record as it is now: a Destroy
+	// that ran since the sweep took its snapshot has appended "ended" and removed
+	// the record, and anything written after that would put the session back in
+	// the journal (019 core review #2).
+	unlock := s.mgr.lockSession(sess.ID)
+	defer unlock()
+	cur, err := s.mgr.store.Get(sess.ID, sess.Owner)
+	if err != nil || cur.State == StateDead || cur.State == StateFailed || cur.ConversationID != "" {
+		return nil //nolint:nilerr // a record that is gone, over, or already named has nothing to discover
+	}
+	sess = cur
+
 	id, err := s.mgr.findCodexConversation(ctx, sess)
 	if err != nil {
 		return fmt.Errorf("discover the conversation of session %s: %w", sess.ID, err)

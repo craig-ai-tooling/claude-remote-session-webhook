@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -481,5 +482,81 @@ func TestDiscoverCodexConversationSymlinkedSessionsDir(t *testing.T) {
 	got, err = DiscoverCodexConversation(d.proc, 100, filepath.Join(t.TempDir(), "absent"))
 	if err != nil || got != "" {
 		t.Fatalf("DiscoverCodexConversation() with an unresolvable dir = %q, %v; want nothing", got, err)
+	}
+}
+
+// pausesAfterConversationOption lets the first conversation option write
+// through and then holds the caller, which is the point in a discovery between
+// "the host has the id" and "the journal and store do".
+type pausesAfterConversationOption struct {
+	tmuxctl.Controller
+	once            sync.Once
+	entered, resume chan struct{}
+}
+
+func (p *pausesAfterConversationOption) SetOption(ctx context.Context, name, option, value string) error {
+	err := p.Controller.SetOption(ctx, name, option, value)
+	if option == tmuxctl.OptionConversation {
+		p.once.Do(func() {
+			close(p.entered)
+			<-p.resume
+		})
+	}
+	return err
+}
+
+// TestDestroyDuringDiscoveryDoesNotResurrectTheSession is 019 core review #2.
+// Discovery is held after the host has taken the id while the operator destroys
+// the session; whatever order the two then take, the journal's last word on the
+// session must be that it ended, and the store must not hold it.
+func TestDestroyDuringDiscoveryDoesNotResurrectTheSession(t *testing.T) {
+	r := newSweepRig(t, found(discoverID))
+	pause := &pausesAfterConversationOption{Controller: r.f.tmux, entered: make(chan struct{}), resume: make(chan struct{})}
+	r.f.mgr.tmux = pause
+
+	sweepDone := make(chan error, 1)
+	go func() { sweepDone <- r.sup.Sweep(context.Background()) }()
+	<-pause.entered
+
+	destroyDone := make(chan struct{})
+	var destroyErr error
+	go func() {
+		defer close(destroyDone)
+		destroyErr = r.f.mgr.Destroy(context.Background(), r.s)
+	}()
+	// Without the lock Destroy finishes here, before discovery has journalled.
+	_ = blockedWithin(destroyDone)
+	close(pause.resume)
+	<-destroyDone
+	if err := <-sweepDone; err != nil {
+		t.Logf("Sweep() = %v", err)
+	}
+	if destroyErr != nil {
+		t.Fatalf("Destroy() unexpected error: %v", destroyErr)
+	}
+
+	if _, event := r.journalled(t); event != journalEnded {
+		t.Errorf("the journal's last record for the session is %q, want %q", event, journalEnded)
+	}
+	if _, err := r.f.store.Get(r.s.ID, r.s.Owner); !errors.Is(err, ErrSessionNotFound) {
+		t.Errorf("the store still holds the destroyed session: %v", err)
+	}
+}
+
+// TestDiscoveryRecordsNothingForAGoneRecord: a sweep working from a stale
+// snapshot finds the record deleted and writes no option and no journal line.
+func TestDiscoveryRecordsNothingForAGoneRecord(t *testing.T) {
+	r := newSweepRig(t, found(discoverID))
+	if err := r.f.store.Delete(r.s.ID); err != nil {
+		t.Fatalf("Delete() unexpected error: %v", err)
+	}
+	if err := r.sup.discover(context.Background(), r.s); err != nil {
+		t.Fatalf("discover() = %v", err)
+	}
+	if r.calls != 0 {
+		t.Errorf("the finder ran %d times for a record that is gone", r.calls)
+	}
+	if conv, event := r.journalled(t); conv == discoverID || event == journalDiscovered {
+		t.Errorf("the journal recorded a discovery for a gone session: (%q, %q)", conv, event)
 	}
 }

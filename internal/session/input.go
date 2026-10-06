@@ -108,7 +108,7 @@ func (m *Manager) Type(ctx context.Context, s Session, text string, submit bool)
 
 	// Held across the paste and the Enter, so a key or another message cannot
 	// land between them.
-	unlock := m.lockInput(s.ID)
+	unlock := m.lockSession(s.ID)
 	defer unlock()
 
 	if err := m.stillLive(s); err != nil {
@@ -145,7 +145,7 @@ func (m *Manager) PressKey(ctx context.Context, s Session, key Key) error {
 		return fmt.Errorf("press a key in session %s: %w", s.ID, ErrUnknownKey)
 	}
 
-	unlock := m.lockInput(s.ID)
+	unlock := m.lockSession(s.ID)
 	defer unlock()
 
 	if err := m.stillLive(s); err != nil {
@@ -160,8 +160,15 @@ func (m *Manager) PressKey(ctx context.Context, s Session, key Key) error {
 	return nil
 }
 
-// lockInput takes the session's input mutex and returns its release.
-func (m *Manager) lockInput(id string) func() {
+// lockSession takes the session's lifecycle mutex and returns its release.
+//
+// One mutex serves every operation that delivers into the pane or changes what
+// is running in it or whether the record exists: Type, PressKey, Prompt,
+// Compact, SetMode, Continue, Destroy and the supervisor's Codex discovery
+// (019 core review #2 and #8). It is not reentrant. A method holding it must
+// not call another public method that takes it; helpers it calls are the
+// unlocked ones (vanished, sendStart, quitStepped, restartInto).
+func (m *Manager) lockSession(id string) func() {
 	mu, _ := m.inputLocks.LoadOrStore(id, &sync.Mutex{})
 	l, ok := mu.(*sync.Mutex)
 	if !ok {

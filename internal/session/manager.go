@@ -195,10 +195,12 @@ type Manager struct {
 	restartingMu sync.Mutex
 	restarting   map[string]bool
 
-	// inputLocks holds one *sync.Mutex per session ID, taken by Type and
-	// PressKey for the whole of a delivery (spec 018 review #1). A typed message
-	// is a paste and then an Enter, and a key arriving between the two would land
-	// inside another request's text. The zero Map is ready, and Destroy removes
+	// inputLocks holds one *sync.Mutex per session ID, the lifecycle lock that
+	// lockSession takes. Type and PressKey hold it for the whole of a delivery
+	// (spec 018 review #1): a typed message is a paste and then an Enter, and a
+	// key arriving between the two would land inside another request's text.
+	// Destroy, Continue, Prompt, Compact, SetMode and Codex discovery hold it too
+	// (spec 019 core review #2, #8). The zero Map is ready, and Destroy removes
 	// the entry with the record, so it does not outlive its session.
 	inputLocks sync.Map
 
@@ -1128,6 +1130,9 @@ func (m *Manager) Prompt(ctx context.Context, s Session, text string) error {
 		return fmt.Errorf("prompt session %s: %w", s.ID, ErrEmptyPrompt)
 	}
 
+	unlock := m.lockSession(s.ID)
+	defer unlock()
+
 	name := s.TmuxName()
 
 	// The error deliberately names the session and nothing else. Prompt text is
@@ -1212,6 +1217,9 @@ func (m *Manager) Compact(ctx context.Context, s Session) error {
 	if s.State == StateDead {
 		return fmt.Errorf("compact session %s: %w", s.ID, ErrSessionDead)
 	}
+
+	unlock := m.lockSession(s.ID)
+	defer unlock()
 
 	// The clock moves, and it moves before the bytes do. Both halves of that are
 	// decisions.
@@ -1462,6 +1470,9 @@ func (m *Manager) SetMode(ctx context.Context, s Session, mode Mode) (Session, e
 		return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable)
 	}
 
+	unlock := m.lockSession(s.ID)
+	defer unlock()
+
 	target, err := m.commandForMode(mode)
 	if err != nil {
 		return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, err)
@@ -1699,6 +1710,11 @@ func (m *Manager) Destroy(ctx context.Context, s Session) error {
 	if s.ID == "" {
 		return fmt.Errorf("destroy session: %w", ErrSessionNotFound)
 	}
+
+	// Held to the end, so a discovery or a continue that is mid-flight finishes
+	// before the record goes, and one that arrives later finds it gone.
+	unlock := m.lockSession(s.ID)
+	defer unlock()
 
 	name := s.TmuxName()
 	killErr := m.tmux.Kill(ctx, name)
@@ -2669,6 +2685,11 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, ErrRestartInFlight)
 	}
 	defer m.releaseRestart(s.ID)
+
+	// From here to the start line: the shell Continue verified is not to be
+	// typed into, or restarted under, by any other operation on this session.
+	unlock := m.lockSession(s.ID)
+	defer unlock()
 
 	// Touch first, and this is where Continue differs from a revival: a human
 	// asked for this, so it is a driving like a prompt or a compact. Touch is
