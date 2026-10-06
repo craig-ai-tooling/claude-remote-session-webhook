@@ -32,8 +32,8 @@ const (
 	envSessionImage        = "CRSW_SESSION_IMAGE"
 	envSessionNode         = "CRSW_SESSION_NODE"
 	envSessionClaim        = "CRSW_SESSION_CLAIM"
-	envClaudeSecret        = "CRSW_CLAUDE_SECRET"
-	envCodexSecret         = "CRSW_CODEX_SECRET"
+	envClaudeSecret        = "CRSW_CLAUDE_SECRET" //nolint:gosec // G101: an environment variable name, not a credential
+	envCodexSecret         = "CRSW_CODEX_SECRET"  //nolint:gosec // G101: an environment variable name, not a credential
 	envSessionHome         = "CRSW_SESSION_HOME"
 )
 

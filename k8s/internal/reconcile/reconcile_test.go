@@ -69,8 +69,12 @@ func (g *rig) status(t *testing.T, name string) v1alpha1.AgentSessionStatus {
 	return o.Status
 }
 
-func ownedPod(phase corev1.PodPhase) *corev1.Pod {
-	p, _ := PodFor(podObj(), podCfg(), podNow)
+func ownedPod(t *testing.T, phase corev1.PodPhase) *corev1.Pod {
+	t.Helper()
+	p, err := PodFor(podObj(), podCfg(), podNow)
+	if err != nil {
+		t.Fatal(err)
+	}
 	p.UID = "pu1"
 	p.Status.Phase = phase
 	return p
@@ -92,7 +96,7 @@ func TestReconcileCreatesMissingPod(t *testing.T) {
 
 func TestReconcileTerminatingPodNoCreate(t *testing.T) {
 	t.Parallel()
-	p := ownedPod(corev1.PodRunning)
+	p := ownedPod(t, corev1.PodRunning)
 	now := metav1.NewTime(podNow)
 	p.DeletionTimestamp = &now
 	g := newRig(t, podCfg(), []v1alpha1.AgentSession{podObj()}, p)
@@ -109,7 +113,7 @@ func TestReconcileTerminatingPodNoCreate(t *testing.T) {
 
 func TestReconcileFailedPodDeletedOnce(t *testing.T) {
 	t.Parallel()
-	g := newRig(t, podCfg(), []v1alpha1.AgentSession{podObj()}, ownedPod(corev1.PodFailed))
+	g := newRig(t, podCfg(), []v1alpha1.AgentSession{podObj()}, ownedPod(t, corev1.PodFailed))
 	if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +139,10 @@ func TestReconcileFailedPodDeletedOnce(t *testing.T) {
 	if got := g.status(t, "crswd-abc").Phase; got != v1alpha1.PhaseReviving {
 		t.Errorf("phase = %q, want Reviving", got)
 	}
-	o, _, _ := g.r.sessions.Get(context.Background(), "crswd-abc")
+	o, _, err := g.r.sessions.Get(context.Background(), "crswd-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if o.Metadata.Annotations[AnnotationRecreates] != "1" {
 		t.Errorf("recreates = %q, want 1", o.Metadata.Annotations[AnnotationRecreates])
 	}
@@ -143,7 +150,7 @@ func TestReconcileFailedPodDeletedOnce(t *testing.T) {
 
 func TestReconcileDeadlineExceeded(t *testing.T) {
 	t.Parallel()
-	p := ownedPod(corev1.PodFailed)
+	p := ownedPod(t, corev1.PodFailed)
 	p.Status.Reason = "DeadlineExceeded"
 	g := newRig(t, podCfg(), []v1alpha1.AgentSession{podObj()}, p)
 	if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
@@ -250,17 +257,28 @@ func TestReconcileAlreadyExistsIsNotAnError(t *testing.T) {
 
 func TestReconcileRecreateCapReached(t *testing.T) {
 	t.Parallel()
-	o := podObj()
-	o.Metadata.Annotations = map[string]string{AnnotationRecreates: strconv.Itoa(MaxRecreates)}
-	g := newRig(t, podCfg(), []v1alpha1.AgentSession{o}, ownedPod(corev1.PodFailed))
-	if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
-		t.Fatal(err)
-	}
-	if n := g.count("delete", "pods"); n != 0 {
-		t.Errorf("deletes = %d, want 0", n)
-	}
-	if st := g.status(t, "crswd-abc"); st.Phase != v1alpha1.PhaseFailed {
-		t.Errorf("status = %+v", st)
+	for name, val := range map[string]string{
+		"at the cap":                       strconv.Itoa(MaxRecreates),
+		"garbage recreates annotation":     "three",
+		"empty recreates annotation":       "",
+		"negative recreates annotation":    "-1",
+		"overflowing recreates annotation": "99999999999999999999",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			o := podObj()
+			o.Metadata.Annotations = map[string]string{AnnotationRecreates: val}
+			g := newRig(t, podCfg(), []v1alpha1.AgentSession{o}, ownedPod(t, corev1.PodFailed))
+			if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
+				t.Fatal(err)
+			}
+			if n := g.count("delete", "pods"); n != 0 {
+				t.Errorf("deletes = %d, want 0", n)
+			}
+			if st := g.status(t, "crswd-abc"); st.Phase != v1alpha1.PhaseFailed {
+				t.Errorf("status = %+v", st)
+			}
+		})
 	}
 }
 
@@ -268,11 +286,14 @@ func TestReconcileRunningPodClearsRecreateCount(t *testing.T) {
 	t.Parallel()
 	o := podObj()
 	o.Metadata.Annotations = map[string]string{AnnotationRecreates: "2"}
-	g := newRig(t, podCfg(), []v1alpha1.AgentSession{o}, ownedPod(corev1.PodRunning))
+	g := newRig(t, podCfg(), []v1alpha1.AgentSession{o}, ownedPod(t, corev1.PodRunning))
 	if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {
 		t.Fatal(err)
 	}
-	got, _, _ := g.r.sessions.Get(context.Background(), "crswd-abc")
+	got, _, err := g.r.sessions.Get(context.Background(), "crswd-abc")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := got.Metadata.Annotations[AnnotationRecreates]; ok {
 		t.Error("recreate count not cleared")
 	}
@@ -283,7 +304,7 @@ func TestReconcileRunningPodClearsRecreateCount(t *testing.T) {
 
 func TestReconcileForeignPodUntouched(t *testing.T) {
 	t.Parallel()
-	p := ownedPod(corev1.PodFailed)
+	p := ownedPod(t, corev1.PodFailed)
 	p.OwnerReferences[0].UID = "someone-else"
 	g := newRig(t, podCfg(), []v1alpha1.AgentSession{podObj()}, p)
 	if err := g.r.ReconcileOne(context.Background(), "crswd-abc"); err != nil {

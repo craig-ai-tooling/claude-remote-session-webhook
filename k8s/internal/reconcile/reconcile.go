@@ -136,7 +136,7 @@ func (r *Reconciler) reconcileWithPod(ctx context.Context, obj v1alpha1.AgentSes
 		if pod.Status.Phase == corev1.PodFailed && pod.Status.Reason == "DeadlineExceeded" {
 			return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, reasonLifetime)
 		}
-		n, _ := strconv.Atoi(obj.Metadata.Annotations[AnnotationRecreates])
+		n := recreateCount(obj.Metadata.Annotations)
 		if n >= MaxRecreates {
 			return r.setStatus(ctx, obj, v1alpha1.PhaseFailed, fmt.Sprintf("the session pod failed %d times in a row", MaxRecreates))
 		}
@@ -179,4 +179,20 @@ func ownedBy(pod *corev1.Pod, obj v1alpha1.AgentSession) bool {
 	ref := metav1.GetControllerOf(pod)
 	return ref != nil && string(ref.UID) == obj.Metadata.UID &&
 		pod.Labels[LabelManagedBy] == ManagedByValue
+}
+
+// recreateCount reads the pod-recreates annotation. Absent means no recreate
+// yet. Present but not a non-negative integer is corrupt state, and for a
+// counter that bounds recreation the safe reading is "already at the cap", so
+// the session fails instead of being recreated without limit.
+func recreateCount(annotations map[string]string) int {
+	raw, ok := annotations[AnnotationRecreates]
+	if !ok {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return MaxRecreates
+	}
+	return n
 }

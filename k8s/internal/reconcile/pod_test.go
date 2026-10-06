@@ -13,7 +13,7 @@ import (
 var podNow = time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
 
 func podCfg() Config {
-	return Config{
+	return Config{ //nolint:gosec // G101: Secret names in a test fixture, not credentials
 		SessionNamespace: "sessions",
 		LeaseNamespace:   "crswd",
 		Image:            "registry.example/crswd-session:1.2.3",
@@ -222,13 +222,19 @@ func TestPodForNoTolerations(t *testing.T) {
 
 func TestPodForNodeSelector(t *testing.T) {
 	t.Parallel()
-	p, _ := PodFor(podObj(), podCfg(), podNow)
+	p, err := PodFor(podObj(), podCfg(), podNow)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if p.Spec.NodeSelector["kubernetes.io/arch"] != "amd64" || len(p.Spec.NodeSelector) != 1 {
 		t.Errorf("NodeSelector = %v", p.Spec.NodeSelector)
 	}
 	cfg := podCfg()
 	cfg.Node = "node-a"
-	p, _ = PodFor(podObj(), cfg, podNow)
+	p, err = PodFor(podObj(), cfg, podNow)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if p.Spec.NodeSelector["kubernetes.io/hostname"] != "node-a" || p.Spec.NodeSelector["kubernetes.io/arch"] != "amd64" {
 		t.Errorf("NodeSelector = %v", p.Spec.NodeSelector)
 	}

@@ -19,8 +19,8 @@ import (
 var ErrLifetimeOver = errors.New("reconcile: the session is past its lifetime")
 
 const (
-	claudeCredsMount = "/var/run/claude-creds"
-	codexCredsMount  = "/var/run/codex-creds"
+	claudeCredsMount = "/var/run/claude-creds" //nolint:gosec // G101: a mount path, not a credential
+	codexCredsMount  = "/var/run/codex-creds"  //nolint:gosec // G101: a mount path, not a credential
 
 	// linkScript keeps a credentials link pointing at the directory-mounted
 	// Secret. It is the only shell string in the package, it is a constant, and
