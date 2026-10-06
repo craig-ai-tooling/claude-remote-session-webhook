@@ -205,3 +205,12 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Finding, not fixed: the task says disabled options use "the switch's disabled opacity rule", but `crswd.css` has no switch disabled rule. The doc names `.button:disabled` (`--dim` text, default cursor, no opacity) as the nearest existing one. T015 should write the radio rule that way unless the operator says otherwise.
 - The task's `min-height 44px` is written in the doc as `min-block-size: var(--tap)`, the token the switch row uses.
 - Left: T015 onward.
+
+## Iteration 24 (T015)
+
+- Wrote `TestCreateFormOffersCodexWhenConfigured`, `TestCreateFormUnchangedWithoutCodex`, `TestCreateFormScriptReadsHarness` and `TestRadioGroupStylesExist` first; the script, offers and styles tests failed on the old code (the unchanged-form test passes by design). Then added the Runtime radio group to `create-form.html` before the remote switch (rendered only when `.CodexCommand` is non-empty), `data-command-codex` on the preview `<pre>`, the `harness` handling in `previewCommand` (Codex line wins over the remote line; remote switch gets `disabled` and `aria-disabled="true"`, both cleared for Claude Code), the `.radio-group*` / `.radio-option*` CSS, and the components doc updates.
+- Gate green: gofmt, build, vet, `go test ./...`, golangci-lint. tmux and quickstart suites not run: nothing in tmuxctl, session or cmd changed.
+- Learned: `TestTheFocusRingSurvives` reads the first block containing `:focus-visible`, so `.radio-option input:focus-visible` must set the whole ring (`outline` and `outline-offset`, in `--focus-width`, `--focus-offset`, `--phosphor`), not only a colour. The value sweep rejects a literal `2px`.
+- Decision, not in the task text: the group is a one-column grid at every width. A phone-only rule would add a row to the breakpoint table in `docs/design-system.md`, which is outside this task's Files and the allowlist. Two short options stacked cost a desktop one extra line. If the operator wants side-by-side on desktop, that is a follow-up touching `design-system.md`.
+- The disabled-option rule uses `.button:disabled`'s treatment (dim text, default cursor), per iteration 23's finding. No radio is disabled by anything yet; the script disables the remote switch, not a radio.
+- Left: T016 onward. No findings unfixed.

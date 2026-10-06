@@ -40,7 +40,7 @@ These exist. Use them.
 | Session card | `partials/session-card.html` | One session in the list, with its action row |
 | Status pill | `partials/status-pill.html` | Session state, everywhere it appears |
 | Pane viewer | `partials/pane.html` | Live terminal output |
-| Create form | `partials/create-form.html` | The one control that starts a session: a **New session** trigger on the fleet, and a modal dialog holding the form — name, the working-directory picker, the remote-control switch |
+| Create form | `partials/create-form.html` | The one control that starts a session: a **New session** trigger on the fleet, and a modal dialog holding the form — name, the working-directory picker, the Runtime radio group (only where Codex is offered), the remote-control switch |
 | Page token | `partials/page-token.html` | The hidden field **every** mutating form carries |
 | Empty state | `partials/empty.html` | Full-strength rain field + one sans-serif explanation |
 | Rain canvas | `partials/rain.html` | `<canvas class="rain">` — header and empty state only |
@@ -1030,9 +1030,11 @@ It is the create form's **Runtime** control (spec 019): Claude Code or Codex. Us
 for two to four options a person compares by reading them. A longer list is a
 `<select>`, and an on/off choice is the switch above.
 
-Specified here before it is built. The first markup that uses it, and the CSS for
-the classes below, arrive together in spec 019 T015, because the stylesheet test
-fails on a class no template renders.
+Built in spec 019 T015: the create form renders it, once, where the daemon
+offers Codex (`create-form.html`), and `crswd.css` carries the three classes. The
+form's script (`previewCommand`) reads the checked radio, shows the Codex line in
+the command preview and disables the remote-control switch with both `disabled`
+and `aria-disabled="true"`; choosing Claude Code undoes both.
 
 ```html
 <fieldset class="radio-group">
@@ -1070,8 +1072,14 @@ Rules:
 - **Disabled** options take `.button:disabled`'s treatment: `--dim` text and the
   default cursor, never an opacity. The switch has no disabled rule of its own
   today, so that is the nearest existing one. Add no new token.
-- **It wraps, it never scrolls.** Under the phone breakpoint the create form
-  already uses, each option takes its own line.
+- **It wraps, it never scrolls.** Each option takes its own line, at every width:
+  the group is a one-column grid, so no rule joins the phone breakpoint block.
+  The fieldset sets `min-inline-size: 0` because its default is its content's
+  width.
+- **The focus rule spells the global ring in its tokens** (`--focus-width`,
+  `--focus-offset`, `--phosphor`). A literal length fails the stylesheet's value
+  sweep, and `TestTheFocusRingSurvives` reads the first `:focus-visible` block in
+  the file, so any such rule has to set the whole ring.
 - **No inline style, and the CSP is unchanged.** The hint is a plain
   `.field-hint` inside the fieldset.
 
@@ -1082,8 +1090,12 @@ The create form's readout of the line it will run (milestone 15,
 
 ```gotemplate
 <pre class="command-preview" data-command-preview
-     data-command-local="…" data-command-remote="…">claude …</pre>
+     data-command-local="…" data-command-remote="…" data-command-codex="…">claude …</pre>
 ```
+
+`data-command-codex` is present only where the daemon offers Codex. The script
+shows it while the Runtime radio reads `codex`, taking precedence over the remote
+line, which Codex cannot use.
 
 Rules:
 - **It is a readout, not a control.** No `name`, no `contenteditable`, no

@@ -1042,6 +1042,68 @@ body {
   cursor: pointer;
 }
 
+/* The radio group (docs/components.md, spec 019): one choice from a short list,
+   every option visible. Same container rules as the switch's row: no border, no
+   padding, no margin. `min-inline-size: 0` because a fieldset's default is its
+   content's width, which is the one way this control could push a phone sideways.
+
+   A single column, one option per line, at every width. The contract asks for
+   that under the phone breakpoint, and adding a rule to that block means a row in
+   design-system.md, which this task does not own; two short options stacked cost
+   a desktop one extra line and keep the control one shape everywhere. */
+.radio-group {
+  display: grid;
+  gap: var(--s1);
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* The switch label's own face: the name of the control, in the design system's
+   label role, in --text for the reason .switch-label gives. */
+.radio-group-legend {
+  padding: 0;
+  color: var(--text);
+  font-size: var(--fs-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+}
+
+/* The label is the target, and the row is at least a thumb tall at every width,
+   which is the contract's statement rather than a pointer-only one. */
+.radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-block-size: var(--tap);
+  cursor: pointer;
+}
+
+/* Themed, not replaced: accent-color paints the platform's own radio in the
+   switch's on-state green and appearance stays, so the filled dot, a shape, is
+   what says which is chosen. Nothing here removes the outline, so the global
+   :focus-visible ring is the focus indicator; the explicit rule says so for the
+   one control in this file whose ring would otherwise be inferred. */
+.radio-option input {
+  accent-color: var(--phosphor);
+  margin: 0;
+  cursor: pointer;
+}
+
+.radio-option input:focus-visible {
+  outline: var(--focus-width) solid var(--phosphor);
+  outline-offset: var(--focus-offset);
+}
+
+/* .button:disabled's treatment, the nearest rule there is: dim text and the
+   default cursor, never an opacity. */
+.radio-option input:disabled,
+.radio-option input:disabled + span {
+  color: var(--dim);
+  cursor: default;
+}
+
 /* The page's one primary control (docs/components.md: exactly one per view).
    --phosphor on --surface is ≈16:1, and it is spent here because this is the
    single thing on the page an operator came to do — the destroys are dangerous

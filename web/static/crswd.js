@@ -487,6 +487,7 @@
 
     const remote = form.querySelector('input[name="remote_control"]');
     const name = form.querySelector('input[name="name"]');
+    const harnesses = form.querySelectorAll('input[name="harness"]');
 
     // The placeholder the server left in the line, spelled once here because it
     // is the daemon's own token and this script is substituting into a line the
@@ -494,8 +495,24 @@
     const PLACEHOLDER = '{name}';
 
     const render = () => {
-      const line =
-        remote && remote.checked && pre.dataset.commandRemote
+      // Codex has no remote mode, so choosing it shows the line the server
+      // rendered for it and takes the switch out of play. Both the attribute and
+      // aria-disabled: the first stops the click, the second says why to a screen
+      // reader. The server refuses the pair regardless (T014); this only stops the
+      // form offering what it will refuse.
+      const codex = form.querySelector('input[name="harness"]:checked')?.value === 'codex';
+      if (remote) {
+        remote.disabled = codex;
+        if (codex) {
+          remote.setAttribute('aria-disabled', 'true');
+        } else {
+          remote.removeAttribute('aria-disabled');
+        }
+      }
+
+      const line = codex && pre.dataset.commandCodex
+        ? pre.dataset.commandCodex
+        : remote && remote.checked && pre.dataset.commandRemote
           ? pre.dataset.commandRemote
           : pre.dataset.commandLocal;
       if (!line) {
@@ -510,7 +527,7 @@
       pre.textContent = line.split(PLACEHOLDER).join(typed);
     };
 
-    for (const control of [remote, name]) {
+    for (const control of [remote, name, ...harnesses]) {
       if (control) {
         control.addEventListener('input', render);
         control.addEventListener('change', render);
