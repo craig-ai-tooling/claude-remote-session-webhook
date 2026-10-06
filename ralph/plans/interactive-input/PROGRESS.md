@@ -180,3 +180,14 @@ Added `Manager.History` to `internal/session/input.go` and the four tests the ta
   quotes (Go code). Append Go with Edit; a plain-prose heredoc like this one works.
 - `TestHistoryPassesTheBoundThrough` checks the record survives with `mustStored`, which fails the test if
   it is gone; the store has no `Get` to call directly.
+
+## Iteration 9: T007 (2026-10-06)
+
+Added `ActionDashboardType`, `ActionDashboardKey` and `ActionDashboardHistory` to `internal/audit/audit.go`
+and to both tables in `audit_test.go`.
+
+- Guard proven: with `ActionDashboardKey` spelled `dashboard.keys`, `TestEmitAcceptsEveryDocumentedAction`
+  and `TestDashboardActionsAreDistinctFromAPI` FAILED on the `dashboard.key` row. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues),
+  no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration: `leak_test.go:1542` lists the dashboard action names; T012 owns it, not T007.
