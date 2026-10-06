@@ -387,7 +387,7 @@ func (m *Manager) markSession(ctx context.Context, s Session) error {
 		{tmuxctl.OptionStart, s.StartCommand},
 		{tmuxctl.OptionLifetime, encodeLifetime(s.Lifetime)},
 		{tmuxctl.OptionConversation, s.ConversationID},
-		{tmuxctl.OptionBinary, startBinary(template)},
+		{tmuxctl.OptionBinary, paneProcesses(template)},
 	}
 	for _, o := range options {
 		if err := m.tmux.SetOption(ctx, s.TmuxName(), o.option, o.value); err != nil {

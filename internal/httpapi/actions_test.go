@@ -5792,8 +5792,8 @@ const plantedStartCommand = "rc"
 // them that a create asserting on both is there to catch.
 func (s *testServer) offersRemoteControl() {
 	s.fixture.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
-		config.DefaultStartCommandName: "local-command",
-		plantedStartCommand:            "remote-command",
+		config.DefaultStartCommandName: "claude local-command",
+		plantedStartCommand:            "claude remote-command",
 	}))
 	s.fixture.mgr.SetRemoteControlCommand(plantedStartCommand)
 	s.cfg.RemoteControlCommand = plantedStartCommand
@@ -6394,8 +6394,9 @@ func TestToggleRestartsTheSessionUnderTheOtherCommand(t *testing.T) {
 	// What this fixture can show is that the toggle restarts *in place*. Whether
 	// the restarted command resumes the session's conversation is asserted in
 	// internal/session, where a conversation can be put on the record — these
-	// stand-in start commands are not claude, so a session created under them is
-	// given no conversation identifier at all (see claudeBinary).
+	// stand-in start commands are claude, so a created session is given an
+	// identifier; the restarted line is asserted where that can be read back
+	// (see conversationCapable).
 	var typed bool
 	for _, call := range calls {
 		if call.Op == tmuxctl.OpSendKeys {

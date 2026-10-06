@@ -1382,8 +1382,8 @@ func TestCompactRefusesWhatItCannotDeliver(t *testing.T) {
 // spelled to be unmistakable in an argv rather than to be runnable.
 const (
 	remoteCommandName = "rc"
-	localCommandLine  = "local-command"
-	remoteCommandLine = "remote-command"
+	localCommandLine  = "claude local-command"
+	remoteCommandLine = "claude remote-command"
 )
 
 // configuredForModes gives the fixture's manager the two things a toggle needs:
@@ -1413,10 +1413,8 @@ func TestSetModeRestartsInPlaceOnTheSameConversation(t *testing.T) {
 	f := newManagerFixture(t)
 	f.configuredForModes()
 	s, _ := mustCreate(t, f, f.request())
-	// Set explicitly: this fixture's start commands are stand-ins rather than
-	// claude, so a create under them mints no conversation (see claudeBinary).
-	// What is under test is what a mode change does with one, not which sessions
-	// get one.
+	// Set explicitly: what is under test is what a mode change does with a
+	// conversation, not which creates mint one (see conversationCapable).
 	if err := f.store.SetConversation(s.ID, conversation); err != nil {
 		t.Fatalf("SetConversation() = %v", err)
 	}

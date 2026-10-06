@@ -52,3 +52,13 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: the Fake answers an unseeded pid as `ErrUnexpectedOutput`, so a test that walks `/proc` must name its pid. A missing session returns the same message `Fake.CapturePane` gives.
 - Nothing calls `PanePID` yet; T011/T012 consume it.
 - Left: T004 onward. No findings unfixed.
+
+## Iteration 6 (T004)
+
+- Wrote `internal/session/harness_test.go` first (`TestRenderStartPerHarness`, `TestWithRequiredFlags*`, `TestPaneProcesses`, `TestCreateCodexWritesBinarySet`, `TestClaudeFlagConstantsUnchanged`); it failed to compile on the old code. Then added `paneProcesses`, `withRequiredFlags` and `containsRun` to `conversation.go`, made `conversationCapable` ask the harness (deleted `claudeBinary`), rewrote `resumeFlagged` around `harness.Spec`, and switched both `OptionBinary` writes (`start`, `markSession`) to `paneProcesses`.
+- Fixture stand-ins changed to `claude local-command` / `claude remote-command` in `session/manager_test.go` and `httpapi/actions_test.go`. No assertion needed editing: the tests build their expected lines from the constants. Refreshed three comments that cited `claudeBinary`.
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed. Acceptance grep for `"claude"` outside tests prints nothing.
+- Learned: a Claude stand-in now mints a conversation on create, which the old `local-command` did not; no existing test depended on the absence. `Other` now refuses a resume with `ErrInvalidResume`; before, it got `--resume` inserted.
+- Not added: `specOf` (the Interface lists it, no caller yet; T005/T006 will add it with one).
+- Nothing in `manager.go` calls `harness` beyond `resumeFlagged`; T005 onward consume the rest. `partials_test.go:4110` still holds an unprefixed `local-command` literal, outside T004's Files line and passing.
+- Left: T004a onward. No findings unfixed.

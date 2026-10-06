@@ -8,6 +8,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 )
 
 // This file is the only code in the daemon that reads a directory the operator
@@ -323,31 +326,73 @@ func (m *Manager) HasTranscript(conversationID, workDir string) bool {
 	return !info.IsDir()
 }
 
-// claudeBinary is the one binary this daemon knows takes a conversation
-// identifier, and the gate on minting one.
-//
-// It is a literal, and that is worth being uncomfortable about. The alternative
-// was worse: internal/config accepts *any* command line as a start command —
-// there is no rule that one must run Claude — so a daemon that inserted
-// --session-id unconditionally would break every operator whose start command is
-// something else. That is not hypothetical; it is how this constant came to
-// exist, when the real-tmux suite ran its `seq`-based start command and got
-// `seq: unrecognized option '--session-id'`.
-//
-// What an operator loses by wrapping Claude in a script named something else is
-// revival by identifier, and nothing else: the session starts exactly as it
-// always did, is supervised exactly as any other, and sits in the same position
-// as every session created before spec 012 (FR-005).
-const claudeBinary = "claude"
-
 // conversationCapable reports whether a start command is one this daemon may
-// give a conversation identifier to.
+// give a conversation identifier to: the harness takes one at start
+// (harness.Spec.FreshIDFlag).
+//
+// The gate is the harness and not "any command" because internal/config accepts
+// any command line as a start command, so a daemon that inserted --session-id
+// unconditionally would break every operator whose command is something else
+// (the real-tmux suite once ran a `seq` start command and got `seq:
+// unrecognized option '--session-id'`). What an operator loses by wrapping
+// Claude in a script named something else is revival by identifier, and nothing
+// else: it starts and is supervised as any other session, and sits where every
+// session created before spec 012 sits (FR-005).
 func conversationCapable(template string) bool {
-	return startBinary(template) == claudeBinary
+	return harness.For(harness.Of(template)).FreshIDFlag != ""
+}
+
+// paneProcesses is what goes into @crswd-binary: the names tmux may report for
+// the pane while the harness runs, joined by "|" (spec 019, D6). A harness that
+// names none gets the start binary's own base name, so a Claude session's value
+// is what it always was.
+func paneProcesses(template string) string {
+	if names := harness.For(harness.Of(template)).PaneProcesses; len(names) > 0 {
+		return strings.Join(names, "|")
+	}
+	return startBinary(template)
+}
+
+// withRequiredFlags inserts the harness's required flag groups after the
+// binary, skipping a group whose exact token run is already before the first
+// "--". A group that appears only after "--" is an argument to the harness, not
+// a flag, so it is still inserted. All collected tokens go in one call so their
+// order is the groups' order.
+func withRequiredFlags(template string, groups [][]string) string {
+	head := strings.Fields(template)
+	for i, tok := range head {
+		if tok == "--" {
+			head = head[:i]
+			break
+		}
+	}
+	var collected []string
+	for _, group := range groups {
+		if !containsRun(head, group) {
+			collected = append(collected, group...)
+		}
+	}
+	if len(collected) == 0 {
+		return template
+	}
+	return config.InsertStartFlags(template, collected...)
+}
+
+// containsRun reports whether run appears as a contiguous run in tokens.
+func containsRun(tokens, run []string) bool {
+	if len(run) == 0 {
+		return true
+	}
+	for i := 0; i+len(run) <= len(tokens); i++ {
+		if slices.Equal(tokens[i:i+len(run)], run) {
+			return true
+		}
+	}
+	return false
 }
 
 // startBinary is the first token of a start command, reduced to its base name:
-// "claude" for every command configured in this repository, whether the operator
+// the bare name for every command configured in this repository, whether the operator
 // spelled it bare or as an absolute path.
 //
 // It is what goes into @crswd-binary so tmux can answer whether the pane is

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
@@ -2029,7 +2030,7 @@ func (m *Manager) start(ctx context.Context, s Session, resume string) error {
 	if err != nil {
 		return fmt.Errorf("resolve the start command for session %s: %w", s.ID, err)
 	}
-	if err := m.tmux.SetOption(ctx, name, tmuxctl.OptionBinary, startBinary(template)); err != nil {
+	if err := m.tmux.SetOption(ctx, name, tmuxctl.OptionBinary, paneProcesses(template)); err != nil {
 		return fmt.Errorf("record the session start binary: %w", err)
 	}
 	command, err := m.renderStart(template, resume, s.ConversationID, s.Name)
@@ -2090,24 +2091,30 @@ func (m *Manager) resumeFlagged(template, resume, conversationID string) (string
 	if err != nil {
 		return "", err
 	}
+	spec := harness.For(harness.Of(template))
+	base := withRequiredFlags(template, spec.RequiredFlags)
 	switch checked {
 	case "":
 		// A fresh conversation, and the one case where this daemon *chooses* the
 		// identifier instead of being handed one. It is checked here rather than
 		// trusted from the record for the reason everything on this line is: the
 		// result is typed into a live shell.
-		if conversationID == "" {
+		if conversationID == "" || spec.FreshIDFlag == "" {
 			// A session with no identifier — one created before spec 012, or one
-			// being revived without a conversation. The line is byte-identical to
-			// the one this daemon typed before the option existed.
-			return template, nil
+			// being revived without a conversation, or a harness that cannot be
+			// given one. For Claude the line is byte-identical to the one this
+			// daemon typed before the option existed.
+			return base, nil
 		}
 		if _, err := ValidateResume(conversationID); err != nil {
 			return "", fmt.Errorf("check the conversation identifier: %w", err)
 		}
-		return config.InsertStartFlags(template, SessionIDFlag, conversationID), nil
+		return config.InsertStartFlags(base, spec.FreshIDFlag, conversationID), nil
 	default:
-		return config.InsertStartFlags(template, ResumeOneFlag, checked), nil
+		if spec.ResumeArgs == nil {
+			return "", fmt.Errorf("%w: this start command cannot resume a conversation", ErrInvalidResume)
+		}
+		return config.InsertStartFlags(base, spec.ResumeArgs(checked)...), nil
 	}
 }
 
@@ -2223,7 +2230,7 @@ func (m *Manager) rollback(ctx context.Context, s Session, cause error) error {
 // so the conversation is this daemon's to find again — unless the start command
 // is one this daemon cannot give an identifier to, in which case the session runs
 // exactly as it always did and is supervised but never revived or continued by an
-// identifier it never had (see claudeBinary).
+// identifier it never had (see conversationCapable).
 //
 // The third answer was "the most recent in this directory", and spec 013 removed
 // it: it named a conversation only the CLI could resolve, so nobody choosing it
