@@ -1327,6 +1327,7 @@ button.pill:hover {
    how a second component starts (spec 013). */
 .rename,
 .continue,
+.scrollback,
 .unit-detail {
   margin-block-start: var(--s5);
   padding: var(--s4);
@@ -1341,6 +1342,7 @@ button.pill:hover {
    thing a <summary> does not get from the platform's own affordance. */
 .rename-summary,
 .continue-summary,
+.scrollback-summary,
 .unit-detail-summary {
   color: var(--dim);
   font-size: var(--fs-eyebrow);
@@ -1348,6 +1350,40 @@ button.pill:hover {
   letter-spacing: var(--ls-eyebrow);
   text-transform: uppercase;
   cursor: pointer;
+}
+
+/* The input panel stays on screen while the pane above it scrolls, because the
+   pane is most of a phone's display and a control an operator scrolls past a
+   terminal to reach is one they stop using. The label and the field span the
+   form's width; the two submits sit under them, so a message has the whole line
+   to be read on. The key bar wraps rather than scrolls, so no key sits off screen. */
+.input-panel {
+  position: sticky;
+  inset-block-end: 0;
+  margin-block-start: var(--s4);
+  padding: var(--s3);
+  background: var(--surface);
+  border: var(--edge-width) solid var(--edge);
+  border-radius: var(--r);
+}
+
+.type-form {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--s1) var(--s2);
+  align-items: end;
+}
+
+.type-form .field-label,
+.type-form .field-input {
+  grid-column: 1 / -1;
+}
+
+.key-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-block-start: var(--s3);
 }
 
 /* The field and its button, in the arrangement the card's rename had: the label
@@ -1923,6 +1959,12 @@ button.pill:hover {
 
   .field-switch {
     min-block-size: var(--tap);
+  }
+
+  /* The key bar's buttons are pressed one at a time by a thumb, and an arrow
+     is one glyph wide: the height comes from .button above, this is the width. */
+  .key-bar .button {
+    min-inline-size: var(--tap);
   }
 
   /* Destroy sits beside Compact, and a thumb covers both. The labels already

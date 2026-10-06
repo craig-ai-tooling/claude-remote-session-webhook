@@ -106,10 +106,53 @@
   A screen nobody could read carries no offer, for the reason it carries no
   stream: a reflow whose result cannot be shown is an action with nothing to
   observe, and the operator reloads instead.
+
+  The input panel, the key bar and Scrollback (spec 018) follow the notes. They
+  exist because an operator on a phone could read a session and not answer it:
+  the panel types a message into the session, and the key bar presses the keys a
+  prompt waits on. Both are plain form posts that work with the script off, and
+  both sit outside the unread branch, because a screen that could not be read is
+  still a session the operator may need to press Esc in. They render only from a
+  page token, for the reason the reflow offer does.
+
+  The key bar posts a name and never a byte (research R3): the daemon owns the
+  table from a name to the tmux key, so a page cannot ask for a key outside it.
+  Send is the view's one primary.
+
+  Scrollback is fetched when the disclosure opens, never with the page. History
+  is up to 5000 lines and most page loads never want it, and a copy fetched at
+  load is stale by the time it is opened. It ships holding a sentence saying it
+  needs the script, for the same reason the reflow offer ships hidden.
 */}}{{ if .Unread }}<p class="pane-note">The screen could not be read from the host just now. Nothing was changed by asking for it.</p>{{ else }}{{ with .PageToken }}<form method="post" action="/dashboard/sessions/{{ $.ID }}/reflow" data-reflow="pane-{{ $.ID }}" data-reflow-columns="{{ $.Columns }}" data-reflow-floor="{{ $.MinColumns }}" hidden>{{ template "page-token" . }}<input type="hidden" name="confirm" value="yes"><input type="hidden" name="columns" value="">
 <p class="pane-note" data-reflow-offer="This session is {{ $.Columns }} columns and your screen fits {n}. Reflowing re-wraps it at {n} for everyone reading this session, and the window stops sizing itself to a terminal attached on the host until you put it back with: tmux set-window-option -t '{{ $.Target }}' window-size latest"></p>
 <button class="button" type="submit" aria-describedby="card-id-{{ $.ID }}">Reflow this session</button></form>
 {{ end }}<pre class="pane" id="pane-{{ .ID }}" tabindex="0" data-stream="/sessions/{{ .ID }}/stream" data-ended="pane-ended-{{ .ID }}" data-stalled="pane-stalled-{{ .ID }}">{{ .Text }}</pre>
 <p class="pane-note" id="pane-ended-{{ .ID }}" hidden>This session has ended. The screen above is the last one it printed.</p>
 <p class="pane-note" id="pane-stalled-{{ .ID }}" hidden>Live updates stopped, and the session did not say it had ended. The screen above is the last one that arrived. Reload to try again.</p>{{ end }}
-<p class="pane-note">This is the live screen, not scrollback. Attach to the session on the host to read what came before it.</p>
+<p class="pane-note">This is the live screen, not scrollback. Open Scrollback below to read what came before it.</p>
+{{ with .PageToken }}<section class="input-panel" aria-label="Type into this session">
+<form class="type-form" method="post" action="/dashboard/sessions/{{ $.ID }}/type" data-session-input>{{ template "page-token" . }}
+<label class="field-label" for="type-{{ $.ID }}">Message</label>
+<textarea class="field-input" id="type-{{ $.ID }}" name="text" rows="3" maxlength="16384" autocapitalize="off" autocorrect="off" spellcheck="false" required></textarea>
+<button class="button button-primary" type="submit" name="enter" value="yes">Send</button>
+<button class="button" type="submit" name="enter" value="no">Type only</button>
+</form>
+<form class="key-bar" method="post" action="/dashboard/sessions/{{ $.ID }}/key" data-session-input>{{ template "page-token" . }}
+<button class="button" type="submit" name="key" value="enter">Enter</button>
+<button class="button" type="submit" name="key" value="escape">Esc</button>
+<button class="button" type="submit" name="key" value="interrupt">Ctrl-C</button>
+<button class="button" type="submit" name="key" value="tab">Tab</button>
+<button class="button" type="submit" name="key" value="backtab">Shift-Tab</button>
+<button class="button" type="submit" name="key" value="up" aria-label="Up arrow">↑</button>
+<button class="button" type="submit" name="key" value="down" aria-label="Down arrow">↓</button>
+<button class="button" type="submit" name="key" value="left" aria-label="Left arrow">←</button>
+<button class="button" type="submit" name="key" value="right" aria-label="Right arrow">→</button>
+<button class="button" type="submit" name="key" value="pageup">PgUp</button>
+<button class="button" type="submit" name="key" value="pagedown">PgDn</button>
+<button class="button" type="submit" name="key" value="backspace" aria-label="Backspace">⌫</button>
+</form>
+</section>{{ end }}
+<details class="scrollback" data-history="/sessions/{{ .ID }}/history">
+<summary class="scrollback-summary">Scrollback</summary>
+<pre class="pane" id="history-{{ .ID }}" tabindex="0">Scrollback needs JavaScript.</pre>
+</details>

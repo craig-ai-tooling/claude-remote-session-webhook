@@ -973,6 +973,85 @@ func TestTheSessionPageRendersTheCardAndTheScreen(t *testing.T) {
 	}
 }
 
+// TestTheSessionPageOffersTypingKeysAndScrollback is FR-017 at the page a
+// browser receives: a message box, the twelve keys the daemon accepts and a
+// Scrollback disclosure, each wired to the route that answers it.
+//
+// The key buttons are compared with session.Keys() rather than with a list
+// spelled here, so a key added to the allowlist and left off the page fails this
+// test, and a button the daemon would refuse cannot be drawn.
+func TestTheSessionPageOffersTypingKeysAndScrollback(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	live, _ := f.fixture.plant(t, session.Session{Name: "refactor the reaper", WorkDir: f.fixture.repo})
+	f.fixture.tmux.SetPane(live.TmuxName(), "$ ")
+
+	page := f.viewOf(t, live.ID).Body.String()
+
+	for _, want := range []string{
+		`action="/dashboard/sessions/` + live.ID + `/type"`,
+		`action="/dashboard/sessions/` + live.ID + `/key"`,
+		`/key"`,
+		`data-history="/sessions/` + live.ID + `/history"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the session page does not carry %q:\n%s", want, page)
+		}
+	}
+
+	pressed := regexp.MustCompile(`name="key" value="([^"]*)"`).FindAllStringSubmatch(page, -1)
+	if len(pressed) != 12 {
+		t.Fatalf("the page draws %d key buttons; want 12:\n%s", len(pressed), page)
+	}
+	for i, k := range session.Keys() {
+		if pressed[i][1] != string(k) {
+			t.Errorf("key button %d posts %q; want %q, the allowlist's order", i, pressed[i][1], k)
+		}
+	}
+
+	// The disclosure ships closed: history is fetched when it opens, and an
+	// `open` attribute would have the script fetch it for every page load.
+	details := regexp.MustCompile(`<details class="scrollback"[^>]*>`).FindString(page)
+	if details == "" {
+		t.Fatalf("the page carries no Scrollback disclosure:\n%s", page)
+	}
+	if strings.Contains(details, "open") {
+		t.Errorf("the Scrollback disclosure ships open: %s", details)
+	}
+
+	// Both forms carry the page token, or the gate refuses every press.
+	for _, form := range []string{"type-form", "key-bar"} {
+		_, after, ok := strings.Cut(page, `<form class="`+form+`"`)
+		if !ok {
+			t.Fatalf("the page carries no %s form:\n%s", form, page)
+		}
+		body, _, _ := strings.Cut(after, "</form>")
+		if !strings.Contains(body, `name="crsw_page_token"`) {
+			t.Errorf("the %s form carries no page token:\n%s", form, body)
+		}
+	}
+}
+
+// TestNoInputPanelWithoutAPageToken is the other half of FR-017: a pane built
+// without a token offers no way to type, for the reason a card built without one
+// offers no action. The Scrollback disclosure is not behind the token, because
+// reading history changes nothing.
+func TestNoInputPanelWithoutAPageToken(t *testing.T) {
+	t.Parallel()
+
+	rendered := renderComponent(t, "pane", paneView{ID: ownedCard().ID, Text: "$ go test ./..."})
+
+	for _, absent := range []string{"type-form", "key-bar", "input-panel", `name="key"`, "/type"} {
+		if strings.Contains(rendered, absent) {
+			t.Errorf("a pane with no page token renders %q, a control the gate is certain to refuse:\n%s", absent, rendered)
+		}
+	}
+	if !strings.Contains(rendered, `class="scrollback"`) {
+		t.Errorf("a pane with no page token lost the Scrollback disclosure, which only reads:\n%s", rendered)
+	}
+}
+
 // rcMenuScreenFixture is what PR #150 found: the /rc remote-control menu,
 // which is the shape of pane content this test suite proves the session page
 // no longer mistakes for a healthy running session.
@@ -1139,7 +1218,9 @@ func TestTheSessionPageStatesAScreenItCouldNotRead(t *testing.T) {
 	if !strings.Contains(page, "could not be read") {
 		t.Errorf("a screen the host could not be asked for renders as nothing at all:\n%s", page)
 	}
-	if strings.Contains(page, "<pre") {
+	// The screen's own element, not any <pre>: the Scrollback disclosure holds
+	// one, and it is drawn on a page whose live screen could not be read.
+	if strings.Contains(page, `<pre class="pane" id="pane-`) {
 		t.Errorf("the page rendered an empty pane rather than saying the screen is unknown; a blank <pre> claims the session printed nothing:\n%s", page)
 	}
 	// The card is the reason the page is still served, so it has to be on it.
