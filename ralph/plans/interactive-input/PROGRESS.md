@@ -79,3 +79,18 @@ The one step that could not run is the lint gate.
 - Do not use `$?` in a Bash command here: the sandbox rejects it the same way.
 
 - Operator (CS, 2026-10-06): loop now exports GOLANGCI_LINT_CACHE to a fresh per-worktree dir; plain `golangci-lint run` is clean. T001 unblocked.
+
+## Iteration 3: T001 (2026-10-06)
+
+Chained `set-option -g history-limit 5000 ;` into `argvNew` (`fake.go`), added
+`const HistoryLimit = 5000` to `controller.go`, updated the three argv expectations,
+added `TestTmuxNewSessionKeepsFiveThousandLinesOfHistory`.
+
+- Guard proven: with the `set-option ... ";"` elements removed from `argvNew`,
+  `TestTmuxNewSessionKeepsFiveThousandLinesOfHistory` FAILED ("timed out waiting for
+  history to fill", 15s). Restored, it PASSED (0.05s).
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint
+  2.12.2 (0 issues), `go test -tags tmux ./internal/tmuxctl/...`, no `go.sum`.
+- Next iteration: `GOFLAGS=-buildvcs=false` and `GOLANGCI_LINT_CACHE` are set by the loop.
+  `$(...)` and `$?` in a Bash command are refused by the sandbox, so reading env vars in
+  the shell is not possible; run the tools directly.
