@@ -573,3 +573,26 @@ func TestStartCommandLineFor(t *testing.T) {
 		}
 	})
 }
+
+func TestModeTargetResolvingToCodexIsRefused(t *testing.T) {
+	t.Parallel()
+
+	f := newManagerFixture(t)
+	f.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: claudeStartCommand,
+		"rc":                           "codex --dangerously-bypass-approvals-and-sandbox",
+	}))
+	f.mgr.SetRemoteControlCommand("rc")
+	s, _ := mustCreate(t, f, f.request())
+	before := len(f.tmux.Calls())
+
+	if _, err := f.mgr.SetMode(context.Background(), *s, ModeRemote); !errors.Is(err, ErrModeUnavailable) {
+		t.Errorf("SetMode(remote) onto a Codex command error = %v, want ErrModeUnavailable", err)
+	}
+	if got := f.tmux.Calls()[before:]; len(got) != 0 {
+		t.Errorf("a refused mode change touched the pane: %v", opsOf(got))
+	}
+	if _, err := f.mgr.RemoteStartCommand(); !errors.Is(err, ErrModeUnavailable) {
+		t.Errorf("RemoteStartCommand() = %v, want ErrModeUnavailable", err)
+	}
+}

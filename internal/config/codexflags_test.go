@@ -112,3 +112,35 @@ func TestValidateCodexQuoting(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRefusesCodexRemoteControlCommand(t *testing.T) {
+	t.Parallel()
+
+	for name, env := range map[string]map[string]string{
+		"named": {
+			EnvStartCommands:        "rc=codex --dangerously-bypass-approvals-and-sandbox",
+			EnvRemoteControlCommand: "rc",
+		},
+		"defaulted to rc": {
+			EnvStartCommands: "rc=/usr/bin/codex",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			pairs := map[string]string{
+				EnvSharedSecret:        "test-only-shared-secret-32-bytes",
+				EnvAllowedRoots:        t.TempDir(),
+				EnvAccessTeamDomain:    "example-team.cloudflareaccess.com",
+				EnvAccessAUD:           "test-only-audience-tag",
+				EnvAccessAllowedEmails: "operator@example.com",
+			}
+			for k, v := range env {
+				pairs[k] = v
+			}
+			_, err := LoadFrom(func(k string) string { return pairs[k] }, io.Discard)
+			if !errors.Is(err, ErrCodexRemoteControl) {
+				t.Fatalf("LoadFrom() = %v, want ErrCodexRemoteControl", err)
+			}
+		})
+	}
+}

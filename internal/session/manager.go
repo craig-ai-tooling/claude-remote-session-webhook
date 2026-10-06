@@ -1352,6 +1352,9 @@ func (m *Manager) commandForMode(mode Mode) (string, error) {
 		if m.remoteControlCommand == "" {
 			return "", fmt.Errorf("%w: no remote-control command is configured", ErrModeUnavailable)
 		}
+		if err := m.requireClaudeTarget(m.remoteControlCommand); err != nil {
+			return "", err
+		}
 		return m.remoteControlCommand, nil
 	case ModeLocal:
 		// The operator pointed remote control at the default command, so the two
@@ -1361,6 +1364,9 @@ func (m *Manager) commandForMode(mode Mode) (string, error) {
 		if m.remoteControlCommand == config.DefaultStartCommandName {
 			return "", fmt.Errorf("%w: the remote-control command is this daemon's default", ErrModeUnavailable)
 		}
+		if err := m.requireClaudeTarget(config.DefaultStartCommandName); err != nil {
+			return "", err
+		}
 		return config.DefaultStartCommandName, nil
 	default:
 		// Never the value. It is not caller text today — the dashboard matches the
@@ -1369,6 +1375,21 @@ func (m *Manager) commandForMode(mode Mode) (string, error) {
 		// (FR-042).
 		return "", fmt.Errorf("%w", ErrUnknownMode)
 	}
+}
+
+// requireClaudeTarget is the second line behind the config loader: remote
+// control is a Claude Code feature, so a mode switch or a browser create whose
+// target command is Codex is refused rather than typed into a pane. Only Codex
+// is refused, not every non-Claude command: FR-012a keeps Other as it was.
+func (m *Manager) requireClaudeTarget(name string) error {
+	cmd, err := m.resolveStartCommand(name)
+	if err != nil {
+		return fmt.Errorf("%w: %q", ErrModeUnavailable, name)
+	}
+	if harness.Of(cmd) == harness.Codex {
+		return fmt.Errorf("%w: the %q command is a Codex command", ErrModeUnavailable, name)
+	}
+	return nil
 }
 
 // RemoteStartCommand is the configured name a session started under remote
