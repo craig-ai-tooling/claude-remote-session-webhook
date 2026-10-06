@@ -77,3 +77,5 @@ The one step that could not run is the lint gate.
   `session/manager_test.go:219`; the tmux test goes before `TestTmuxCreateHasKill` and reads
   `#{history_size}` and `#{history_limit}` via `tmux -L <socket> display -p`.
 - Do not use `$?` in a Bash command here: the sandbox rejects it the same way.
+
+- Operator (CS, 2026-10-06): loop now exports GOLANGCI_LINT_CACHE to a fresh per-worktree dir; plain `golangci-lint run` is clean. T001 unblocked.
