@@ -46,3 +46,11 @@ BLOCKED: dependency not merged
 - Gate: all green, quickstart included (8765 was free). `k8s/go.mod` and `go.sum` unchanged by `go mod tidy`.
 - Flake, not fixed: the first `go test ./...` run failed three `internal/sessionpod` tests (`TestRunTakesAnEmptyListAsTheSessionBeingGone`, `TestRunKillsAndConfirmsTheSessionOnCancel`) on 5s timeouts while other packages ran in parallel. The package passes alone (2.3s) and a second full run was clean. Root module untouched, so it predates this slice.
 - Next iteration: `v1alpha1` lives at repo-root `api/v1alpha1`, imported as `github.com/nctiggy/claude-remote-session-webhook/api/v1alpha1`. `agentsession.Client.Get` returns `(obj, found, err)`. `ApprovedRoot` is `{Path, IsDefault}`. An image whose registry has a port but no tag (`host:5000/img`) is refused, covered by a test.
+
+## Iteration 2: T2 PodFor
+
+- Added `k8s/internal/reconcile/pod.go` and `pod_test.go`: `PodFor`, `ErrLifetimeOver`, the `linkScript` constant, two native credential sidecars, the one session container, per Design 2.
+- Failing first: `go -C k8s test ./internal/reconcile -run PodFor` printed `pod_test.go:73:12: undefined: PodFor` (did not compile; the function did not exist).
+- Gate: all green, quickstart included (8765 free). Root `go.sum` absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean. `k8s/go.mod` untouched; lint of `k8s/` left to CI per the prompt.
+- Next iteration: `pod.go` already defines a generic `ptr[T]`; reuse it in `reconcile.go`. `pod_test.go` defines `podNow`, `podCfg()`, `podObj()` and `envOf2` (`envOf` is taken by `config_test.go`), reuse them in `reconcile_test.go`. An unparseable `spec.lifetime` (including `never`) returns a plain wrapped error, not `ErrLifetimeOver`; admission in T3 rejects it first, so rule 5 only sees valid durations.
+- Noticed, not fixed: none.

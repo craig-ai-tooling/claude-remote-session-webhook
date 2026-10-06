@@ -19,7 +19,7 @@ differently, use `ls k8s/internal/agentsession/` and record the real name in PRO
 Take the topmost open task. One per iteration. All of them are in the cluster module `k8s/`.
 
 - [x] T1: `k8s/internal/reconcile` config, constants and `ConfigFromEnv`, per Design §1. Verify: `go -C k8s test ./internal/reconcile -run Config -v` passes.
-- [ ] T2: `PodFor`, the session pod template, per Design §2. Verify: `go -C k8s test ./internal/reconcile -run PodFor -v` passes.
+- [x] T2: `PodFor`, the session pod template, per Design §2. Verify: `go -C k8s test ./internal/reconcile -run PodFor -v` passes.
 - [ ] T3: `ReconcileOne`, the decision table, per Design §3. Verify: `go -C k8s test ./internal/reconcile -run Reconcile -v` passes.
 - [ ] T4: The loop: informers, queue, `Run`, and `RunWithLease`, per Design §4. Verify: `go -C k8s test ./internal/reconcile -run 'Loop|Lease' -v` passes.
 - [ ] T5: The spec and plan amendment per Design §5. Verify: `grep -n 'finalizer' specs/017-k8s-native-execution/plan.md` prints at least one line inside the Reconcile paragraph.
