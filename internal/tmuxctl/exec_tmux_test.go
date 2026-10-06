@@ -168,6 +168,49 @@ func TestTmuxPasteBracketedWrapsTheText(t *testing.T) {
 	}
 }
 
+// -E -1 is what keeps the visible screen out of the history, so the last line of
+// the capture must be older than the last line on screen.
+func TestTmuxCaptureHistoryReturnsOnlyHistory(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-6c000000000000000000000000000000"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SendKeys(ctx, name, "seq 1 6000", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	lastLine := func(s string) string {
+		lines := strings.Split(strings.TrimRight(s, "\n "), "\n")
+		return strings.TrimSpace(lines[len(lines)-1])
+	}
+	var screen string
+	// The typed command also contains "6000", so wait for a line that is only it.
+	waitFor(t, "the pane to show 6000", func() bool {
+		got, err := e.CapturePane(ctx, name)
+		if err != nil {
+			t.Fatalf("CapturePane: %v", err)
+		}
+		screen = got
+		return strings.Contains("\n"+got, "\n6000\n")
+	})
+
+	history, err := e.CaptureHistory(ctx, name)
+	if err != nil {
+		t.Fatalf("CaptureHistory: %v", err)
+	}
+	if n := countLines(history); n > HistoryLimit || n < 4900 {
+		t.Errorf("history is %d lines, want 4900 to %d", n, HistoryLimit)
+	}
+	if strings.Contains(history, "\x1b") {
+		t.Error("history carries an escape byte")
+	}
+	if lastLine(history) == lastLine(screen) {
+		t.Errorf("history ends on the screen's last line %q, so the two overlap", lastLine(screen))
+	}
+}
+
 func TestTmuxCreateHasKill(t *testing.T) {
 	ctx := context.Background()
 	e := newTestExec(t)

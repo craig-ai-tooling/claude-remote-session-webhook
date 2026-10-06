@@ -30,6 +30,7 @@ func TestArgvWrappersEqualBuilders(t *testing.T) {
 		{"SendKeys with a leading dash", ArgvSendKeys(argvTestName, "-x", "C-c"), argvSendKeys(argvTestName, "-x", "C-c")},
 		{"SendKeys with no keys", ArgvSendKeys(argvTestName), argvSendKeys(argvTestName)},
 		{"CapturePane", ArgvCapturePane(argvTestName), argvCapturePane(argvTestName)},
+		{"CaptureHistory", ArgvCaptureHistory(argvTestName), argvCaptureHistory(argvTestName)},
 		{"Resize", ArgvResize(argvTestName, 44, 24), argvResize(argvTestName, 44, 24)},
 		{"Resize below the floor", ArgvResize(argvTestName, 0, -3), argvResize(argvTestName, 0, -3)},
 		{"Resize above the ceiling", ArgvResize(argvTestName, 20000, 20000), argvResize(argvTestName, 20000, 20000)},
@@ -116,6 +117,7 @@ func TestArgvWrappersMatchWhatTheFakeRecords(t *testing.T) {
 			return [][]string{load, paste}
 		}()},
 		{OpCapturePane, func() error { _, err := f.CapturePane(ctx, argvTestName); return err }, [][]string{ArgvCapturePane(argvTestName)}},
+		{OpCaptureHistory, func() error { _, err := f.CaptureHistory(ctx, argvTestName); return err }, [][]string{ArgvCaptureHistory(argvTestName)}},
 		{OpResize, func() error { return f.Resize(ctx, argvTestName, 44, 24) }, [][]string{ArgvResize(argvTestName, 44, 24)}},
 		{OpHas, func() error { _, err := f.Has(ctx, argvTestName); return err }, [][]string{ArgvHas(argvTestName)}},
 		{OpList, func() error { _, err := f.List(ctx); return err }, [][]string{ArgvList()}},

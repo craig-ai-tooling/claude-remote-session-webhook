@@ -76,6 +76,14 @@ var ErrNoSessionEnv = errors.New("tmuxctl: no session environment; refusing to h
 // is a screen they may render (FR-053).
 var ErrPaneTooLarge = errors.New("tmuxctl: the captured pane is past the bound")
 
+// ErrHistoryTooLarge is CaptureHistory's refusal, for the reason ErrPaneTooLarge
+// exists: a shortened history is a wrong one that looks complete.
+var ErrHistoryTooLarge = errors.New("tmuxctl: the captured history is past the bound")
+
+// maxHistoryBytes bounds a history by size as well as by lines, because a
+// handful of very long lines passes the line check and still fills a response.
+const maxHistoryBytes = 4 << 20
+
 // NewExec returns a Controller driving the tmux server named by socket, which
 // is tmux's -L. Use SocketFor to derive it from the daemon's listen address.
 //
@@ -244,6 +252,27 @@ func (e *Exec) CapturePane(ctx context.Context, name string) (string, error) {
 	if lines := countLines(stdout); lines > e.paneBound {
 		return "", fmt.Errorf("tmux capture-pane %s: %w: %d lines past the %d-line bound",
 			name, ErrPaneTooLarge, lines, e.paneBound)
+	}
+	return stdout, nil
+}
+
+// CaptureHistory returns the scrollback above the visible screen, or refuses.
+// It does not use e.paneBound, which bounds the live screen; the history has its
+// own bounds, HistoryLimit lines and maxHistoryBytes. -E -1 keeps the visible
+// screen out, so the two captures never overlap. Sizes are safe to name in the
+// error and the content is not (FR-042).
+func (e *Exec) CaptureHistory(ctx context.Context, name string) (string, error) {
+	stdout, stderr, err := e.run(ctx, argvCaptureHistory(name), nil)
+	if err != nil {
+		return "", fmt.Errorf("tmux capture-pane history %s: %w", name, withStderr(err, stderr))
+	}
+	if lines := countLines(stdout); lines > HistoryLimit {
+		return "", fmt.Errorf("tmux capture-pane history %s: %w: %d lines past the %d-line bound",
+			name, ErrHistoryTooLarge, lines, HistoryLimit)
+	}
+	if len(stdout) > maxHistoryBytes {
+		return "", fmt.Errorf("tmux capture-pane history %s: %w: %d bytes past the %d-byte bound",
+			name, ErrHistoryTooLarge, len(stdout), maxHistoryBytes)
 	}
 	return stdout, nil
 }

@@ -23,6 +23,7 @@ const (
 	OpPaste          Op = "Paste"
 	OpPasteBracketed Op = "PasteBracketed"
 	OpCapturePane    Op = "CapturePane"
+	OpCaptureHistory Op = "CaptureHistory"
 	OpResize         Op = "Resize"
 	OpKill           Op = "Kill"
 	OpHas            Op = "Has"
@@ -94,6 +95,12 @@ func argvPasteBufferBracketed(name string) []string {
 // raw control bytes to the API.
 func argvCapturePane(name string) []string {
 	return []string{"tmux", "capture-pane", "-p", "-t", PaneTarget(name)}
+}
+
+// -E -1 stops one line above the visible screen, so the history and the pane
+// never overlap. No -e, for the reason argvCapturePane gives.
+func argvCaptureHistory(name string) []string {
+	return []string{"tmux", "capture-pane", "-p", "-S", "-" + strconv.Itoa(HistoryLimit), "-E", "-1", "-t", PaneTarget(name)}
 }
 
 // The window dimensions tmux itself accepts, measured against tmux 3.4 on a
@@ -253,6 +260,7 @@ type fakeSession struct {
 	paneCommand string
 	options     map[string]string
 	pane        string
+	history     string
 
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
@@ -369,6 +377,21 @@ func (f *Fake) CapturePane(_ context.Context, name string) (string, error) {
 		return "", errNoSession(name)
 	}
 	return s.pane, nil
+}
+
+func (f *Fake) CaptureHistory(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.record(OpCaptureHistory, argvCaptureHistory(name), nil)
+	if err := f.fail[OpCaptureHistory]; err != nil {
+		return "", err
+	}
+	s, ok := f.sessions[name]
+	if !ok {
+		return "", errNoSession(name)
+	}
+	return s.history, nil
 }
 
 // Resize records the call and leaves the session at the size tmux was told —
@@ -603,6 +626,20 @@ func (f *Fake) SetPane(name, content string) {
 		f.sessions[name] = s
 	}
 	s.pane = content
+}
+
+// SetHistory sets what CaptureHistory returns, seeding the session if it does
+// not exist yet, as SetPane does.
+func (f *Fake) SetHistory(name, content string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.history = content
 }
 
 // SetPaneCommand replaces what List reports as this session's pane command,

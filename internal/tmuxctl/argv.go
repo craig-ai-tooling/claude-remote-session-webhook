@@ -48,6 +48,9 @@ func ArgvPasteBracketed(name string) (loadBuffer, pasteBuffer []string) {
 // ArgvCapturePane is `tmux capture-pane -p`, without -e.
 func ArgvCapturePane(name string) []string { return argvCapturePane(name) }
 
+// ArgvCaptureHistory is `tmux capture-pane -p -S -5000 -E -1`, without -e.
+func ArgvCaptureHistory(name string) []string { return argvCaptureHistory(name) }
+
 // ArgvResize is `tmux resize-window`. The dimensions are clamped by the
 // builder, so this cannot hand tmux a number it rejects.
 func ArgvResize(name string, cols, rows int) []string { return argvResize(name, cols, rows) }

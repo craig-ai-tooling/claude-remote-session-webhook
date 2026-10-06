@@ -48,6 +48,12 @@ type Controller interface {
 	// attributes and hand raw control bytes to the API.
 	CapturePane(ctx context.Context, name string) (string, error)
 
+	// CaptureHistory returns the scrollback above the visible screen as plain
+	// text. Like CapturePane it never passes -e. It refuses with
+	// ErrHistoryTooLarge past HistoryLimit lines or 4 MiB rather than returning a
+	// shortened history, because a truncated history reads as a complete one.
+	CaptureHistory(ctx context.Context, name string) (string, error)
+
 	// Resize sets the session's window to cols by rows, which is how the
 	// terminal rather than a stylesheet does the wrapping (#120). tmux rewraps
 	// what is already on the screen, so a narrow reader does not wait for the

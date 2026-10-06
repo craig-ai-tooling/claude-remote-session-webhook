@@ -8,6 +8,7 @@ package tmuxctl
 // discrimination under test rather than under review.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,6 +30,9 @@ const (
 	stubEnv       = "CRSWD_TEST_STUB"
 	stubRecordEnv = "CRSWD_TEST_STUB_RECORD"
 	stubStdoutEnv = "CRSWD_TEST_STUB_STDOUT"
+	// stubFillEnv is a byte count, because one environment string is capped far
+	// below the 4 MiB a history bound test has to print.
+	stubFillEnv   = "CRSWD_TEST_STUB_FILL"
 	stubStderrEnv = "CRSWD_TEST_STUB_STDERR"
 	stubCodeEnv   = "CRSWD_TEST_STUB_CODE"
 )
@@ -62,7 +66,7 @@ const execPaneBound = 24
 // nothing crosses that boundary unless something puts it there.
 func testSessionEnv() []string {
 	env := []string{"HOME=/home/operator", "PATH=" + os.Getenv("PATH"), "TERM=xterm"}
-	for _, name := range []string{stubEnv, stubRecordEnv, stubStdoutEnv, stubStderrEnv, stubCodeEnv} {
+	for _, name := range []string{stubEnv, stubRecordEnv, stubStdoutEnv, stubFillEnv, stubStderrEnv, stubCodeEnv} {
 		if v := os.Getenv(name); v != "" {
 			env = append(env, name+"="+v)
 		}
@@ -126,6 +130,12 @@ func runStub() int {
 			return 125
 		}
 	}
+	if n, err := strconv.Atoi(os.Getenv(stubFillEnv)); err == nil && n > 0 {
+		if _, err := os.Stdout.Write(bytes.Repeat([]byte("x"), n)); err != nil {
+			fmt.Fprintln(os.Stderr, "stub: write fill:", err)
+			return 125
+		}
+	}
 	if msg := os.Getenv(stubStderrEnv); msg != "" {
 		fmt.Fprintln(os.Stderr, msg)
 	}
@@ -148,6 +158,7 @@ type stub struct {
 	code   int
 	stdout string
 	stderr string
+	fill   int
 }
 
 // install puts the stub on PATH as "tmux" and returns a reader for what it
@@ -174,6 +185,7 @@ func (s stub) install(t *testing.T) func(*testing.T) []stubCall {
 	t.Setenv(stubEnv, "1")
 	t.Setenv(stubRecordEnv, record)
 	t.Setenv(stubStdoutEnv, s.stdout)
+	t.Setenv(stubFillEnv, strconv.Itoa(s.fill))
 	t.Setenv(stubStderrEnv, s.stderr)
 	t.Setenv(stubCodeEnv, strconv.Itoa(s.code))
 
@@ -411,6 +423,53 @@ func TestCaptureRefusesPastBound(t *testing.T) {
 			}
 			if strings.Contains(err.Error(), marker) {
 				t.Errorf("the refusal carries pane content: %v", err)
+			}
+		})
+	}
+}
+
+// A history past either bound is refused, never shortened: the line bound is
+// tmux's own history-limit, and the byte bound catches a few enormous lines the
+// line count lets through.
+func TestExecCaptureHistoryRefusesPastTheBound(t *testing.T) {
+	const marker = "SECRET-HISTORY-CONTENT"
+
+	tests := []struct {
+		name    string
+		history string
+		fill    int
+		refused bool
+	}{
+		{"a history at the bound", strings.Repeat(marker+"\n", HistoryLimit), 0, false},
+		{"one line past the bound", strings.Repeat(marker+"\n", HistoryLimit+1), 0, true},
+		{"one line past the bound, unterminated", strings.Repeat(marker+"\n", HistoryLimit) + marker, 0, true},
+		{"one line of 4 MiB and a byte", "", maxHistoryBytes + 1, true},
+		{"empty", "", 0, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Not parallel: install mutates the environment.
+			stub{stdout: tt.history, fill: tt.fill}.install(t)
+
+			got, err := newStubExec(t).CaptureHistory(context.Background(), execName)
+			if !tt.refused {
+				if err != nil {
+					t.Fatalf("CaptureHistory: %v", err)
+				}
+				if got != tt.history {
+					t.Errorf("CaptureHistory returned %d bytes, want the %d tmux printed", len(got), len(tt.history))
+				}
+				return
+			}
+			if !errors.Is(err, ErrHistoryTooLarge) {
+				t.Fatalf("CaptureHistory = %d bytes, %v; want ErrHistoryTooLarge", len(got), err)
+			}
+			if got != "" {
+				t.Errorf("CaptureHistory returned %d bytes beside its refusal", len(got))
+			}
+			if strings.Contains(err.Error(), marker) {
+				t.Errorf("the refusal carries history content: %v", err)
 			}
 		})
 	}

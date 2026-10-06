@@ -51,6 +51,9 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 	if _, err := f.CapturePane(ctx, fakeName); err != nil {
 		t.Fatalf("CapturePane: %v", err)
 	}
+	if _, err := f.CaptureHistory(ctx, fakeName); err != nil {
+		t.Fatalf("CaptureHistory: %v", err)
+	}
 	if err := f.Resize(ctx, fakeName, 44, 24); err != nil {
 		t.Fatalf("Resize: %v", err)
 	}
@@ -73,6 +76,7 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 		{Op: tmuxctl.OpPasteBracketed, Argv: []string{"tmux", "load-buffer", "-b", fakeName, "-"}, Stdin: []byte("hello")},
 		{Op: tmuxctl.OpPasteBracketed, Argv: []string{"tmux", "paste-buffer", "-p", "-d", "-b", fakeName, "-t", "=" + fakeName + ":"}},
 		{Op: tmuxctl.OpCapturePane, Argv: []string{"tmux", "capture-pane", "-p", "-t", "=" + fakeName + ":"}},
+		{Op: tmuxctl.OpCaptureHistory, Argv: []string{"tmux", "capture-pane", "-p", "-S", "-5000", "-E", "-1", "-t", "=" + fakeName + ":"}},
 		{Op: tmuxctl.OpResize, Argv: []string{"tmux", "resize-window", "-t", "=" + fakeName + ":", "-x", "44", "-y", "24"}},
 		{Op: tmuxctl.OpKill, Argv: []string{"tmux", "kill-session", "-t", "=" + fakeName}},
 		{Op: tmuxctl.OpHas, Argv: []string{"tmux", "has-session", "-t", "=" + fakeName}},
@@ -123,6 +127,31 @@ func TestFakeArgvNeverInvokesAShell(t *testing.T) {
 				t.Errorf("call %d invokes a shell: %q", i, c.Argv)
 			}
 		}
+	}
+}
+
+// The history capture has the same rule as the pane capture, and it is the one
+// that reaches a browser as a whole document.
+func TestFakeCaptureHistoryNeverAsksForEscapes(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	f := tmuxctl.NewFake()
+	f.SetHistory(fakeName, "old output\n")
+
+	got, err := f.CaptureHistory(ctx, fakeName)
+	if err != nil {
+		t.Fatalf("CaptureHistory: %v", err)
+	}
+	if got != "old output\n" {
+		t.Errorf("CaptureHistory = %q, want what SetHistory stored", got)
+	}
+	calls := f.Calls()
+	if len(calls) != 1 {
+		t.Fatalf("recorded %d calls, want 1", len(calls))
+	}
+	if slices.Contains(calls[0].Argv, "-e") {
+		t.Errorf("capture-pane history asked for escapes: %q", calls[0].Argv)
 	}
 }
 
