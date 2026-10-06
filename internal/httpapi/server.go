@@ -388,7 +388,9 @@ func New(cfg *config.Config) (*Server, error) {
 	// writes the operator's ~/.claude.json.
 	srv.sessions.SetClaudeConfig(session.ClaudeConfigFile(sessionEnv))
 	srv.sessions.SetCodexHome(session.CodexHome(sessionEnv))
-	if startCommand, named := cfg.StartCommands.Command(config.DefaultStartCommandName); named {
+	// Only a default command that runs Claude gets the Claude relay: it types
+	// `claude auth login`, which a Codex default has no business receiving.
+	if startCommand, named := cfg.StartCommands.Command(config.DefaultStartCommandName); named && harness.Of(startCommand) == harness.Claude {
 		relay, err := loginrelay.New(tmux, startCommand, relayWorkDir(cfg), sessionEnv)
 		if err != nil {
 			srv.report(fmt.Errorf("the sign-in relay is unavailable on this host: %w", err))

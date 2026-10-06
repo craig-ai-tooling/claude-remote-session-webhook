@@ -899,3 +899,47 @@ func TestRefreshDoesNotRepopulateAfterInvalidate(t *testing.T) {
 		t.Error("a refresh that began before an invalidate repopulated the cache after it")
 	}
 }
+
+// TestNewDoesNotWireTheClaudeRelayForACodexDefault: a default start command that
+// runs Codex gets no Claude relay, so the Claude panel is unavailable, while a
+// configured codex entry still gets its own relay.
+//
+// **Must fail when** New wires the default command as the Claude relay without
+// checking which harness it runs.
+func TestNewDoesNotWireTheClaudeRelayForACodexDefault(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		commands  map[string]string
+		wantCodex bool
+	}{
+		"default is codex, no codex entry": {map[string]string{
+			config.DefaultStartCommandName: "/usr/local/bin/codex --yolo",
+		}, false},
+		"default is codex, codex entry": {map[string]string{
+			config.DefaultStartCommandName: "/usr/local/bin/codex --yolo",
+			"codex":                        "/usr/local/bin/codex --yolo",
+		}, true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := testConfig(loopbackListen)
+			cfg.StartCommands = config.NewStartCommands(tc.commands)
+			srv, err := New(cfg)
+			if err != nil {
+				t.Fatalf("New = _, %v; want a server", err)
+			}
+			if srv.signins[harness.Claude] != nil {
+				t.Errorf("signins[claude] = %T; want nil for a Codex default command", srv.signins[harness.Claude])
+			}
+			if got := srv.authStateCached(context.Background(), harness.Claude); got != authUnknown {
+				t.Errorf("Claude auth state = %q; want %q (panel unavailable)", got, authUnknown)
+			}
+			if got := srv.signins[harness.Codex] != nil; got != tc.wantCodex {
+				t.Errorf("signins[codex] wired = %v; want %v", got, tc.wantCodex)
+			}
+		})
+	}
+}
