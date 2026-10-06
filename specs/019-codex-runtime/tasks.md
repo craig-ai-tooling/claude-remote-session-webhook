@@ -54,7 +54,8 @@ move them; find the named function with `grep -n` and edit that, never the stale
 
 - **Files**: `internal/tmuxctl/fake.go`, `internal/tmuxctl/controller.go` (comments on
   `OptionBinary` at `:199-214` only), `internal/tmuxctl/fake_test.go`,
-  `internal/tmuxctl/exec_tmux_test.go`.
+  `internal/tmuxctl/exec_tmux_test.go`, `internal/tmuxctl/exec_test.go` (the argv literal at
+  `:284` only, which carries the old liveness expression).
 - **Interface**: no signature changes. `argvList` (`fake.go:185`) liveness expression becomes
   `#{?#{@crswd-binary},#{m/r:^(#{@crswd-binary})$,#{pane_current_command}},?}` (use the
   `OptionBinary` constant as today). `livenessOf(binary, paneCommand string) Liveness`
