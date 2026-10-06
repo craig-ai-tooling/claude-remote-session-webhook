@@ -20,7 +20,7 @@ If it fails, the reason is "S2/S4/S5/S6 not all on this branch's base".
 
 Take the topmost open task. One per iteration.
 
-- [ ] T1: The cluster switch in `internal/config/config.go` per Design §1. Verify: `go test ./internal/config/ ./cmd/crswd/` exits 0, and `go test -run HostNeverBuildsKubernetes ./cmd/crswd -v` passes.
+- [x] T1: The cluster switch in `internal/config/config.go` per Design §1. Verify: `go test ./internal/config/ ./cmd/crswd/` exits 0, and `go test -run HostNeverBuildsKubernetes ./cmd/crswd -v` passes.
 - [ ] T2: `httpapi.NewForCluster` per Design §2, in new `internal/httpapi/cluster.go` and `cluster_test.go`. Verify: `go test -run NewForCluster ./internal/httpapi -v` passes.
 - [ ] T3: The cluster binary `k8s/cmd/crswd` per Design §3. Verify: `go -C k8s test ./cmd/crswd/... -v` passes and `go -C k8s build -o /dev/null ./cmd/crswd` exits 0.
 - [ ] T4: The crswd image Dockerfile and the session image's Codex per Design §4. Verify: `go test -run Dockerfile ./internal/sessionpod ./deploy/image -v` passes, and `bash -n deploy/session-image/fetch-codex.sh` exits 0.

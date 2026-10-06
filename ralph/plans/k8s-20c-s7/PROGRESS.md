@@ -43,3 +43,27 @@ Plan written by an operator-session planner against origin/main `50d7e9c`. Facts
 ## NEEDS CLARIFICATION
 
 None open.
+
+## Iteration 1 (T1, the cluster switch)
+
+Done: `kubernetesModeBuilt` is now `var kubernetesModeBuilt bool` in `internal/config/config.go`,
+with `BuildKubernetesMode()` beside it and the comment rewritten. New
+`cmd/crswd/hostswitch_test.go` (`TestHostNeverBuildsKubernetesMode`) walks the root module,
+skipping `k8s/`, `.git/`, `.claude/`, `testdata`, and fails on any non-test `.go` file that calls
+the setter, unless it is the definition line in `config.go`. It needs the definition exactly once
+and at least 50 files read.
+
+Failing first: `hostswitch_test.go:72: internal/config/config.go defines the setter 0 times, want exactly 1`.
+
+Full pre-commit list passed: gofmt, root build/vet/test, `-tags tmux`, `-tags quickstart`
+(`127.0.0.1:8765` was free, 61s), golangci-lint, `go -C k8s` vet/test/build, no `go.sum`,
+`grep -c require go.mod` prints 0.
+
+For the next iteration:
+- golangci-lint's gosec flags a bare `os.ReadFile(path)` (G304) even in tests. The repo's style is a
+  trailing `//nolint:gosec // G304: ...` comment (see `cmd/crswd/config_cmd_test.go`).
+- The variable is not synchronised. T3's `TestClusterBuildIsRunnable` must not use `t.Parallel()`,
+  as the plan says, or it races every other test in that package.
+- The shell sandbox refuses `$?` in a command ("a variable can't be checked"); use `&& echo OK || echo FAIL`.
+
+Noticed, not fixed: none.
