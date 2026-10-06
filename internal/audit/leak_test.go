@@ -230,6 +230,15 @@ const compactDelivered = "/compact"
 // write, and FR-042 forbids it from the trail like a prompt.
 const canaryTyped = "crswd-canary-typed-7f3a"
 
+// The key the sweep presses, in both spellings the daemon holds: the symbolic
+// name the browser posts and the tmux name it is mapped to. A record naming
+// either one says which key an operator pressed, which is as much a record of
+// what they typed as the text is (spec 018 review #10).
+const (
+	keyPressed     = "pagedown"
+	keyPressedTmux = "PageDown"
+)
+
 // The pane's escape sequences, in the two spellings a sink can hold them in.
 //
 // markPane already catches a whole screen. These catch the narrower leak: a
@@ -930,6 +939,13 @@ func (r *leakRun) driveTheActionRoutes(t *testing.T, assertion string) {
 		form: authorised(url.Values{"text": {canaryTyped}, "enter": {confirmYes}}),
 	})
 
+	// One key from the bar, the route that carries a closed name where type
+	// carries text. Neither spelling of it may reach the trail.
+	r.act(t, http.StatusNoContent, "POST /dashboard/sessions/{id}/key", browserAction{
+		path: "/dashboard/sessions/" + id + "/key", assertion: assertion, site: siteSameOrigin,
+		form: authorised(url.Values{"key": {keyPressed}}),
+	})
+
 	// And a compact the host refused, which is the only way this route reaches
 	// its fail-closed answer at all — the not-found arm beside it needs a session
 	// that vanished between two reads of the store. It is worth driving twice
@@ -1403,6 +1419,8 @@ func (r *leakRun) marks() []leakMark {
 		{"a page token a caller presented", markPageProof},
 		{"the text a compact delivered", compactDelivered},
 		{"the text an operator typed", canaryTyped},
+		{"the symbolic name of a key an operator pressed", keyPressed},
+		{"the tmux name of a key an operator pressed", keyPressedTmux},
 		{"a pane's escape sequences, raw", paneEscapeRaw},
 		{"a pane's escape sequences as JSON writes them", paneEscapeJSON},
 	}
@@ -1498,6 +1516,22 @@ func (r *leakRun) pasted(t *testing.T) string {
 	return strings.Join(payloads, "\n")
 }
 
+// keysSent is every key name the host was asked to press, as tmux spells them.
+func (r *leakRun) keysSent(t *testing.T) string {
+	t.Helper()
+
+	var argv []string
+	for _, call := range r.tmux.Calls() {
+		if call.Op == tmuxctl.OpSendKeys {
+			argv = append(argv, strings.Join(call.Argv, " "))
+		}
+	}
+	if len(argv) == 0 {
+		t.Fatal("no key was ever sent to a session")
+	}
+	return strings.Join(argv, "\n")
+}
+
 // TestNoOperationLeaksSecretMaterialIntoTheTrailOrTheLogs is FR-042 and SC-013
 // stated across the whole daemon: drive everything it can do with values chosen
 // to be unmistakable, then read back everything it wrote and find none of them.
@@ -1555,7 +1589,7 @@ func TestTheLeakSuiteReallyDrivesTheDaemon(t *testing.T) {
 		// different depths, and a sweep that accepted either would pass on a run
 		// where the action gate never refused anything at all.
 		"dashboard.create", "dashboard.destroy", "dashboard.rename", "dashboard.compact",
-		"dashboard.type", "dashboard.reject",
+		"dashboard.type", "dashboard.key", "dashboard.reject",
 		// And the fleet stream, which is the second record in this list written
 		// while the daemon is mid-response — and the only one written by a handler
 		// that is about to stay open.
@@ -1602,6 +1636,7 @@ func TestTheLeakSuiteReallyDrivesTheDaemon(t *testing.T) {
 		{"a credential-shaped session name", markName, "the card a rename rendered back", run.renamedCard},
 		{"the compact command", compactDelivered, "the payload that reached the host", run.pasted(t)},
 		{"the typed text", canaryTyped, "the payload that reached the host", run.pasted(t)},
+		{"the pressed key", keyPressedTmux, "the send-keys that reached the host", run.keysSent(t)},
 	} {
 		if !strings.Contains(reached.text, reached.mark) {
 			t.Errorf("%s never reached %s, so its absence from the trail proves nothing", reached.what, reached.where)
