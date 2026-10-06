@@ -4544,3 +4544,71 @@ func TestRadioGroupStylesExist(t *testing.T) {
 		}
 	}
 }
+
+const (
+	codexQuotaLabel = `<p class="quota-label quota-label-unknown" data-quota-label data-harness="codex" hidden>codex quota: checking</p>`
+	codexQuotaMeter = `<meter class="quota-meter" data-quota-meter data-harness="codex" min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Codex quota used" hidden></meter>`
+)
+
+// **Must fail when** the Codex label or meter ships visible, or without the
+// harness the script keys on: a 0% bar before the first fetch lands reads as a
+// real reading of none used.
+func TestHeaderCodexMeterStartsHidden(t *testing.T) {
+	t.Parallel()
+
+	masthead := renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}, CodexConfigured: true})
+	for _, tag := range []string{"p", "meter"} {
+		found := false
+		for _, el := range regexp.MustCompile(`<`+tag+` [^>]*data-harness="codex"[^>]*>`).FindAllString(masthead, -1) {
+			if !strings.Contains(el, "data-quota-") {
+				continue
+			}
+			found = true
+			if !strings.Contains(el, " hidden") {
+				t.Errorf("the Codex element %q does not start hidden", el)
+			}
+		}
+		if !found {
+			t.Errorf("no <%s> quota element carries data-harness=\"codex\":\n%s", tag, masthead)
+		}
+	}
+}
+
+// **Must fail when** a configured Codex draws no second label and meter, or
+// draws them ahead of the Claude ones.
+func TestHeaderCodexMeterWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	masthead := renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}, CodexConfigured: true})
+	for _, want := range []string{codexQuotaLabel, codexQuotaMeter} {
+		if strings.Count(masthead, want) != 1 {
+			t.Errorf("the header does not carry exactly one %q:\n%s", want, masthead)
+		}
+	}
+	claudeLabel := strings.Index(masthead, `data-quota-label data-harness="claude"`)
+	codexLabel := strings.Index(masthead, codexQuotaLabel)
+	claudeMeter := strings.Index(masthead, `data-quota-meter data-harness="claude"`)
+	codexMeter := strings.Index(masthead, codexQuotaMeter)
+	if claudeLabel < 0 || claudeMeter < 0 || claudeLabel > codexLabel || claudeMeter > codexMeter {
+		t.Errorf("the Codex label and meter must follow the Claude ones (label %d/%d, meter %d/%d)", claudeLabel, codexLabel, claudeMeter, codexMeter)
+	}
+}
+
+// **Must fail when** a daemon with no Codex entry draws anything in its quota
+// pieces beyond data-harness="claude" on the two Claude elements.
+func TestHeaderMeterUnchangedWithoutCodex(t *testing.T) {
+	t.Parallel()
+
+	masthead := renderComponent(t, "header", headerView{Operator: &access.VerifiedOperator{Email: "operator@example.com"}})
+	if strings.Contains(strings.ToLower(masthead), "codex") {
+		t.Errorf("the header mentions Codex with no Codex entry configured:\n%s", masthead)
+	}
+	for _, want := range []string{
+		`<p class="quota-label quota-label-unknown" data-quota-label data-harness="claude">weekly quota: checking</p>`,
+		`<meter class="quota-meter" data-quota-meter data-harness="claude" min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>`,
+	} {
+		if !strings.Contains(masthead, want) {
+			t.Errorf("the Claude quota piece changed by more than data-harness; missing %q", want)
+		}
+	}
+}

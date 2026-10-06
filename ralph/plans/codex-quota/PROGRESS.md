@@ -35,3 +35,11 @@ Notebook for `ralph/plans/codex-quota`. Each iteration appends below.
 - Ran gofmt, build, vet, test, golangci-lint: all clean. tmux, quickstart and k8s checks not applicable.
 - Note: `go -C` is refused by the approval allowlist in this session; bare `go` commands from the worktree work.
 - Left: T032, T033.
+
+## Iteration 4 (T032, 10/6/26)
+
+- `header.html`: `data-harness="claude"` on the Claude label and meter; when `.CodexConfigured`, a hidden Codex label after the Claude label and a hidden Codex meter after the Claude meter. `crswd.js` quota module now builds one asker per harness in `['claude','codex']`, skips a harness whose label or meter is missing, and runs `label.hidden = meter.hidden` after each Codex paint. Codex text is `Codex weekly N% used`.
+- Added `TestHeaderCodexMeterStartsHidden`, `TestHeaderCodexMeterWhenConfigured`, `TestHeaderMeterUnchangedWithoutCodex`, `TestQuotaScriptHidesCodexWithoutWindow`, `TestQuotaScriptFetchesPerHarness`. All five failed before the change and pass after. Existing quota script assertions pass unedited.
+- Two edits outside the task's Files line, both forced by the new attribute: `internal/httpapi/testdata/header_no_codex.golden.html` gained `data-harness="claude"` on the two Claude elements (the edit the task allows for T025's golden), and `codexPill` in `header_test.go` is now `data-auth-pill data-harness="codex"`, because the old value `data-harness="codex"` also matches the new Codex label and meter and `TestHeaderCodexPillWhenConfigured` counts exactly one.
+- Ran gofmt, build, vet, test, golangci-lint: all clean. tmux, quickstart and k8s checks not applicable. Not run in a browser: the script is asserted by bytes only, as the existing suite does.
+- Left: T033.

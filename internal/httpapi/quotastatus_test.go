@@ -368,3 +368,27 @@ func TestScriptRepaintsBothTheMeterAndTheLabel(t *testing.T) {
 		}
 	}
 }
+
+// **Must fail when** the Codex pieces can show while the response carried no
+// weekly window: the label follows the meter, and the meter is hidden on every
+// unknown, error or missing-window answer.
+func TestQuotaScriptHidesCodexWithoutWindow(t *testing.T) {
+	t.Parallel()
+
+	if !strings.Contains(script(t), "label.hidden = meter.hidden") {
+		t.Error("crswd.js does not tie the Codex label's visibility to its meter's")
+	}
+}
+
+// **Must fail when** the script goes back to one meter for the whole header or
+// stops asking for Codex's own window.
+func TestQuotaScriptFetchesPerHarness(t *testing.T) {
+	t.Parallel()
+
+	source := script(t)
+	for _, want := range []string{"fetch('/dashboard/quota?harness=codex'", "[data-quota-label][data-harness="} {
+		if !strings.Contains(source, want) {
+			t.Errorf("crswd.js does not carry %q", want)
+		}
+	}
+}
