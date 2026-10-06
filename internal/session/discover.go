@@ -38,7 +38,14 @@ func DiscoverCodexConversation(procRoot string, panePID int, sessionsDir string)
 	if panePID <= 0 || sessionsDir == "" {
 		return "", nil
 	}
-	rollout := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Clean(sessionsDir)) +
+	// /proc/<pid>/fd links name the resolved path of an open file, so a matcher
+	// built from a symlinked $CODEX_HOME would never match. A directory that
+	// cannot be resolved is a sweep that records nothing.
+	resolved, err := filepath.EvalSymlinks(sessionsDir)
+	if err != nil {
+		return "", nil //nolint:nilerr // no sessions directory yet, or one that cannot be trusted: nothing to find
+	}
+	rollout := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Clean(resolved)) +
 		`/\d{4}/\d{2}/\d{2}/rollout-[^/]*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$`)
 
 	type node struct{ pid, depth int }

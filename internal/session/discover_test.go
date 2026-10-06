@@ -28,7 +28,13 @@ type discoverTree struct {
 
 func newDiscoverTree(t *testing.T) *discoverTree {
 	t.Helper()
-	return &discoverTree{t: t, proc: t.TempDir(), sessions: filepath.Join(t.TempDir(), "sessions")}
+	// The sessions directory exists, as it does once Codex has run: discovery
+	// resolves it, and one that cannot be resolved records nothing.
+	sessions := filepath.Join(t.TempDir(), "sessions")
+	if err := os.MkdirAll(sessions, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	return &discoverTree{t: t, proc: t.TempDir(), sessions: sessions}
 }
 
 func (d *discoverTree) children(pid int, kids ...int) {
@@ -454,5 +460,26 @@ func TestReplayRestoresDiscoveredConversation(t *testing.T) {
 	}
 	if got.ConversationID != discoverID {
 		t.Errorf("replayed conversation = %q, want %q", got.ConversationID, discoverID)
+	}
+}
+
+func TestDiscoverCodexConversationSymlinkedSessionsDir(t *testing.T) {
+	t.Parallel()
+
+	d := newDiscoverTree(t)
+	d.fd(100, 3, d.rollout(discoverID))
+
+	link := filepath.Join(t.TempDir(), "codex-sessions")
+	if err := os.Symlink(d.sessions, link); err != nil {
+		t.Fatal(err)
+	}
+	got, err := DiscoverCodexConversation(d.proc, 100, link)
+	if err != nil || got != discoverID {
+		t.Fatalf("DiscoverCodexConversation() through a symlinked sessions dir = %q, %v; want %q", got, err, discoverID)
+	}
+
+	got, err = DiscoverCodexConversation(d.proc, 100, filepath.Join(t.TempDir(), "absent"))
+	if err != nil || got != "" {
+		t.Fatalf("DiscoverCodexConversation() with an unresolvable dir = %q, %v; want nothing", got, err)
 	}
 }
