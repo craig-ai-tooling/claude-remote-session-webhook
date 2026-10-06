@@ -850,3 +850,52 @@ func TestHarnessOfStartName(t *testing.T) {
 		}
 	}
 }
+
+// blockingRelay holds SignedIn until released, so a test can run an invalidate
+// while a refresh is waiting on the external command.
+type blockingRelay struct {
+	fakeRelay
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingRelay) SignedIn(ctx context.Context) (bool, error) {
+	close(b.entered)
+	<-b.release
+	return b.fakeRelay.SignedIn(ctx)
+}
+
+// TestRefreshDoesNotRepopulateAfterInvalidate: a refresh whose ask began before
+// an invalidate must not store its answer afterwards.
+//
+// **Must fail when** refreshAuthCache stores without checking the generation.
+func TestRefreshDoesNotRepopulateAfterInvalidate(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	relay := &blockingRelay{
+		fakeRelay: fakeRelay{signedIn: true},
+		entered:   make(chan struct{}),
+		release:   make(chan struct{}),
+	}
+	f.signins[harness.Claude] = relay
+	f.clock = fixedClock{at: testTime}
+
+	done := make(chan authState)
+	go func() { done <- f.refreshAuthCache(context.Background(), harness.Claude) }()
+	<-relay.entered
+
+	f.authCaches[harness.Claude].invalidate()
+	close(relay.release)
+
+	if got := <-done; got != authOK {
+		t.Errorf("the refresh answered %q to its own caller; want %q", got, authOK)
+	}
+	c := f.authCaches[harness.Claude]
+	c.mu.Lock()
+	has := c.has
+	c.mu.Unlock()
+	if has {
+		t.Error("a refresh that began before an invalidate repopulated the cache after it")
+	}
+}

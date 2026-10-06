@@ -95,6 +95,12 @@ type authCache struct {
 	state   authState
 	fetched time.Time
 	has     bool
+
+	// gen counts invalidations. A refresh records it before asking and stores
+	// its answer only if it is unchanged, so an ask that began before an
+	// invalidate cannot repopulate the cache with what that invalidate meant
+	// to discard. The lock is never held across the external command.
+	gen uint64
 }
 
 // invalidate clears the cache, so the next ask is a fresh one. Called by each
@@ -104,6 +110,7 @@ func (c *authCache) invalidate() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.has = false
+	c.gen++
 }
 
 // authStateCached answers from the cache when it is fresh, and asks
@@ -148,12 +155,18 @@ func (s *Server) refreshAuthCache(ctx context.Context, h harness.Name) authState
 	if c == nil {
 		return authUnknown
 	}
+	c.mu.Lock()
+	gen := c.gen
+	c.mu.Unlock()
+
 	state := s.askAuthState(ctx, h)
 
 	c.mu.Lock()
-	c.state = state
-	c.fetched = s.clock.Now()
-	c.has = true
+	if c.gen == gen {
+		c.state = state
+		c.fetched = s.clock.Now()
+		c.has = true
+	}
 	c.mu.Unlock()
 
 	return state
