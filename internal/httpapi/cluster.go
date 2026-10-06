@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
@@ -19,7 +20,16 @@ type ClusterHooks struct {
 	// HasTranscript is handed the session's runtime by NewForCluster, which reads
 	// it from the manager: a Session carries no runtime field of its own.
 	HasTranscript func(ctx context.Context, s session.Session, h harness.Name, id string) (bool, error)
+
+	// StartDeadline is how long a create route may take to answer. A pod-backed
+	// create waits for its pod, so it has to outlast the controller's ready
+	// timeout. Zero takes defaultStartDeadline.
+	StartDeadline time.Duration
 }
+
+// defaultStartDeadline covers podctl's 90 second ready timeout with room for a
+// cold image pull and the API round trips around it.
+const defaultStartDeadline = 3 * time.Minute
 
 // NewForCluster is the cluster build's constructor (spec 017). It builds on
 // NewWith, which wires no journal, no sign-in relay and no release feed: the
@@ -40,6 +50,10 @@ func NewForCluster(cfg *config.Config, ctl tmuxctl.Controller, hooks ClusterHook
 	srv, err := NewWith(cfg, ctl, audit.New())
 	if err != nil {
 		return nil, err
+	}
+	srv.slowStartDeadline = hooks.StartDeadline
+	if srv.slowStartDeadline == 0 {
+		srv.slowStartDeadline = defaultStartDeadline
 	}
 	srv.sessions.SetWorkDirResolver(session.LexicalWorkDir)
 	if hooks.CodexConversation != nil {

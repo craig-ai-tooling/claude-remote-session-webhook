@@ -547,6 +547,13 @@ func (s *Server) createFromBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.allowSlowStart(w); err != nil {
+		s.report(fmt.Errorf("extend the create's write deadline: %w", err))
+		AuditFrom(r.Context()).Deny(errCreateDeadline.Error())
+		s.redirectOutcome(w, r, outcomeCreateFailed)
+		return
+	}
+
 	created, _, err := s.sessions.Create(r.Context(), session.CreateRequest{
 		Owner:   operator.Owner,
 		Name:    r.PostForm.Get(fieldName),
