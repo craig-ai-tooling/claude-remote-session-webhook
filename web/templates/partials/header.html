@@ -4,8 +4,8 @@
   system's second non-negotiable hold: it is never ambiguous whose credentials
   are driving sessions on this host.
 
-  This executes against the VerifiedOperator layer 1 built for the request, not
-  against the request (FR-020, FR-036). That is the whole of the identity rule
+  This executes against a headerView whose Operator is the VerifiedOperator
+  layer 1 built for the request, not against the request (FR-020, FR-036). That is the whole of the identity rule
   and it is structural rather than remembered: no request-supplied value is in
   scope here, so there is nothing for a future edit to reach for by accident.
 
@@ -88,9 +88,9 @@
 <div class="masthead-bar">
 <h1 class="brand"><a class="brand-link" href="/">crswd</a><span class="brand-version">{{ version }}</span> <span class="brand-tag">session control</span></h1>
 <p class="quota-label quota-label-unknown" data-quota-label>weekly quota: checking</p>
-<p class="operator" title="{{ .Email }}">{{ .Email }}</p>
-<button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>
-<a class="masthead-link" href="/settings">Settings</a>
+<p class="operator" title="{{ .Operator.Email }}">{{ .Operator.Email }}</p>
+<button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>{{ if .CodexConfigured }}
+<button type="button" class="pill pill-unknown" data-auth-pill data-harness="codex" command="show-modal" commandfor="signin-dialog">codex auth: checking</button>{{ end }}<a class="masthead-link" href="/settings">Settings</a>
 </div>
 <meter class="quota-meter" data-quota-meter min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
 </header>

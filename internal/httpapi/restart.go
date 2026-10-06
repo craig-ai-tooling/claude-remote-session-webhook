@@ -206,6 +206,7 @@ func (s *Server) renderRestarting(w http.ResponseWriter, r *http.Request) {
 	rows := settingsOf(s.cfg)
 	s.renderPage(w, r, http.StatusOK, "settings", settingsView{
 		Operator: operator,
+		Header:   s.headerFor(operator),
 		Settings: rows,
 		// The same account of the door GET /settings composes, though this answer
 		// shows the Updates section and so renders none of it: one page, one account

@@ -101,6 +101,10 @@ const (
 // parameter lists are that file's subject, while this is the composition one
 // page makes of them.
 type fleetView struct {
+	// Header is what the header component renders from. Operator stays for the
+	// handlers and tests that read it; the template reads this.
+	Header headerView
+
 	// Operator is the identity layer 1 verified, passed straight to the header
 	// component. It is a pointer to the same value OperatorFrom returned rather
 	// than a copied address, so there is no second place for the identity to be
@@ -157,6 +161,10 @@ type sessionPageView struct {
 	// there is nothing to continue — never as an empty control, which reads as an
 	// offer with nothing behind it.
 	Conversations []conversationView
+
+	// Header is what the header component renders from. Operator stays for the
+	// handlers and tests that read it; the template reads this.
+	Header headerView
 
 	// Operator is the identity layer 1 verified, passed straight to the header
 	// component as the same pointer OperatorFrom returned (FR-020, FR-036).
@@ -316,6 +324,7 @@ func (s *Server) fleet(operator *access.VerifiedOperator, token string, outcome 
 
 	return fleetView{
 		Operator: operator,
+		Header:   s.headerFor(operator),
 		Summary:  summarise(views),
 		Sessions: views,
 		// Composed on every render and hidden when there is a grid instead. The
@@ -684,6 +693,7 @@ func (s *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 
 	s.renderPage(w, r, http.StatusOK, "session", sessionPageView{
 		Operator: operator,
+		Header:   s.headerFor(operator),
 		// pane.Text is the screen this handler just captured above — reused
 		// rather than read twice, and the reason this page's card can answer
 		// DisplayBlocked/DisplayUnknown where the fleet grid's cannot (cardOf).

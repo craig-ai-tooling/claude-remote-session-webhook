@@ -75,6 +75,17 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: `crswd.js` still fetches `/dashboard/signin/view` with no harness and does not read `signin=codex`, so the Codex dialog has no way to open from the browser yet. T025 does that.
 - Left: T025 to T026.
 
+## Iteration 8 (T025, 10/6/26)
+
+- `headerView{Operator, CodexConfigured}` and `(*Server).headerFor` in `view.go`. `fleetView`, `sessionPageView`, `settingsView` and `notFoundView` gained `Header`; all six non-test construction sites set `Header: s.headerFor(operator)`. The four page templates pass `.Header`; `header.html` reads `.Operator.Email` and draws the second pill (`data-harness="codex"`, `codex auth: checking`) only when `.CodexConfigured`. The `{{ if }}` sits inside the line break so the header is byte-identical without Codex.
+- `crswd.js` auth module rewritten around one record per pill (`{pill, harness, timer, generation, lastState}`), module `activeHarness` and `dialogGeneration`, an `AbortController` per panel fetch, stale answers discarded, `?signin=codex` handled. Claude's `/dashboard/auth` URL is unchanged; forms reload `signin/view?harness=<activeHarness>` through `window.crswdReloadSignInPanel`.
+- Tests written first: `header_test.go` (`TestHeaderViewOnEveryPage`, `TestHeaderCodexPillWhenConfigured`, `TestHeaderUnchangedWithoutCodex`, `TestHeaderForReadsTheCodexRelay`, `TestAuthScriptPerPillState`). They failed to compile before the change; after the Go and template work only the script test still failed, then passed. Existing `partials_test.go` and `render_test.go` edited mechanically (`headerView{Operator: ...}`, `Header:` on every view).
+- No CSS change: `.masthead-bar .pill` already covers the second pill.
+- Decision made where tasks.md is silent: only Claude's pill auto-opens the dialog on a transition to bad. Codex opens by click or `?signin=codex`. Also added: a poll that changes state reloads the open dialog when its harness is the active one.
+- Not run: `-tags tmux`, `-tags quickstart` (T026's gate), `k8s/`. The script has no browser test; `node --check` passes and the test greps the file only.
+- Not fixed: the JS behaviour (stale-answer discard, abort on second click) is unexercised by any test.
+- Left: T026.
+
 ## NEEDS CLARIFICATION
 
 (none yet)
