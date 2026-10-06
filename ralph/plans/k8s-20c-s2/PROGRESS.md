@@ -47,6 +47,20 @@ Created `api/v1alpha1/types.go` and `types_test.go` per Design §1.
   the struct) but T5 and T7 should not rely on it being omitted from JSON.
 - The full quickstart suite takes about 95 seconds.
 
+## Iteration 2 (T2, 10/6/26)
+
+Exported `UnderAnyRoot` and added `LexicalWorkDir` in `internal/session/workdir.go`; new
+`workdir_lexical_test.go`.
+
+- Failing first: `go test ./internal/session/ -run 'LexicalWorkDir|UnderAnyRootExported'` printed
+  `workdir_lexical_test.go:41:16: undefined: LexicalWorkDir` (package did not compile). Passes after.
+- Gate green: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port 8765 free, 58s),
+  golangci-lint 0 issues, no go.sum, `grep -c require go.mod` = 0.
+- Next iteration: `underAnyRoot` had no caller outside `workdir.go`, so the rename touched only
+  that file and `manager.go` was not needed for T2. T3 edits `manager.go`: find the three
+  `ResolveWorkDir` calls with `grep -n ResolveWorkDir internal/session/manager.go`.
+- Piping the gate through `grep -v '^ok'` makes `$?` 1 when everything passed; read the output, not the code.
+
 ## NEEDS CLARIFICATION
 
 None open.
