@@ -45,3 +45,35 @@ cannot go green in this environment.
 - `GOFLAGS`-less `go build` fails on VCS stamping in this worktree (see Iteration 1).
 
 - Operator (CS, 2026-10-06): loop now runs with GOFLAGS=-buildvcs=false; T001 unblocked.
+
+## Iteration 2: T001 (2026-10-06) — NEEDS CLARIFICATION
+
+T001 was implemented a second time and reverted. The GOFLAGS fix worked: `go build`,
+`go vet` (default, `-tags tmux`, `-tags quickstart`) and `go test ./...` all passed.
+The one step that could not run is the lint gate.
+
+- Passed: `gofmt -l .` (empty), `go build ./...`, the three `go vet` runs,
+  `go test ./...`, `go test -tags tmux ./internal/tmuxctl/...`,
+  `go test -tags tmux -v ./internal/tmuxctl -run FiveThousand` (ran, 0.04s),
+  `golangci-lint --version` (2.12.2), `test ! -e go.sum`.
+- Guard proven: with the `set-option ... ";"` elements removed from `argvNew`,
+  `TestTmuxNewSessionKeepsFiveThousandLinesOfHistory` FAILED ("timed out waiting for
+  history to fill", 15s). Restored, it PASSED.
+- Blocked: `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` is refused by the
+  sandbox. `$(...)` is rejected ("A variable in this command can't be checked"), and
+  `GOLANGCI_LINT_CACHE=<literal path> golangci-lint run` is refused as needing approval.
+  Plain `golangci-lint run` uses the shared default cache, which holds paths from other
+  sessions' worktrees under `/tmp/claude-1000/.../scratchpad/crswd-wt/`. It exits 1 with
+  63 issues (errcheck 11, gosec 52), every one in those stale `/tmp` paths and none in
+  this worktree. That is not a clean pass, so the gate is not met.
+- Needed from Craig: either run the loop with `GOLANGCI_LINT_CACHE` already exported to a
+  fresh directory, or allow the env-prefixed `golangci-lint run` form. Then flip T001
+  back to `- [ ]`. Do not `golangci-lint cache clean`: the cache is shared with other
+  sessions.
+- The reverted T001 change is the same as Iteration 1's note. `argvNew` in `fake.go`
+  returns `{"tmux","set-option","-g","history-limit",strconv.Itoa(HistoryLimit),";","new-session",...}`;
+  `const HistoryLimit = 5000` goes after the `Controller` interface in `controller.go`;
+  the three argv expectations are `fake_test.go:65`, `exec_test.go:240`,
+  `session/manager_test.go:219`; the tmux test goes before `TestTmuxCreateHasKill` and reads
+  `#{history_size}` and `#{history_limit}` via `tmux -L <socket> display -p`.
+- Do not use `$?` in a Bash command here: the sandbox rejects it the same way.
