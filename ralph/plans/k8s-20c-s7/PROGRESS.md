@@ -91,3 +91,22 @@ For the next iteration:
 - Heredocs with `cat >> file <<'EOF'` chained after `&&` tripped the shell parser; use Edit.
 
 Noticed, not fixed: the `TestDashboardQuickstartStory2Cap` flake above.
+
+## Iteration 3 (T3, the cluster binary): stopped, needs a decision
+
+Wrote `k8s/cmd/crswd/` (`main.go`, `daemon.go`, `reconcile.go`, `main_test.go`, `daemon_test.go`). Left UNCOMMITTED and untracked on disk so the next iteration can finish it. `go -C k8s test ./cmd/crswd/... -v` passes (9 tests) and `go -C k8s build -o /dev/null ./cmd/crswd` exits 0.
+
+Failing first: `k8s/cmd/crswd/daemon_test.go:..: undefined: runDaemon` (the package did not compile).
+
+Blocked at the root pre-commit step: `go test ./...` fails in `cmd/crswd`:
+
+    --- FAIL: TestDiagnosticsGoToStderr (0.10s)
+        main_test.go:121: ../../k8s/cmd/crswd/main.go:30:37: k8s/cmd/crswd/main.go writes to standard output, which carries the audit trail and nothing else.
+
+That test (`cmd/crswd/main_test.go`, `parseTheDaemon`) walks the whole root module including `k8s/`, and allows `os.Stdout` only in `internal/audit/audit.go` and as an argument to `runConfigCommand`, `printVersion`, `runKeygen`, `runUnitCommand`. The plan forbids editing `cmd/crswd/` except the one new test, but Design §3 needs stdout for `--version`, `pane-loop` frames, and `codex-conversation`.
+
+Also learned: `config.Load()` reads the real config file and ambient CRSW_ variables, so `daemon_test.go` sets `CRSW_CONFIG_FILE` empty and `XDG_CONFIG_HOME` to a temp dir, and blanks the Access variables.
+
+## NEEDS CLARIFICATION
+
+Task T3 ("The cluster binary `k8s/cmd/crswd` per Design §3"): `TestDiagnosticsGoToStderr` rejects `os.Stdout` in `k8s/cmd/crswd/main.go`, and `cmd/crswd/` is on the never-touch list. Which is intended? (a) allow editing `cmd/crswd/main_test.go` to exempt `k8s/cmd/crswd/main.go` (the in-pod subcommands legitimately own stdout; the daemon path writes the audit trail via `internal/audit`); (b) have it skip `k8s/` like `hostswitch_test.go` does; (c) a stdout writer built without the `os.Stdout` selector (`os.NewFile`), which evades the guard rather than satisfying it. Recommendation: (a).
