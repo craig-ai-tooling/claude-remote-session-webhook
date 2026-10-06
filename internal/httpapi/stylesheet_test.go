@@ -4126,9 +4126,42 @@ func inputClient(t *testing.T) string {
 func TestTheInputClientSkipsTheSharedHandler(t *testing.T) {
 	t.Parallel()
 
-	if !strings.Contains(script(t), "hasAttribute('data-session-input')") {
-		t.Error("the shared submit handler does not skip forms marked data-session-input")
+	// The whole guard, not the attribute name: deleting the return leaves the
+	// string in place and turns every typed message into two POSTs.
+	guard := jsBlock(t, script(t), "if (form.hasAttribute('data-session-input'))")
+	if !strings.Contains(guard, "return;") {
+		t.Errorf("the shared submit handler's data-session-input guard does not return: %q", guard)
 	}
+}
+
+// jsBlock returns the braced block that follows header in src, header included,
+// with its braces balanced. It is a string test's nearest thing to reading
+// control flow, which this repo has no harness to run.
+func jsBlock(t *testing.T, src, header string) string {
+	t.Helper()
+
+	at := strings.Index(src, header)
+	if at < 0 {
+		t.Fatalf("the script carries no %q", header)
+	}
+	open := strings.Index(src[at:], "{")
+	if open < 0 {
+		t.Fatalf("%q opens no block", header)
+	}
+	depth := 0
+	for i := at + open; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return src[at : i+1]
+			}
+		}
+	}
+	t.Fatalf("the block after %q is never closed", header)
+	return ""
 }
 
 func TestTheInputClientPostsSameOrigin(t *testing.T) {
@@ -4162,8 +4195,34 @@ func TestTheScrollbackIsText(t *testing.T) {
 func TestCtrlEnterSends(t *testing.T) {
 	t.Parallel()
 
-	if !strings.Contains(inputClient(t), "event.ctrlKey || event.metaKey") {
-		t.Error("the input client does not send on Ctrl or Cmd+Enter")
+	// The whole modifier branch: Send is recorded as the clicked button and then
+	// the form is submitted, in that order. Either line deleted, or swapped,
+	// sends nothing or sends "Type only" on a browser without SubmitEvent.submitter.
+	branch := jsBlock(t, inputClient(t), "if (event.key === 'Enter' && (event.ctrlKey || event.metaKey))")
+	remember := strings.Index(branch, "lastClicked.set(form, send)")
+	submit := strings.Index(branch, "form.requestSubmit(send)")
+	if remember < 0 || submit < 0 {
+		t.Fatalf("the Ctrl/Cmd+Enter branch does not remember Send and submit with it:\n%s", branch)
+	}
+	if remember > submit {
+		t.Errorf("the Ctrl/Cmd+Enter branch submits before it remembers Send:\n%s", branch)
+	}
+}
+
+// One click is remembered for one submission, and a message the daemon says was
+// typed but not submitted is cleared from the box so a retry cannot duplicate it.
+func TestTheInputClientForgetsTheClickAndClearsAnUnsubmittedMessage(t *testing.T) {
+	t.Parallel()
+
+	client := inputClient(t)
+	pressed := strings.Index(client, "event.submitter || lastClicked.get(form)")
+	forgot := strings.Index(client, "lastClicked.delete(form)")
+	if pressed < 0 || forgot < pressed {
+		t.Error("the input client does not forget the remembered click right after reading it")
+	}
+	cleared := jsBlock(t, client, "if (code === 'type-unsubmitted'")
+	if !strings.Contains(cleared, "field.value = ''") {
+		t.Errorf("the type-unsubmitted branch does not clear the textarea:\n%s", cleared)
 	}
 }
 

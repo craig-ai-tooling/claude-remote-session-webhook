@@ -2402,6 +2402,9 @@ const waitOutTheUpdate = () => {
     event.preventDefault();
 
     const button = event.submitter || lastClicked.get(form) || null;
+    // One submission, one remembered button. A stale click must not stand in for
+    // the next submission that has no click of its own.
+    lastClicked.delete(form);
     const body = new URLSearchParams(new FormData(form));
     if (button?.name) {
       body.set(button.name, button.value);
@@ -2431,6 +2434,16 @@ const waitOutTheUpdate = () => {
       }
 
       const said = await answer.text();
+      // The text reached the pane and only the Enter failed. Clearing the box is
+      // what stops a retry from typing the same message a second time.
+      const code = new DOMParser().parseFromString(said, 'text/html')
+        .querySelector('[data-outcome]')?.getAttribute('data-outcome');
+      if (code === 'type-unsubmitted' && form.classList.contains('type-form')) {
+        const field = form.querySelector('textarea');
+        if (field) {
+          field.value = '';
+        }
+      }
       window.crswdShowToast(window.crswdSentence(said) || 'That could not be sent.', form);
     } catch {
       window.crswdShowToast('That could not be sent. Nothing reached the session.', form);
@@ -2444,7 +2457,11 @@ const waitOutTheUpdate = () => {
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
         event.preventDefault();
         const form = field.form;
-        form.requestSubmit(form.querySelector('button[value="yes"]'));
+        const send = form.querySelector('button[value="yes"]');
+        // A browser without SubmitEvent.submitter reads the remembered click, and
+        // requestSubmit makes none, so Send is recorded here.
+        lastClicked.set(form, send);
+        form.requestSubmit(send);
       }
     });
   }
