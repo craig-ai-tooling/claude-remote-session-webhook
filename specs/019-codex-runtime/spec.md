@@ -12,11 +12,9 @@ parity, Codex sign-in relay, Codex usage/quota, Kubernetes mode for Codex.
 
 ## NEEDS CLARIFICATION (Craig's calls only)
 
-- **NC-1 (Phase 3).** Craig's Codex account is Business with unlimited credits, so neither `/status`
-  nor quota-axi has a usage window for it today (research M18). As specified, the Codex meter will
-  read `codex quota: unknown` on this host until a window exists. Keep the meter (current plan), or
-  hide it while the provider has no window? The tasks implement "keep"; answering "hide" changes
-  T032 only.
+- **NC-1 (Phase 3), resolved 2026-10-06.** Craig: when the Codex meter would read unknown, hide
+  it; show it only when a usage window exists. This host's Business account has no window today
+  (research M18), so the Codex meter stays hidden here until one appears.
 
 ## Non-goals
 
@@ -110,8 +108,10 @@ supervisor revives it with `codex resume <id>` and the conversation is the same.
 **Acceptance Scenarios**:
 1. **Given** a `codex` entry and a cache holding a `codex` provider `weekly` window, **Then** a
    second meter reads `Codex weekly N% used`.
-2. **Given** the cache has no `codex` provider, **Then** the second meter reads
-   `codex quota: unknown` (NC-1).
+2. **Given** the cache has no `codex` provider or no `weekly` window, **Then** the Codex meter
+   wrapper is hidden (`hidden` attribute) and no Codex text is visible (NC-1).
+3. **Given** a hidden Codex meter, **When** a later poll returns a `weekly` window, **Then** the
+   wrapper is shown with `Codex weekly N% used`.
 
 ### Phase 4 — Kubernetes mode
 

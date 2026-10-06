@@ -250,8 +250,8 @@ its wire shape and gains `?harness=codex`; absent means Claude, so the existing 
 The create gate asks the relay of the harness the create resolves to.
 
 **D14. Codex quota reads the `codex` provider's `weekly` window (M18).** The reader becomes
-`ReadProvider(path, provider, window)`. When the cache has no `codex` provider the meter says
-`codex quota: unknown`, which is what this host will show today. The quota-axi `auth_required`
+`ReadProvider(path, provider, window)`. When the cache has no `codex` provider or no window
+the Codex meter is hidden (NC-1, Craig 2026-10-06), which is what this host will show today. The quota-axi `auth_required`
 cause is investigated by one spike task (T034) and changes no crswd code.
 
 **D15. Kubernetes mode for Codex is gated on spec 017 and on one measurement.** Operator-run

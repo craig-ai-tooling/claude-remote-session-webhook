@@ -1041,7 +1041,7 @@ A pure refactor: behaviour is identical and every commit stays green.
   <span class="quota" data-quota data-harness="claude">  <!-- wraps today's meter and label unchanged -->
     <meter data-quota-meter …></meter> <span data-quota-label>…</span>
   </span>
-  <span class="quota" data-quota data-harness="codex">   <!-- only when .CodexConfigured -->
+  <span class="quota" data-quota data-harness="codex" hidden>   <!-- only when .CodexConfigured; starts hidden -->
     <meter data-quota-meter aria-label="Weekly Codex quota used" …></meter>
     <span data-quota-label>codex quota: checking</span>
   </span>
@@ -1050,8 +1050,13 @@ A pure refactor: behaviour is identical and every commit stays green.
   iterates `document.querySelectorAll('[data-quota]')`, and for each wrapper `w` uses
   `w.querySelector('[data-quota-meter]')` and `w.querySelector('[data-quota-label]')`; it fetches
   `/dashboard/quota` with no query for `claude` and `?harness=codex` for codex. Label text
-  `Codex weekly N% used`; the unknown text `codex quota: unknown` (NC-1: kept visible).
-- **Tests**: `TestHeaderCodexMeterWhenConfigured`, `TestHeaderMeterWrappedWithoutCodex` (the Claude
+  `Codex weekly N% used`. Codex visibility rule (NC-1, Craig 2026-10-06): the Codex wrapper is
+  rendered with `hidden`; the script sets `w.hidden = false` only when the response carries a
+  `weekly` window, and sets `w.hidden = true` on any unknown, error or missing-window response. The
+  Claude wrapper never gets `hidden` and keeps today's unknown text.
+- **Tests**: `TestHeaderCodexMeterStartsHidden` (the codex wrapper carries `hidden`),
+  `TestQuotaScriptHidesCodexWithoutWindow` (served `crswd.js` sets `hidden = true` on the
+  unknown branch for the codex wrapper only), `TestHeaderCodexMeterWhenConfigured`, `TestHeaderMeterWrappedWithoutCodex` (the Claude
   meter and label are inside one `data-quota` wrapper; their own attributes unchanged),
   `TestQuotaScriptFetchesPerHarness` (served `crswd.js` uses `querySelectorAll('[data-quota]')`).
 - **Acceptance**: `go test ./internal/httpapi/... -run 'Header|Quota'` passes.
