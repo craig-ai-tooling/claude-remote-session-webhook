@@ -86,6 +86,15 @@ Notebook for `ralph/plans/codex-auth`. Each iteration appends below.
 - Not fixed: the JS behaviour (stale-answer discard, abort on second click) is unexercised by any test.
 - Left: T026.
 
+## Iteration 9 (T026, 10/6/26)
+
+- `docs/auth-and-sessions.md`: new section "Relaying Codex's device sign-in" after the Claude one: no paste-back (`ErrNoCodeToDeliver`, `errSignInCodeNotTaken`), `login status` exit codes, window `crswd-login-codex`, `codexauth` kinds, code and link rendering rules, per-harness routes and create gate, redirect markers.
+- `docs/components.md`: new subsection "The second auth pill and `headerView`" before the quota bar: `headerFor`, `CodexConfigured`, the second pill, byte-identical header without Codex, per-pill record contract, one dialog with generation and abort.
+- Docs only, so no test written first. Full gate green: gofmt, build, vet, test, golangci-lint (0 issues), `go test -tags quickstart ./cmd/crswd` (ok, 44s).
+- Not run: `-tags tmux` and `k8s/` checks (task touched neither).
+- Not fixed: the JS behaviour in T025 (stale-answer discard, abort on second click) still has no test beyond a file grep. Fleet grid still reads `running` for a Codex session needing sign-in.
+- Left: nothing in this notebook.
+
 ## NEEDS CLARIFICATION
 
 (none yet)

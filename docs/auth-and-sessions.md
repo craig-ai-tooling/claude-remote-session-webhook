@@ -558,6 +558,49 @@ This is the most fragile thing in the project and the most sensitive:
 - Session state becomes `needs-auth` while waiting, so it is visible in the list
   rather than silently stuck.
 
+## Relaying Codex's device sign-in (built, spec 019)
+
+Present only when `start_commands` holds an entry whose binary is Codex. Without
+one there is no Codex relay, no second pill and no Codex block in the panel, and
+every route answers as it did before. The rules above for Claude hold here too;
+what differs is the flow, and each difference is a rule.
+
+- **There is no paste-back.** `codex login --device-auth` prints a link and a
+  one-time code. The operator opens the link, enters the code on OpenAI's page,
+  and the CLI polls for the result. The relay therefore shows the link and the
+  code and has **no code form**. `Deliver` on a Codex relay returns
+  `ErrNoCodeToDeliver`, and `POST /dashboard/signin/code` with `harness=codex`
+  records `errSignInCodeNotTaken` and redirects with the refused outcome. Nothing
+  is typed into the window.
+- **State comes from `codex login status`'s exit code**, never from a pane.
+  Exit 0 is signed in. Exit 1 with `Not logged in` on stdout is signed out.
+  Anything else is an error, and the pill reads `unknown`.
+- **The relay's window is `crswd-login-codex`**, beside Claude's `crswd-login`.
+  It runs `<codex binary> -c check_for_update_on_startup=false login --device-auth`,
+  so the update menu (research M12) can never appear in it.
+- **Detection is `internal/codexauth.DetectPrompt`**, the same one-package,
+  golden-file rule as `claudeauth`, with three golden screens and two kinds:
+  `device-code` (from `login --device-auth`, and as the TUI draws it) and
+  `signed-out`. A session pane showing any of them renders `needs-auth`.
+  A Claude pane under a Codex session does not, and the reverse.
+- **The code is a live credential, the link is not rendered anywhere else.** Both
+  appear only in the `GET /dashboard/signin/view` fragment, which is HTML for the
+  panel: the link as an `href`, the code in a `<code>` element. Never JSON, a
+  `data-` attribute, a query string, a log line, an audit record or an error.
+  `Prompt.String` carries the kind and the URL's host and nothing else. A session's
+  own pane is out of scope: the pane viewer shows whatever a session drew.
+- **Every route takes `harness`.** `parseHarness` accepts `claude` or `codex`
+  once; anything else is a 400 (`errHarnessParam`) before any relay or cache is
+  touched. Absent means Claude, and `GET /dashboard/auth` without it answers
+  exactly as it always did. A `harness=codex` request on a daemon with no Codex
+  relay is refused, not routed to Claude's.
+- **The create gate is per harness.** A Codex create is refused with a Codex
+  sentence (`errCreateCodexSignedOut`) while Codex is signed out, and a Claude
+  create is not, and the reverse. Both doors enforce it, with the same 503.
+- **Redirect markers differ**: the action routes redirect with `signin=codex` for
+  Codex and `signin=open` for Claude. Only Claude's pill opens the dialog by
+  itself on a transition to `bad`; Codex opens by a click or `?signin=codex`.
+
 ## Lifetimes
 
 | Setting | Value |
