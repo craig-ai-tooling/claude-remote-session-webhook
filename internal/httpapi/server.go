@@ -815,6 +815,7 @@ func newServer(
 	// doing, and the operator watching a pane has no way to tell that from the
 	// assistant's own decision.
 	s.handleAction(patternDashboardCompact, audit.ActionDashboardCompact, s.compactFromBrowser)
+	s.handleAction(patternDashboardType, audit.ActionDashboardType, s.typeFromBrowser)
 	// The fifth, and the only one that takes a value naming what a session runs
 	// (T019). It goes through handleAction like the four above, and it is the one
 	// of the five where the gate's second half earns its keep twice over: a
