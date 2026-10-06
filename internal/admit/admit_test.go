@@ -54,6 +54,7 @@ func TestAdmit(t *testing.T) {
 		name   string
 		obj    v1alpha1.AgentSession
 		cap    int
+		max    time.Duration
 		others []v1alpha1.AgentSession
 		want   bool
 		reason string
@@ -68,6 +69,9 @@ func TestAdmit(t *testing.T) {
 		{name: "bad lifetime never", obj: obj("a", "u-a", mid, lifetime("never")), cap: 2, reason: "lifetime"},
 		{name: "bad lifetime zero", obj: obj("a", "u-a", mid, lifetime("0s")), cap: 2, reason: "lifetime"},
 		{name: "bad lifetime negative", obj: obj("a", "u-a", mid, lifetime("-1h")), cap: 2, reason: "lifetime"},
+		{name: "over lifetime ceiling", obj: obj("a", "u-a", mid, lifetime("72h")), cap: 2, max: 24 * time.Hour, reason: "configured maximum"},
+		{name: "at lifetime ceiling admitted", obj: obj("a", "u-a", mid, lifetime("24h")), cap: 2, max: 24 * time.Hour, want: true},
+		{name: "no ceiling admits long lifetime", obj: obj("a", "u-a", mid, lifetime("720h")), cap: 2, want: true},
 		{name: "past lifetime", obj: obj("a", "u-a", early, lifetime("1h")), cap: 2, reason: "past its lifetime"},
 		{name: "past lifetime exactly now", obj: obj("a", "u-a", now.Add(-time.Hour), lifetime("1h")), cap: 2, reason: "past its lifetime"},
 		{name: "cap zero rejects everything", obj: obj("a", "u-a", mid, nil), cap: 0, reason: "limit"},
@@ -175,7 +179,7 @@ func TestAdmit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, reason := Admit(tt.obj, roots, tt.cap, tt.others, now)
+			got, reason := Admit(tt.obj, roots, tt.cap, tt.max, tt.others, now)
 			if got != tt.want {
 				t.Fatalf("Admit = %v (%q), want %v", got, reason, tt.want)
 			}
@@ -201,7 +205,7 @@ func TestAdmitDoesNotMutateOthers(t *testing.T) {
 		obj("b", "u-b", now.Add(-time.Hour), nil),
 		obj("a", "u-a", now.Add(-2*time.Hour), nil),
 	}
-	Admit(obj("c", "u-c", now.Add(-30*time.Minute), nil), roots, 5, others, now)
+	Admit(obj("c", "u-c", now.Add(-30*time.Minute), nil), roots, 5, 0, others, now)
 	if others[0].Metadata.Name != "b" || others[1].Metadata.Name != "a" {
 		t.Fatal("Admit reordered the caller's slice")
 	}

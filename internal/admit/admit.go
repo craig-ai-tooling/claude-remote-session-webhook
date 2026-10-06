@@ -16,8 +16,10 @@ import (
 //
 // The checks run cheapest and most fundamental first: where, how long, then
 // how many. others is every other AgentSession in the namespace; cap bounds
-// how many live ones may be older than obj.
-func Admit(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, cap int, others []v1alpha1.AgentSession, now time.Time) (bool, string) {
+// how many live ones may be older than obj. maxLifetime is the configured
+// ceiling (config.SessionLifetimeMax); zero or negative means none, as
+// CRSW_SESSION_LIFETIME_MAX=never does for a session made through the API.
+func Admit(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, cap int, maxLifetime time.Duration, others []v1alpha1.AgentSession, now time.Time) (bool, string) {
 	// Lexical only: the daemon and reconciler cannot see the session's
 	// filesystem. The resolved check runs in the pod.
 	if _, err := session.LexicalWorkDir(obj.Spec.WorkDir, roots); err != nil {
@@ -29,6 +31,11 @@ func Admit(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, cap int, othe
 	lifetime, err := time.ParseDuration(obj.Spec.Lifetime)
 	if err != nil || lifetime <= 0 {
 		return false, "lifetime must be a positive duration such as 8h"
+	}
+	// An object written with kubectl skips the API's override check, so the
+	// ceiling is enforced here too (FR-007).
+	if maxLifetime > 0 && lifetime > maxLifetime {
+		return false, "lifetime is longer than the configured maximum"
 	}
 	if !obj.Metadata.CreationTimestamp.Add(lifetime).After(now) {
 		return false, "session is past its lifetime"
