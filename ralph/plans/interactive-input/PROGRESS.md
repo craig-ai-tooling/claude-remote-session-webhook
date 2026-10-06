@@ -112,3 +112,29 @@ Added `PasteBracketed` to `Controller`, `Fake` (`OpPasteBracketed`, `argvPasteBu
   over `-count=5`.
 - The sandbox refuses ad-hoc multi-statement tmux commands in Bash. To debug a tmux test,
   add a temporary `t.Logf` of the pane and remove it.
+
+## Iteration 5: T003 (2026-10-06)
+
+Added `CaptureHistory` to `Controller`, `Fake` (`OpCaptureHistory`, `argvCaptureHistory`, `SetHistory`),
+`Exec` (`ErrHistoryTooLarge`, `maxHistoryBytes`) and `ArgvCaptureHistory`, with the argv, fake, exec
+and real-tmux tests the task names.
+
+- Guards proven: with the line check changed to `HistoryLimit+1000000`, the "one line past the bound"
+  and "unterminated" rows of `TestExecCaptureHistoryRefusesPastTheBound` FAILED; restored, PASSED.
+  With `"-E", "-1"` removed from `argvCaptureHistory`, `TestTmuxCaptureHistoryReturnsOnlyHistory`
+  FAILED; restored, PASSED. The 4 MiB row was not broken separately.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2
+  (0 issues), `go test -tags tmux ./internal/tmuxctl/...`, no `go.sum`.
+- Next iteration: the exec stub passes stdout through one env var, which Linux caps near 128 KiB,
+  so a 4 MiB stdout cannot go through `stub.stdout`. `stub` gained a `fill` byte count
+  (`CRSWD_TEST_STUB_FILL`, also listed in `testSessionEnv`'s forwarded names). Use it for any
+  other large-output row.
+- The task's tmux test waits for the pane to contain `6000`, which the typed `seq 1 6000` also
+  contains. It now waits for a line equal to `6000`, as T002's READY wait does.
+- A bare `cd` in Bash persists across calls; an earlier `cd internal/tmuxctl` made `./...` resolve
+  wrongly until a bare `cd` back to the worktree root.
+
+### Findings
+
+- `argv_test.go` `TestArgvWrappersEqualBuilders` has no `ArgvPasteBracketed` row, which T002's entry
+  asked for. Not fixed here (T002 is closed and the task did not name it).
