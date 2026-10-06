@@ -101,3 +101,13 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
 - Rediscovery savings: the Bash sandbox rejects heredocs containing `{` next to quotes ("expansion obfuscation"), so write Go files with the Write tool. `Controller.describe` and the `stream` type are placeholders for T7/T8; `New` also refuses nil sessions/pods clients (beyond the plan's list). Test names carry the `Executor` prefix so the T6 `-run 'Executor|NewController'` filter picks them up.
 - Not fixed: the `k8s` module lint was not run here (CI does).
+
+## T7 (podctl methods)
+
+- Added `k8s/internal/podctl/methods.go` (`New`, `SetOption`, `SendKeys`, `Paste`, `PasteBracketed`, `Resize`, `PanePID`, `CaptureHistory`, `Has`, `Kill`, `ReconcileServerEnvironment`, plus `run`/`must`/`capBuffer`/`countLines` helpers and a `stopStream` that only deletes the map entry) and `methods_test.go`.
+- Failing first: `go -C k8s test ./internal/podctl -run 'New|SetOption|...'` failed by not compiling: `c.SendKeys undefined (type *Controller has no field or method SendKeys)` (also Resize, SetOption, Paste, PanePID, CaptureHistory).
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, `go -C k8s test -race ./internal/podctl` green, no root go.sum, `grep -c require go.mod` is 0.
+- For T8: `stopStream` (methods.go) only deletes from `c.streams`; T8 must make it cancel the stream's context too. `countLines` is already in methods.go, reuse it. `run(ctx, pod, argv, stdin, maxOut)` bounds stdout and stderr and is the helper for exec calls that need the exit code; `must` turns a non-zero exit into an error carrying stderr's first line (capped at 200 bytes). `Has` treats a Running pod with a DeletionTimestamp as "other phase" (true, no exec).
+- For T9/T10: test rig is `newRig(t, wrap)` in `methods_test.go` with `rig.pod`, `rig.object`, `rig.argvs`, `rig.creates`; the describer returns a record for `testName` only. The recorder keys replies on the exact joined argv, so a random buffer name needs a wrapper Executor (see `failPaste`).
+- Readiness in `New` treats a non-zero or failed `has-session` exec as "not ready yet" and keeps polling to `ReadyTimeout`, so a transient exec error in a just-started pod does not fail `New`.
+- Nothing noticed to fix.
