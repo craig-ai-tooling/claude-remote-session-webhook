@@ -47,3 +47,15 @@ S2 was still in its loop. Facts checked on disk, so no iteration has to rediscov
 ## NEEDS CLARIFICATION
 
 None open.
+
+## Iteration 1: T1 (tmuxctl exports)
+
+Added `internal/tmuxctl/export.go` (`ParseSessions`, `NewBufferName`, `Absent`) and `export_test.go`.
+
+- Failing first: `go test ./internal/tmuxctl -run Export` failed by not compiling:
+  `export_test.go:19:17: undefined: ParseSessions` (also `NewBufferName`, `Absent`).
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port 8765 was free, passed),
+  golangci-lint (0 issues), `go -C k8s` vet/test/build all green. No root go.sum, `grep -c require go.mod` is 0.
+- Rediscovery savings: Bash here refuses commands containing `$?`; run the checks one per line or with `;`.
+  A parse fixture row is `listFieldCount` pipe-joined empty fields with field 2 numeric (see `TestListFormatFieldCount`).
+- Nothing noticed to fix.
