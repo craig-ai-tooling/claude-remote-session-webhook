@@ -237,7 +237,7 @@ func TestExecSendsTheContractArgv(t *testing.T) {
 	}
 
 	want := []stubCall{
-		{Argv: []string{"tmux", "-L", execSocket, "new-session", "-d", "-s", execName, "-c", execWorkDir}},
+		{Argv: []string{"tmux", "-L", execSocket, "set-option", "-g", "history-limit", "5000", ";", "new-session", "-d", "-s", execName, "-c", execWorkDir}},
 		{Argv: []string{"tmux", "-L", execSocket, "set-option", "-t", "=" + execName + ":", "@crswd-managed", "1"}},
 		{Argv: []string{"tmux", "-L", execSocket, "send-keys", "-t", "=" + execName + ":", "--", "Enter"}},
 		{Argv: []string{"tmux", "-L", execSocket, "load-buffer", "-b", execName, "-"}, Stdin: []byte("hello")},

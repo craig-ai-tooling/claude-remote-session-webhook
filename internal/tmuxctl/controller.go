@@ -95,6 +95,11 @@ type Controller interface {
 	ReconcileServerEnvironment(ctx context.Context) (Reconciliation, error)
 }
 
+// HistoryLimit is the scrollback every pane is created with. tmux reads
+// history-limit when a pane is made and never again, so it has to ride on the
+// new-session invocation itself (research R2).
+const HistoryLimit = 5000
+
 // The tmux user options the daemon writes onto every session it creates, and
 // reads back on startup to decide what it owns (research D3).
 //

@@ -62,7 +62,7 @@ func TestFakeRecordsExactArgv(t *testing.T) {
 	}
 
 	want := []tmuxctl.Call{
-		{Op: tmuxctl.OpNew, Argv: []string{"tmux", "new-session", "-d", "-s", fakeName, "-c", fakeWorkDir}},
+		{Op: tmuxctl.OpNew, Argv: []string{"tmux", "set-option", "-g", "history-limit", "5000", ";", "new-session", "-d", "-s", fakeName, "-c", fakeWorkDir}},
 		{Op: tmuxctl.OpSetOption, Argv: []string{"tmux", "set-option", "-t", "=" + fakeName + ":", "@crswd-managed", "1"}},
 		{Op: tmuxctl.OpSendKeys, Argv: []string{"tmux", "send-keys", "-t", "=" + fakeName + ":", "--", "Enter"}},
 		{Op: tmuxctl.OpPaste, Argv: []string{"tmux", "load-buffer", "-b", fakeName, "-"}, Stdin: []byte("hello")},

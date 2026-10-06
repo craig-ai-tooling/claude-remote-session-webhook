@@ -47,8 +47,12 @@ type Call struct {
 // asserting the command tmux will actually receive. Each returns a fresh slice
 // with argv[0] set, so a caller runs exec.CommandContext(ctx, argv[0], argv[1:]...).
 
+// The ";" is tmux's own command separator, passed as its own argv element, so
+// this is still one exec and no shell string. The limit is chained here because
+// a set-option after creation does not change a pane that already exists
+// (research R2); a server that is not running yet is started by the chain.
 func argvNew(name, workDir string) []string {
-	return []string{"tmux", "new-session", "-d", "-s", name, "-c", workDir}
+	return []string{"tmux", "set-option", "-g", "history-limit", strconv.Itoa(HistoryLimit), ";", "new-session", "-d", "-s", name, "-c", workDir}
 }
 
 func argvSetOption(name, option, value string) []string {

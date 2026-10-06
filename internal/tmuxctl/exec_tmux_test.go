@@ -96,6 +96,37 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
+// history-limit is read when a pane is created, so the proof is a real pane
+// that has to hold more than tmux's 2000-line default.
+func TestTmuxNewSessionKeepsFiveThousandLinesOfHistory(t *testing.T) {
+	ctx := context.Background()
+	e := newTestExec(t)
+	const name = "crswd-6a000000000000000000000000000000"
+
+	if err := e.New(ctx, name, t.TempDir()); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := e.SendKeys(ctx, name, "seq 1 9000", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+
+	display := func(format string) string {
+		out, err := exec.Command("tmux", "-L", e.socket, "display", "-p", "-t", PaneTarget(name), format).Output() //nolint:gosec // socket is socketFor(t.Name())
+		if err != nil {
+			t.Fatalf("display %s: %v", format, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	waitFor(t, "history to fill", func() bool {
+		n, err := strconv.Atoi(display("#{history_size}"))
+		return err == nil && n >= 4900
+	})
+	if got := display("#{history_limit}"); got != "5000" {
+		t.Fatalf("history_limit = %s, want 5000", got)
+	}
+}
+
 func TestTmuxCreateHasKill(t *testing.T) {
 	ctx := context.Background()
 	e := newTestExec(t)

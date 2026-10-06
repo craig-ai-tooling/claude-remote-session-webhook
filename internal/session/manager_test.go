@@ -216,7 +216,7 @@ func TestCreateSendsTheTmuxCommandsInOrder(t *testing.T) {
 	name := "crswd-" + s.ID
 	pane := "=" + name + ":"
 	want := []tmuxctl.Call{
-		{Op: tmuxctl.OpNew, Argv: []string{"tmux", "new-session", "-d", "-s", name, "-c", f.repo()}},
+		{Op: tmuxctl.OpNew, Argv: []string{"tmux", "set-option", "-g", "history-limit", "5000", ";", "new-session", "-d", "-s", name, "-c", f.repo()}},
 		{Op: tmuxctl.OpSetOption, Argv: []string{"tmux", "set-option", "-t", pane, "@crswd-managed", "1"}},
 		{Op: tmuxctl.OpSetOption, Argv: []string{"tmux", "set-option", "-t", pane, "@crswd-owner", "operator"}},
 		// The two facts adoption restores (#72). Base64 on the directory because
