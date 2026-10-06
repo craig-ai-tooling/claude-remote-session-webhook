@@ -19,6 +19,12 @@ const (
 	// not walked on every render of the create form.
 	codexScanLimit = 500
 	codexListLimit = 50
+	// codexEntryCap is the most directory entries one listing or lookup reads,
+	// of every kind and at every level. The 500-file limit above counts rollouts
+	// only, so it bounds work on a tidy tree and nothing on a hostile one.
+	codexEntryCap = 10000
+	// codexReadChunk is how many entries one ReadDir call returns.
+	codexReadChunk = 256
 )
 
 var codexRolloutName = regexp.MustCompile(`^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-([0-9a-f-]{36})\.jsonl$`)
@@ -30,66 +36,129 @@ func codexConversations(sessionsDir, workDir string) []Conversation {
 	var out []Conversation
 	examined := 0
 
-	for _, y := range sortedSubdirs(sessionsDir) {
-		for _, mo := range sortedSubdirs(filepath.Join(sessionsDir, y)) {
-			for _, d := range sortedSubdirs(filepath.Join(sessionsDir, y, mo)) {
-				day := filepath.Join(sessionsDir, y, mo, d)
-				entries, err := os.ReadDir(day)
-				if err != nil {
-					continue
-				}
-				slices.SortFunc(entries, func(a, b os.DirEntry) int { return strings.Compare(b.Name(), a.Name()) })
-				for _, e := range entries {
-					if !e.Type().IsRegular() {
-						continue
-					}
-					m := codexRolloutName.FindStringSubmatch(e.Name())
-					if m == nil {
-						continue
-					}
-					if examined >= codexScanLimit {
-						return sortConversations(out)
-					}
-					examined++
+	// A walk that runs out of its entry budget keeps what it has found.
+	_ = walkCodexRollouts(sessionsDir, func(day string, e os.DirEntry, nameID string) bool {
+		if examined >= codexScanLimit {
+			return true
+		}
+		examined++
 
-					path := filepath.Join(day, e.Name())
-					if !codexRollout(sessionsDir, path) {
-						continue
-					}
-					id, cwd, ok := readCodexMeta(path)
-					if !ok || id != m[1] || !isConversationID(id) || cwd != workDir {
-						continue
-					}
-					info, err := e.Info()
-					if err != nil {
-						continue
-					}
-					out = append(out, Conversation{ID: id, Modified: info.ModTime()})
-					if len(out) >= codexListLimit {
-						return sortConversations(out)
+		path := filepath.Join(day, e.Name())
+		if !codexRollout(sessionsDir, path) {
+			return false
+		}
+		id, cwd, ok := readCodexMeta(path)
+		if !ok || id != nameID || !isConversationID(id) || cwd != workDir {
+			return false
+		}
+		info, err := e.Info()
+		if err != nil {
+			return false
+		}
+		out = append(out, Conversation{ID: id, Modified: info.ModTime()})
+		return len(out) >= codexListLimit
+	})
+	return sortConversations(out)
+}
+
+// walkCodexRollouts visits the rollout files under sessionsDir, newest day
+// first, and stops when visit returns true. Every directory entry read, of any
+// kind, spends from one budget of codexEntryCap, so a sessions tree someone else
+// can write to costs bounded memory and time; running out returns
+// ErrDiscoveryBounds. Directories are read in chunks, never whole.
+func walkCodexRollouts(sessionsDir string, visit func(day string, e os.DirEntry, nameID string) bool) error {
+	budget := codexEntryCap
+	years, err := codexDateDirs(sessionsDir, 4, &budget)
+	if err != nil {
+		return err
+	}
+	for _, y := range years {
+		months, err := codexDateDirs(filepath.Join(sessionsDir, y), 2, &budget)
+		if err != nil {
+			return err
+		}
+		for _, mo := range months {
+			days, err := codexDateDirs(filepath.Join(sessionsDir, y, mo), 2, &budget)
+			if err != nil {
+				return err
+			}
+			for _, d := range days {
+				day := filepath.Join(sessionsDir, y, mo, d)
+				files, err := codexDayFiles(day, &budget)
+				if err != nil {
+					return err
+				}
+				for _, e := range files {
+					m := codexRolloutName.FindStringSubmatch(e.Name())
+					if m != nil && visit(day, e, m[1]) {
+						return nil
 					}
 				}
 			}
 		}
 	}
-	return sortConversations(out)
+	return nil
 }
 
-// sortedSubdirs names the real directories under dir, descending. A symlinked
-// directory has a Type that is not a directory, so it is left out.
-func sortedSubdirs(dir string) []string {
-	entries, err := os.ReadDir(dir)
+// readCodexDir reads dir in chunks of 256, spending one budget unit per entry
+// and handing each to keep. An unreadable directory is an empty one.
+func readCodexDir(dir string, budget *int, keep func(os.DirEntry)) error {
+	f, err := os.Open(dir) //nolint:gosec // G304: dir is the sessions tree or a name this walker built from digits.
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // an unreadable directory has nothing to list
 	}
-	var names []string
-	for _, e := range entries {
-		if e.Type().IsDir() {
-			names = append(names, e.Name())
+	defer f.Close() //nolint:errcheck // read-only
+	for {
+		entries, err := f.ReadDir(codexReadChunk)
+		for _, e := range entries {
+			if *budget--; *budget < 0 {
+				return ErrDiscoveryBounds
+			}
+			keep(e)
+		}
+		if err != nil {
+			return nil //nolint:nilerr // io.EOF ends the directory, any other error ends the read
 		}
 	}
+}
+
+// codexDateDirs names the real directories under dir whose names are exactly
+// width ASCII digits, descending. A symlinked directory has a Type that is not
+// a directory, so it is left out.
+func codexDateDirs(dir string, width int, budget *int) ([]string, error) {
+	var names []string
+	err := readCodexDir(dir, budget, func(e os.DirEntry) {
+		if e.Type().IsDir() && asciiDigits(e.Name(), width) {
+			names = append(names, e.Name())
+		}
+	})
 	slices.SortFunc(names, func(a, b string) int { return strings.Compare(b, a) })
-	return names
+	return names, err
+}
+
+// codexDayFiles returns the regular files in a day directory that are named
+// like a rollout, newest name first.
+func codexDayFiles(dir string, budget *int) ([]os.DirEntry, error) {
+	var files []os.DirEntry
+	err := readCodexDir(dir, budget, func(e os.DirEntry) {
+		if e.Type().IsRegular() && codexRolloutName.MatchString(e.Name()) {
+			files = append(files, e)
+		}
+	})
+	slices.SortFunc(files, func(a, b os.DirEntry) int { return strings.Compare(b.Name(), a.Name()) })
+	return files, err
+}
+
+func asciiDigits(s string, width int) bool {
+	if len(s) != width {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // sortConversations orders newest first, ties on identifier, as Conversations does.
@@ -112,7 +181,13 @@ func codexHasTranscript(sessionsDir, id, workDir string) bool {
 	if !isConversationID(id) {
 		return false
 	}
-	matches, err := filepath.Glob(sessionsDir + "/*/*/*/rollout-*-" + id + ".jsonl")
+	var matches []string
+	err := walkCodexRollouts(sessionsDir, func(day string, e os.DirEntry, nameID string) bool {
+		if nameID == id {
+			matches = append(matches, filepath.Join(day, e.Name()))
+		}
+		return len(matches) > 1
+	})
 	if err != nil || len(matches) != 1 {
 		return false
 	}

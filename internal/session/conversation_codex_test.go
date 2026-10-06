@@ -429,3 +429,72 @@ func TestCodexRolloutRejectsSymlinks(t *testing.T) {
 		t.Error("a file outside the root was accepted")
 	}
 }
+
+func TestCodexWalkBoundsEntries(t *testing.T) {
+	t.Parallel()
+	id := codexTestID(1)
+
+	t.Run("a day holding more than the cap is refused", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		path := writeRollout(t, root, "2026/10/02", "2026-10-02T10-00-00", id, codexMetaLine(t, id, codexTestWork, 0))
+		day := filepath.Dir(path)
+		for i := 0; i <= codexEntryCap; i++ {
+			if err := os.WriteFile(filepath.Join(day, fmt.Sprintf("junk-%d", i)), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if codexHasTranscript(root, id, codexTestWork) {
+			t.Error("codexHasTranscript read past the entry cap")
+		}
+		err := walkCodexRollouts(root, func(string, os.DirEntry, string) bool { return false })
+		if !errors.Is(err, ErrDiscoveryBounds) {
+			t.Errorf("walkCodexRollouts() = %v, want ErrDiscoveryBounds", err)
+		}
+	})
+
+	t.Run("a listing keeps what it found before the cap", func(t *testing.T) {
+		t.Parallel()
+		root := t.TempDir()
+		writeRollout(t, root, "2026/10/03", "2026-10-03T10-00-00", id, codexMetaLine(t, id, codexTestWork, 0))
+		old := filepath.Join(root, "2026", "10", "01")
+		if err := os.MkdirAll(old, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i <= codexEntryCap; i++ {
+			if err := os.WriteFile(filepath.Join(old, fmt.Sprintf("junk-%d", i)), nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if got := codexConversations(root, codexTestWork); len(got) != 1 {
+			t.Errorf("codexConversations() returned %d, want the 1 found before the cap", len(got))
+		}
+	})
+}
+
+func TestCodexWalkSkipsNonNumericDateDirs(t *testing.T) {
+	t.Parallel()
+	id := codexTestID(1)
+
+	for _, day := range []string{
+		"abcd/10/02",
+		"2026/ab/02",
+		"2026/10/xx",
+		"20260/10/02",
+		"2026/1/02",
+		"2026/10/2",
+		"\u0662\u0660\u0662\u0666/10/02",
+	} {
+		t.Run(day, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeRollout(t, root, day, "2026-10-02T10-00-00", id, codexMetaLine(t, id, codexTestWork, 0))
+			if got := codexConversations(root, codexTestWork); len(got) != 0 {
+				t.Errorf("a rollout under %q was listed", day)
+			}
+			if codexHasTranscript(root, id, codexTestWork) {
+				t.Errorf("a rollout under %q satisfied the transcript check", day)
+			}
+		})
+	}
+}
