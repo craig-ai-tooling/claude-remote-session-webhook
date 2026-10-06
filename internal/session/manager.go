@@ -246,6 +246,10 @@ type Manager struct {
 	// replace the /proc walk.
 	findCodexConversation func(ctx context.Context, s Session) (string, error)
 
+	// checkTranscript replaces the host's transcript check when set; see
+	// SetTranscriptChecker.
+	checkTranscript func(ctx context.Context, s Session, id string) (bool, error)
+
 	tmux  tmuxctl.Controller
 	store *Store
 	roots []config.ApprovedRoot
@@ -285,6 +289,56 @@ func (m *Manager) SetStartCommands(cmds config.StartCommands) { m.startCommands 
 // manager never given a resolver does.
 func (m *Manager) SetWorkDirResolver(f func(string, []config.ApprovedRoot) (string, error)) {
 	m.resolveWorkDir = f
+}
+
+// SetCodexConversationFinder replaces how a Codex session's conversation is
+// found; nil restores the host's own /proc walk. In kubernetes mode the pane's
+// process tree is in another pod, so the daemon asks the pod. A setter for the
+// reason SetStartCommands is one.
+func (m *Manager) SetCodexConversationFinder(f func(ctx context.Context, s Session) (string, error)) {
+	if f == nil {
+		f = m.hostCodexConversation
+	}
+	m.findCodexConversation = f
+}
+
+// SetTranscriptChecker replaces how the supervisor asks whether a conversation
+// still has a transcript; nil restores the host check. It returns an error
+// because in a pod the answer comes over the network, and "could not ask" must
+// not read as "no transcript", which the supervisor turns into a permanent
+// give-up.
+func (m *Manager) SetTranscriptChecker(f func(ctx context.Context, s Session, id string) (bool, error)) {
+	m.checkTranscript = f
+}
+
+// PodRecord is what a pod's object needs to know about a session that the
+// tmuxctl.Controller's New (a name and a directory) does not carry.
+type PodRecord struct {
+	ID, Name, Owner, WorkDir, StartCommand, ConversationID string
+	Deadline                                               time.Time
+	LifetimeDisabled                                       bool
+}
+
+// PodRecord returns the session whose tmux name is tmuxName. The record is in
+// the store before start calls New (Create adds it first), so a Controller
+// asked to create a session can look it up.
+func (m *Manager) PodRecord(tmuxName string) (PodRecord, bool) {
+	for _, s := range m.store.snapshot() {
+		if s.TmuxName() != tmuxName {
+			continue
+		}
+		return PodRecord{
+			ID:               s.ID,
+			Name:             s.Name,
+			Owner:            string(s.Owner),
+			WorkDir:          s.WorkDir,
+			StartCommand:     s.StartCommand,
+			ConversationID:   s.ConversationID,
+			Deadline:         s.AbsoluteDeadline(),
+			LifetimeDisabled: s.LifetimeDisabled(),
+		}, true
+	}
+	return PodRecord{}, false
 }
 
 // workDir is the one place a working directory is checked, so Create, journal

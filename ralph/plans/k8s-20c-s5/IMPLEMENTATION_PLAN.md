@@ -20,17 +20,17 @@ If it exits non-zero, follow PROMPT.md "Blocked work".
 Take the topmost open task. One per iteration. T1 to T4 are root module, standard library only.
 T5 to T10 are the cluster module `k8s/`.
 
-- [ ] T1: tmuxctl exports for a second Controller per Design §1. Verify: `go test ./internal/tmuxctl -run 'Export' -v` passes.
-- [ ] T2: sessionpod: `CODEX_HOME` pass-through, `WorkRoot`, and the config seed run by `Pod.Run`, per Design §2. Verify: `go test ./internal/sessionpod -run 'PassThrough|Seed|RunSeeds' -v` passes.
-- [ ] T3: session `TranscriptExists` and the sessionpod in-pod helpers `CodexConversation` and `HasTranscript`, per Design §3. Verify: `go test ./internal/session ./internal/sessionpod -run 'TranscriptExists|CodexConversation|PodHasTranscript' -v` passes.
-- [ ] T4: Manager hooks per Design §4: `SetCodexConversationFinder`, `SetTranscriptChecker`, `PodRecord`, and the supervisor's allowlist check through the S2 resolver. Verify: `go test ./internal/session -run 'CodexConversationFinder|TranscriptChecker|PodRecord|SuperviseLexical' -v` passes.
-- [ ] T5: `k8s/internal/agentsession`, the typed client over the dynamic client, per Design §5. Verify: `go -C k8s test ./internal/agentsession -v` passes.
-- [ ] T6: `k8s/internal/podctl` skeleton: `Executor`, the recording fake, `RemoteExecutor`, `Config`, `New`, `SetDescriber`, per Design §6. Verify: `go -C k8s test ./internal/podctl -run 'Executor|NewController' -v` passes.
-- [ ] T7: podctl `New`, `SetOption`, `SendKeys`, `Paste`, `PasteBracketed`, `Resize`, `PanePID`, `CaptureHistory`, `Has`, `Kill`, `ReconcileServerEnvironment`, per Design §7. Verify: `go -C k8s test ./internal/podctl -run 'New|SetOption|SendKeys|Paste|Resize|PanePID|CaptureHistory|Has|Kill|Reconcile' -v` passes.
-- [ ] T8: podctl `CapturePane` over one held `pane-loop` stream per session, per Design §8. Verify: `go -C k8s test ./internal/podctl -run CapturePane -v` passes.
-- [ ] T9: podctl `List`, with option replay into a fresh pod, per Design §9. Verify: `go -C k8s test ./internal/podctl -run List -v` passes.
-- [ ] T10: podctl `CodexConversation` and `HasTranscript` methods, and the compile-time Controller assertion, per Design §10. Verify: `go -C k8s test ./internal/podctl -v` passes and `go -C k8s vet ./...` exits 0.
-- [ ] T11: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
+- [x] T1: tmuxctl exports for a second Controller per Design §1. Verify: `go test ./internal/tmuxctl -run 'Export' -v` passes.
+- [x] T2: sessionpod: `CODEX_HOME` pass-through, `WorkRoot`, and the config seed run by `Pod.Run`, per Design §2. Verify: `go test ./internal/sessionpod -run 'PassThrough|Seed|RunSeeds' -v` passes.
+- [x] T3: session `TranscriptExists` and the sessionpod in-pod helpers `CodexConversation` and `HasTranscript`, per Design §3. Verify: `go test ./internal/session ./internal/sessionpod -run 'TranscriptExists|CodexConversation|PodHasTranscript' -v` passes.
+- [x] T4: Manager hooks per Design §4: `SetCodexConversationFinder`, `SetTranscriptChecker`, `PodRecord`, and the supervisor's allowlist check through the S2 resolver. Verify: `go test ./internal/session -run 'CodexConversationFinder|TranscriptChecker|PodRecord|SuperviseLexical' -v` passes.
+- [x] T5: `k8s/internal/agentsession`, the typed client over the dynamic client, per Design §5. Verify: `go -C k8s test ./internal/agentsession -v` passes.
+- [x] T6: `k8s/internal/podctl` skeleton: `Executor`, the recording fake, `RemoteExecutor`, `Config`, `New`, `SetDescriber`, per Design §6. Verify: `go -C k8s test ./internal/podctl -run 'Executor|NewController' -v` passes.
+- [x] T7: podctl `New`, `SetOption`, `SendKeys`, `Paste`, `PasteBracketed`, `Resize`, `PanePID`, `CaptureHistory`, `Has`, `Kill`, `ReconcileServerEnvironment`, per Design §7. Verify: `go -C k8s test ./internal/podctl -run 'New|SetOption|SendKeys|Paste|Resize|PanePID|CaptureHistory|Has|Kill|Reconcile' -v` passes.
+- [x] T8: podctl `CapturePane` over one held `pane-loop` stream per session, per Design §8. Verify: `go -C k8s test ./internal/podctl -run CapturePane -v` passes.
+- [x] T9: podctl `List`, with option replay into a fresh pod, per Design §9. Verify: `go -C k8s test ./internal/podctl -run List -v` passes.
+- [x] T10: podctl `CodexConversation` and `HasTranscript` methods, and the compile-time Controller assertion, per Design §10. Verify: `go -C k8s test ./internal/podctl -v` passes and `go -C k8s vet ./...` exits 0.
+- [x] T11: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go test ./... && go -C k8s test ./...` exits 0.
 
 ## Files touched
 

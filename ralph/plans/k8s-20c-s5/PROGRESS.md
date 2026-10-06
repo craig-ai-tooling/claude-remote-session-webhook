@@ -47,3 +47,116 @@ S2 was still in its loop. Facts checked on disk, so no iteration has to rediscov
 ## NEEDS CLARIFICATION
 
 None open.
+
+## Iteration 1: T1 (tmuxctl exports)
+
+Added `internal/tmuxctl/export.go` (`ParseSessions`, `NewBufferName`, `Absent`) and `export_test.go`.
+
+- Failing first: `go test ./internal/tmuxctl -run Export` failed by not compiling:
+  `export_test.go:19:17: undefined: ParseSessions` (also `NewBufferName`, `Absent`).
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port 8765 was free, passed),
+  golangci-lint (0 issues), `go -C k8s` vet/test/build all green. No root go.sum, `grep -c require go.mod` is 0.
+- Rediscovery savings: Bash here refuses commands containing `$?`; run the checks one per line or with `;`.
+  A parse fixture row is `listFieldCount` pipe-joined empty fields with field 2 numeric (see `TestListFormatFieldCount`).
+- Nothing noticed to fix.
+
+## Iteration 2: T2 (sessionpod pass-through, WorkRoot, Seed)
+
+Added `internal/sessionpod/seed.go` (`Seed`), `seed_test.go`; `sessionpod.go` gains `WorkRoot`, `Pod.Env`, `Pod.seed`, `CODEX_HOME` in `passThrough`, and `Run` seeds after `ResolveWorkDir` and before `Tmux.New`.
+
+- Failing first: `go test ./internal/sessionpod -run 'PassThrough|Seed|RunSeeds'` failed by not compiling: `seed_test.go:68:12: undefined: Seed` and `p.Env undefined (type *Pod has no field or method Env)`. `TestPassThroughCarriesCodexHome` would also fail on the old `passThrough` once it compiles.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- **Existing Run tests leave `Pod.Env` nil, so they now seed from `os.Environ()`.** That is the real `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` of whoever runs the suite. I added a package `TestMain` in `seed_test.go` that points all three at a temp dir (no existing test file edited). The first `go test ./internal/sessionpod` run before that TestMain existed may have created `~/.codex` and trust entries in the real home; this sandbox cannot list `~`, so I could not check. The operator should look for `~/.codex/config.toml` and a `.claude.json` trust entry for a `t.TempDir` path.
+- Rediscovery savings: Bash refuses `$?` and `;`-joined commands that mix operations; one command per call. golangci-lint has errcheck check-blank on, so `_ = os.RemoveAll(x)` fails. The format hook already adds imports (goimports).
+
+## Iteration 3: T3 (TranscriptExists, in-pod helpers)
+
+Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` now delegates), `internal/sessionpod/inpod.go` (`CodexConversation`, `HasTranscript`, `hasTranscriptIn`, `NewInPodExec`), and the tests `internal/session/transcript_test.go`, `internal/sessionpod/inpod_test.go`.
+
+- Failing first: `go test ./internal/session ./internal/sessionpod -run 'TranscriptExists|CodexConversation|PodHasTranscript'` failed by not compiling: `undefined: TranscriptExists`, `undefined: CodexConversation`, `undefined: hasTranscriptIn`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Behaviour to know: the Codex branch of `TranscriptExists` compares against the resolved workdir (Design §3). `(*Manager).hasTranscriptFor` is untouched and still uses `m.codexHome` and the unresolved `s.WorkDir`.
+- Rediscovery savings: use the Write tool for test files; a bash heredoc containing a brace next to a quote is refused. `writeRollout`, `codexMetaLine` and `codexTestID` are reusable from any new file in package `session`. `claudeProjectDir` in `inpod_test.go` copies the unexported `projectDirFor`.
+- Nothing noticed to fix.
+
+## Iteration 4: T4 Manager hooks
+- Added `SetCodexConversationFinder`, `SetTranscriptChecker`, `PodRecord`, `transcriptFor`; supervisor rule 6 now goes through `m.workDir`, rule 7 through `transcriptFor` (an error returns before the revive bound is written).
+- Failing first: `go test ./internal/session -run 'CodexConversationFinder|TranscriptChecker|PodRecord|SuperviseLexical'` failed by not compiling: `sup.mgr.SetCodexConversationFinder undefined`, `f.mgr.transcriptFor undefined`, `f.mgr.PodRecord undefined`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- For S7, other callers of `hasTranscriptFor` that keep the host check and ignore the checker: `manager.go` near line 2702 (the continue path, `!m.hasTranscriptFor(s, checked)`). Only supervisor rule 7 uses `transcriptFor`.
+- Rediscovery savings: `supervisorAt` builds a second Manager via `managerAt`, which has no Codex start command. For a Codex sweep build `NewSupervisor(f.mgr, ...)` on the fixture's own manager (see `newSweepRig`). `TestSuperviseLexicalWorkDir` needs `SetTranscriptChecker` because the host transcript check resolves the (deleted) workdir with `ResolveWorkDir` and would give up for that reason instead.
+- Nothing noticed to fix.
+
+## Iteration 5: T5 (k8s/internal/agentsession)
+- Added `k8s/internal/agentsession/agentsession.go` (`GVR`, `Client`, `New`, `Get`, `List`, `Create`, `Delete`, `SetAnnotation`, `UpdateStatus`, `Update`, `ToObject`, `FromObject`) and `agentsession_test.go`. `k8s/go.mod` gains a `require` on the root module (needed to import `api/v1alpha1` through the existing `replace ../`); `go mod tidy` left `k8s/go.sum` unchanged.
+- Failing first: `go -C k8s test ./internal/agentsession` first failed with `module ... provides package .../api/v1alpha1 and is replaced but not required`; after the require was added it failed by not compiling: `undefined: Client`, `undefined: GVR`, `undefined: New`, `undefined: FromObject`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Rediscovery savings: the require line is `github.com/nctiggy/claude-remote-session-webhook v0.0.0-00010101000000-000000000000` (pseudo-version is fine with a `replace`), so later k8s packages can import root `internal/...` and `api/...` with no further go.mod edit. Importing root `internal/` from `k8s/` works because the replace puts it in the same module path prefix. `dynamicfake` with `NewSimpleDynamicClientWithCustomListKinds` handles Create, Get, Patch (merge), Update and UpdateStatus here.
+- The fake does not enforce resourceVersion, so the "no typed object sent back" rule is by construction only, not proven by a test. Real conflicts surface in S7's live acceptance.
+
+## T6 (podctl skeleton)
+
+- Added `k8s/internal/podctl/{podctl.go,remote.go}` (`Executor`, `Describer`, `Config`, `Controller`, `New`, `SetDescriber`, `annotationKey`, `inPod`, `RemoteExecutor`) and tests `podctl_test.go`, `fake_test.go` (`recorder`), `remote_test.go`. `go mod tidy` added the remotecommand deps to `k8s/go.mod` and `k8s/go.sum`.
+- Failing first: `go -C k8s test ./internal/podctl` failed by not compiling: `undefined: Config`, `undefined: New`, `undefined: Executor`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Rediscovery savings: the Bash sandbox rejects heredocs containing `{` next to quotes ("expansion obfuscation"), so write Go files with the Write tool. `Controller.describe` and the `stream` type are placeholders for T7/T8; `New` also refuses nil sessions/pods clients (beyond the plan's list). Test names carry the `Executor` prefix so the T6 `-run 'Executor|NewController'` filter picks them up.
+- Not fixed: the `k8s` module lint was not run here (CI does).
+
+## T7 (podctl methods)
+
+- Added `k8s/internal/podctl/methods.go` (`New`, `SetOption`, `SendKeys`, `Paste`, `PasteBracketed`, `Resize`, `PanePID`, `CaptureHistory`, `Has`, `Kill`, `ReconcileServerEnvironment`, plus `run`/`must`/`capBuffer`/`countLines` helpers and a `stopStream` that only deletes the map entry) and `methods_test.go`.
+- Failing first: `go -C k8s test ./internal/podctl -run 'New|SetOption|...'` failed by not compiling: `c.SendKeys undefined (type *Controller has no field or method SendKeys)` (also Resize, SetOption, Paste, PanePID, CaptureHistory).
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, `go -C k8s test -race ./internal/podctl` green, no root go.sum, `grep -c require go.mod` is 0.
+- For T8: `stopStream` (methods.go) only deletes from `c.streams`; T8 must make it cancel the stream's context too. `countLines` is already in methods.go, reuse it. `run(ctx, pod, argv, stdin, maxOut)` bounds stdout and stderr and is the helper for exec calls that need the exit code; `must` turns a non-zero exit into an error carrying stderr's first line (capped at 200 bytes). `Has` treats a Running pod with a DeletionTimestamp as "other phase" (true, no exec).
+- For T9/T10: test rig is `newRig(t, wrap)` in `methods_test.go` with `rig.pod`, `rig.object`, `rig.argvs`, `rig.creates`; the describer returns a record for `testName` only. The recorder keys replies on the exact joined argv, so a random buffer name needs a wrapper Executor (see `failPaste`).
+- Readiness in `New` treats a non-zero or failed `has-session` exec as "not ready yet" and keeps polling to `ReadyTimeout`, so a transient exec error in a just-started pod does not fail `New`.
+- Nothing noticed to fix.
+
+## T8 (podctl CapturePane)
+
+- Added `k8s/internal/podctl/capture.go` (`CapturePane`, `stream`, `startStream`, `runStream`, `splitter`) and `capture_test.go`. The T6 placeholder `stream` type moved out of `podctl.go`; `stopStream` in `methods.go` now cancels the stream's context as well as deleting it.
+- Failing first: `go -C k8s test ./internal/podctl -run CapturePane` failed by not compiling: `r.c.CapturePane undefined (type *Controller has no field or method CapturePane)`.
+- Race run: `go -C k8s test -race -count=3 ./internal/podctl -run CapturePane` passed.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Beyond the design: a frame stream with no separator for more than 4 MiB is dropped and the next frame reads as `ErrPaneTooLarge`, so a broken pane-loop cannot grow memory. A partial frame is discarded when the exec is reopened.
+- For T9/T10: test helpers `fnExec` (function Executor taking a stdout writer), `clock`, `captureRig` and `eventually` are in `capture_test.go`. `CapturePane` caller cancellation returns an error but leaves the stream running by design.
+- Nothing noticed to fix.
+
+## T9 (podctl List)
+
+- Added `k8s/internal/podctl/list.go` (`List`, `rowFromObject`, `observe`, `listRow`, `drifted`, `replay`) and `list_test.go`.
+- Failing first: `go -C k8s test ./internal/podctl -run List` failed by not compiling: `r.c.List undefined (type *Controller has no field or method List)`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, `go -C k8s test -race ./internal/podctl` green, no root go.sum, `grep -c require go.mod` is 0.
+- Behaviour: the replay writes only options whose annotation exists (owner, name, workdir, start, lifetime, conversation, binary, width), then `@crswd-managed` last. Any failure on one pod (pod get, exec, parse, replay, second list) leaves that row as the annotation base row with `LivenessUnknown`; only `sessions.List` fails `List`. Repair runs only when the base row is managed. A Running pod being deleted is not asked.
+- For T10: `seqList` and `listRow`/`annotations` helpers are in `list_test.go`; `r.setOptions()` and `r.listCalls()` hang off `rig` there.
+- Nothing noticed to fix.
+
+## T10: podctl CodexConversation, HasTranscript, Controller assertion
+
+- Added `k8s/internal/podctl/inpod.go` (both methods) and `inpod_test.go`; `var _ tmuxctl.Controller = (*Controller)(nil)` is in `podctl.go`.
+- Failing first: `go test . -run 'CodexConversation|HasTranscript'` in `k8s/internal/podctl` failed by not compiling: `r.c.CodexConversation undefined (type *Controller has no field or method CodexConversation)`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Behaviour: `CodexConversation` empty stdout is `"", nil`; a non-UUID is an error that does not carry the value; `HasTranscript` exit 0 true, exit 1 `false, nil`, any other exit or a transport error is `false, err`.
+- For S7: the pod's `crswd codex-conversation <name>` runs `sessionpod.CodexConversation(ctx, <real exec>, name, "/proc", session.CodexHome(os.Environ()))`, and `crswd has-transcript <name> <harness> <id> <workdir>` runs `sessionpod.HasTranscript(harness.Name(h), id, workdir, os.Environ())`, exiting 0 when true and 1 when false. Wire `mgr.SetCodexConversationFinder(func(ctx, s) { return ctl.CodexConversation(ctx, s.TmuxName()) })`.
+- Sandbox note: an absolute `go -C <path>` is refused; use `go -C k8s ...` from the repo root. A stray `cd` into a subdirectory breaks the allowlist for later commands.
+- Nothing noticed to fix.
+
+## T11: validation contract
+
+Every bullet run from the repo root on `plan/k8s-20c-s5`, uncached (`-count=1`) for the targeted ones:
+
+- Host module shape: `test ! -e go.sum` ok, `grep -c require go.mod` prints 0, the `git diff --diff-filter=M ... '*_test.go'` command prints nothing.
+- Root gate (build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd`, golangci-lint): all green, lint 0 issues. Port 8765 was free.
+- Cluster module (`go -C k8s` vet, test, build): green. Not linted here, CI does.
+- Controller assertion: one line, `k8s/internal/podctl/podctl.go:59`.
+- `podctl -run 'SendKeys|Paste|Resize|SetOption'`: ok (4 top-level tests).
+- `podctl -run Paste`: ok (`TestPastePayloadInStdinNotArgv`, `TestPasteFailureDeletesBuffer`).
+- `podctl -run Kill`: ok (`TestKill`, `TestCapturePaneKillStopsStream`).
+- `podctl -run List`: ok, including `TestListRepairsUnmanagedPod` (option replay).
+- `sessionpod -run 'PassThrough|CodexConversation'` and `podctl -run CodexConversation`: ok.
+- `sessionpod -run Seed`: ok.
+- `session -run 'SuperviseLexical|TranscriptChecker|CodexConversationFinder'`: ok.
+
+Skipped: nothing. The k8s module lint is the operator's pre-PR step.
+
+RALPH_COMPLETE
