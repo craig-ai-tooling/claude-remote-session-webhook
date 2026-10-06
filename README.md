@@ -3,7 +3,8 @@
 Start and drive Claude Code sessions on your own machine, from anywhere.
 
 A self-hosted Go daemon (`crswd`) that serves a web dashboard and an HTTP API.
-Each session runs in a tmux window with `--dangerously-skip-permissions`, so it
+Each session runs in a tmux window, as Claude Code with `--dangerously-skip-permissions`
+or as Codex with `--dangerously-bypass-approvals-and-sandbox`, so it
 survives a daemon restart — the daemon adopts what it finds — and can be attached
 to by hand. Two clients: a browser, and a script signing its requests with HMAC.
 
@@ -171,9 +172,11 @@ neither door runs, serves the API, and admits nobody to the dashboard.
   `start_commands = codex=/path/to/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust`.
   The daemon adds `--no-alt-screen` and `-c check_for_update_on_startup=false` to
   every Codex line it types, and refuses a command that turns the update check back
-  on. Sign Codex in on the host once with `codex login --device-auth`: the dashboard
-  does not relay that sign-in yet. If Codex keeps its state outside `~/.codex`, name
-  `CODEX_HOME` in `CRSW_SESSION_ENVIRONMENT` so sessions see it. See
+  on. Sign Codex in on the host with `codex login --device-auth`, or from the settings
+  page: with a `codex` entry configured the dashboard relays the device sign-in, showing
+  the link and the one-time code. If Codex keeps its state outside `~/.codex`, set
+  `CODEX_HOME` in the daemon's environment (`Environment=CODEX_HOME=...` in a systemd unit)
+  and also name it in `CRSW_SESSION_ENVIRONMENT`, which carries names only, so sessions see it. See
   [`docs/harnesses.md`](docs/harnesses.md).
 
 Then, on that host, whichever path you picked:

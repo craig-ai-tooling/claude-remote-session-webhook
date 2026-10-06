@@ -298,7 +298,9 @@ version = 1
 # and refuses a command that sets the update check back to true. The two flags
 # below are the Codex equivalents of --dangerously-skip-permissions; leave them
 # out if you want Codex to ask. Tested against Codex 0.153.4. If Codex keeps its
-# state outside ~/.codex, add CODEX_HOME to session_environment.
+# state outside ~/.codex, do both: set CODEX_HOME in the daemon's own environment
+# (session_environment carries names, never values) and add CODEX_HOME to
+# session_environment so sessions receive it.
 # The entry, to add to the start_commands line above after a comma:
 #   codex=/home/you/bin/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust
 

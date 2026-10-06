@@ -128,6 +128,12 @@ EnvironmentFile=-%h/.config/crswd/env
 # drop — an escape hatch that quietly ignored the dangerous case would be one an
 # operator believes is working.
 # Environment=CRSW_SESSION_ENVIRONMENT=
+#
+# Codex keeps its state in ~/.codex unless CODEX_HOME says otherwise. If you move
+# it, do both: give the daemon the value here, then name it in the setting above.
+# Neither step works alone. Omit both to use the default ~/.codex.
+# In the unit that is the two lines `Environment=CODEX_HOME=/srv/codex` and
+# `Environment=CRSW_SESSION_ENVIRONMENT=CODEX_HOME`.
 # Environment=CRSW_LISTEN=127.0.0.1:8765
 # Environment=CRSW_MAX_SESSIONS=5
 
@@ -165,6 +171,13 @@ EnvironmentFile=-%h/.config/crswd/env
 # a second unsupervised path into the same unsandboxed shell.
 # Environment="CRSW_START_COMMAND=claude --dangerously-skip-permissions"
 # Environment="CRSW_START_COMMANDS="
+#
+# With Codex, add an entry named exactly `codex` (it adds a Runtime choice to the
+# create form). The daemon adds `--no-alt-screen` and
+# `-c check_for_update_on_startup=false` itself and refuses a command that turns
+# the update check back on. The two flags below are the Codex equivalents of
+# --dangerously-skip-permissions; leave them out if you want Codex to ask.
+# For example: Environment="CRSW_START_COMMANDS=codex=%h/.local/bin/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust"
 
 # Which name in that set the dashboard's remote-control switch means (#58).
 # Default: `rc`. With the empty set above there is no such command, so the form
@@ -233,7 +246,8 @@ KillMode=process
 
 # Hardening — read what it does not do before adding to it. These protect the
 # HOST FROM THE DAEMON. None of them sandboxes a session: sessions run
-# `claude --dangerously-skip-permissions` as you, so anything the daemon can
+# `claude --dangerously-skip-permissions` (or `codex
+# --dangerously-bypass-approvals-and-sandbox`) as you, so anything the daemon can
 # reach, a session can reach. CRSW_ALLOWED_ROOTS is the real control; keep it
 # narrow. See constitution Principle VI.
 NoNewPrivileges=true
@@ -252,10 +266,11 @@ ProtectSystem=full
 #                        where there should be one. Attaching by hand is why this
 #                        daemon uses tmux at all.
 #   ProtectHome=         Claude Code reads and writes ~/.claude, ~/.claude.json
-#                        and ~/.cache. A read-only home breaks sessions in ways
+#                        and ~/.cache; Codex reads and writes ~/.codex (or
+#                        CODEX_HOME) and needs the same. A read-only home breaks sessions in ways
 #                        that surface as unrelated errors inside the pane.
 #   ProtectSystem=strict mounts the whole hierarchy read-only, so every directory
-#                        tmux and Claude Code write to has to be handed back one
+#                        tmux, Claude Code and Codex write to has to be handed back one
 #                        at a time with ReadWritePaths — a list that fails at run
 #                        time, in a pane, rather than at install time.
 #

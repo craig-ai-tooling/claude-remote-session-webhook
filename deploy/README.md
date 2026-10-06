@@ -175,6 +175,28 @@ The shared secret is worse: nothing can regenerate it, and losing it invalidates
 every live session token. It exists in exactly two places — your manager and
 `~/.config/crswd/env` — and that is deliberate.
 
+## Codex
+
+Codex is optional. To offer it, add a named entry to the start-command set, in the unit
+or in `~/.config/crswd/config`:
+
+```
+Environment="CRSW_START_COMMANDS=codex=%h/.local/bin/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust"
+```
+
+The daemon adds `--no-alt-screen` and `-c check_for_update_on_startup=false` itself, and
+refuses an entry that turns the update check back on. The two flags above are the Codex
+equivalents of `--dangerously-skip-permissions`; leave them out if you want Codex to ask.
+
+Sign in on the host with `codex login --device-auth`, or from the dashboard settings page,
+which relays the device sign-in once a `codex` entry exists.
+
+Codex keeps its state in `~/.codex`. If you move it with `CODEX_HOME`, do both steps: set
+`Environment=CODEX_HOME=...` in the unit so the daemon has the value, and name it in
+`CRSW_SESSION_ENVIRONMENT=CODEX_HOME`, which carries names only. The hardening in the unit
+needs no `ReadWritePaths` for `~/.codex`; a drop-in that adds `ProtectHome=` or
+`ProtectSystem=strict` must hand it back read-write, as it must `~/.claude`.
+
 ## Driving the API from a shell
 
 `deploy/crswd-api` is the whole client: four headers and one signature line. It
