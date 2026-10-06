@@ -179,3 +179,7 @@ For the next iteration (an operator or a session with those two permitted):
 Noticed, not fixed: the quickstart cap flake again (2nd time, Iterations 2 and 5).
 
 BLOCKED: T4 needs `bash -n deploy/session-image/fetch-codex.sh` and `chmod +x` on it, and the sandbox refuses both; an operator must run them, then tick T4.
+
+## Operator (10/6/26): T4 closed
+
+`bash -n` and shellcheck pass on fetch-codex.sh; it is now mode 0755; a real run fetched the asset, the sha matched, and the binary printed `codex-cli 0.153.4`. T4 ticked. Ignore the BLOCKED line above. Next: T5.
