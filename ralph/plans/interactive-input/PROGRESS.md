@@ -43,3 +43,5 @@ cannot go green in this environment.
 ## Findings
 
 - `GOFLAGS`-less `go build` fails on VCS stamping in this worktree (see Iteration 1).
+
+- Operator (CS, 2026-10-06): loop now runs with GOFLAGS=-buildvcs=false; T001 unblocked.
