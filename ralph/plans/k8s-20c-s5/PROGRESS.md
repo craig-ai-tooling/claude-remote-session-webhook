@@ -68,3 +68,13 @@ Added `internal/sessionpod/seed.go` (`Seed`), `seed_test.go`; `sessionpod.go` ga
 - Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
 - **Existing Run tests leave `Pod.Env` nil, so they now seed from `os.Environ()`.** That is the real `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` of whoever runs the suite. I added a package `TestMain` in `seed_test.go` that points all three at a temp dir (no existing test file edited). The first `go test ./internal/sessionpod` run before that TestMain existed may have created `~/.codex` and trust entries in the real home; this sandbox cannot list `~`, so I could not check. The operator should look for `~/.codex/config.toml` and a `.claude.json` trust entry for a `t.TempDir` path.
 - Rediscovery savings: Bash refuses `$?` and `;`-joined commands that mix operations; one command per call. golangci-lint has errcheck check-blank on, so `_ = os.RemoveAll(x)` fails. The format hook already adds imports (goimports).
+
+## Iteration 3: T3 (TranscriptExists, in-pod helpers)
+
+Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` now delegates), `internal/sessionpod/inpod.go` (`CodexConversation`, `HasTranscript`, `hasTranscriptIn`, `NewInPodExec`), and the tests `internal/session/transcript_test.go`, `internal/sessionpod/inpod_test.go`.
+
+- Failing first: `go test ./internal/session ./internal/sessionpod -run 'TranscriptExists|CodexConversation|PodHasTranscript'` failed by not compiling: `undefined: TranscriptExists`, `undefined: CodexConversation`, `undefined: hasTranscriptIn`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Behaviour to know: the Codex branch of `TranscriptExists` compares against the resolved workdir (Design §3). `(*Manager).hasTranscriptFor` is untouched and still uses `m.codexHome` and the unresolved `s.WorkDir`.
+- Rediscovery savings: use the Write tool for test files; a bash heredoc containing a brace next to a quote is refused. `writeRollout`, `codexMetaLine` and `codexTestID` are reusable from any new file in package `session`. `claudeProjectDir` in `inpod_test.go` copies the unexported `projectDirFor`.
+- Nothing noticed to fix.

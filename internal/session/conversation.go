@@ -342,30 +342,56 @@ func (m *Manager) hasTranscriptFor(s Session, id string) bool {
 // the safe reading — the alternative is a daemon that resumes a conversation it
 // cannot see.
 func (m *Manager) HasTranscript(conversationID, workDir string) bool {
-	if !isConversationID(conversationID) {
-		return false
-	}
-	dir, err := ResolveWorkDir(workDir, m.roots)
-	if err != nil {
-		return false
-	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
 	}
-	project, ok := projectPath(home, dir)
-	if !ok {
+	return TranscriptExists(harness.Claude, conversationID, workDir, home, "", m.roots)
+}
+
+// TranscriptExists is the transcript check with its inputs passed in rather
+// than read from the daemon's own process, so a session pod can answer it from
+// its own home, Codex home and approved root (spec 017 FR-014, spec 019 FR-024).
+// The same rules as (*Manager).HasTranscript apply: a stat of one path built from
+// a validated identifier and a resolved directory, never an open, and false for
+// every failure.
+func TranscriptExists(h harness.Name, id, workDir, home, codexHome string, roots []config.ApprovedRoot) bool {
+	switch h {
+	case harness.Claude:
+		if !isConversationID(id) || home == "" {
+			return false
+		}
+		dir, err := ResolveWorkDir(workDir, roots)
+		if err != nil {
+			return false
+		}
+		project, ok := projectPath(home, dir)
+		if !ok {
+			return false
+		}
+		transcript, ok := containedIn(project, id+conversationFileSuffix)
+		if !ok {
+			return false
+		}
+		info, err := os.Stat(transcript)
+		if err != nil {
+			return false
+		}
+		return !info.IsDir()
+	case harness.Codex:
+		if codexHome == "" {
+			return false
+		}
+		dir, err := ResolveWorkDir(workDir, roots)
+		if err != nil {
+			return false
+		}
+		return codexHasTranscript(filepath.Join(codexHome, "sessions"), id, dir)
+	case harness.Other:
+		return false
+	default:
 		return false
 	}
-	transcript, ok := containedIn(project, conversationID+conversationFileSuffix)
-	if !ok {
-		return false
-	}
-	info, err := os.Stat(transcript)
-	if err != nil {
-		return false
-	}
-	return !info.IsDir()
 }
 
 // conversationCapable reports whether a start command is one this daemon may
