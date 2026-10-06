@@ -67,9 +67,6 @@ type Controller struct {
 	streams map[string]*stream
 }
 
-// stream is the held pane-loop of one session (design §8).
-type stream struct{}
-
 // New refuses a negative duration, because a negative interval reaches
 // time.NewTicker, which panics. A zero one takes its default.
 func New(sessions *agentsession.Client, pods kubernetes.Interface, exec Executor, cfg Config) (*Controller, error) {

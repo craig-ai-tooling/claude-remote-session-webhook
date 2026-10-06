@@ -111,3 +111,13 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - For T9/T10: test rig is `newRig(t, wrap)` in `methods_test.go` with `rig.pod`, `rig.object`, `rig.argvs`, `rig.creates`; the describer returns a record for `testName` only. The recorder keys replies on the exact joined argv, so a random buffer name needs a wrapper Executor (see `failPaste`).
 - Readiness in `New` treats a non-zero or failed `has-session` exec as "not ready yet" and keeps polling to `ReadyTimeout`, so a transient exec error in a just-started pod does not fail `New`.
 - Nothing noticed to fix.
+
+## T8 (podctl CapturePane)
+
+- Added `k8s/internal/podctl/capture.go` (`CapturePane`, `stream`, `startStream`, `runStream`, `splitter`) and `capture_test.go`. The T6 placeholder `stream` type moved out of `podctl.go`; `stopStream` in `methods.go` now cancels the stream's context as well as deleting it.
+- Failing first: `go -C k8s test ./internal/podctl -run CapturePane` failed by not compiling: `r.c.CapturePane undefined (type *Controller has no field or method CapturePane)`.
+- Race run: `go -C k8s test -race -count=3 ./internal/podctl -run CapturePane` passed.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Beyond the design: a frame stream with no separator for more than 4 MiB is dropped and the next frame reads as `ErrPaneTooLarge`, so a broken pane-loop cannot grow memory. A partial frame is discarded when the exec is reopened.
+- For T9/T10: test helpers `fnExec` (function Executor taking a stdout writer), `clock`, `captureRig` and `eventually` are in `capture_test.go`. `CapturePane` caller cancellation returns an error but leaves the stream running by design.
+- Nothing noticed to fix.

@@ -334,7 +334,10 @@ func (c *Controller) Kill(ctx context.Context, name string) error {
 func (c *Controller) stopStream(name string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.streams, name)
+	if s := c.streams[name]; s != nil {
+		s.cancel()
+		delete(c.streams, name)
+	}
 }
 
 // ReconcileServerEnvironment has nothing to do: each pod's environment is fixed
