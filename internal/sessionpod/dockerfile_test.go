@@ -55,8 +55,8 @@ func TestSessionImageDockerfileShape(t *testing.T) {
 		return out
 	}
 
-	if from := byWord("FROM"); len(from) != 1 || from[0] != "FROM --platform=linux/amd64 docker.io/nctiggy/ralph-runner:2.1.246-ci10" {
-		t.Errorf("FROM = %q, want the one amd64-pinned ralph-runner 2.1.246-ci10 line", from)
+	if from := byWord("FROM"); len(from) != 1 || !regexp.MustCompile(`^FROM --platform=linux/amd64 docker\.io/nctiggy/ralph-runner:2\.1\.246-ci10@sha256:[0-9a-f]{64}$`).MatchString(from[0]) {
+		t.Errorf("FROM = %q, want the one amd64-pinned ralph-runner 2.1.246-ci10@sha256:<digest> line", from)
 	}
 	if user := byWord("USER"); len(user) == 0 || user[len(user)-1] != "USER 10001:10001" {
 		t.Errorf("USER = %q, want the last to be numeric 10001:10001", user)
