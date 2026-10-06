@@ -187,3 +187,11 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Learned: a refused harness create reuses `errCreateStateNotOffered` and `outcomeBadMode`; Codex plus remote uses `errModeUnavailable` with `outcomeBadMode`, per the task, where the Claude no-remote-command case answers `outcomeCreateFailed`. `parseHarness` treats a present key with zero entries as refused. An empty `codexHome` seeds nothing, so httpapi tests need no HOME override.
 - Nothing renders `CodexCommand` yet; T014a and T015 add the control and the preview.
 - Left: T014a onward. No findings unfixed.
+
+## Iteration 22 (T014a, stopped)
+
+- No code changed. T014a is ambiguous; marked `- [!]` in IMPLEMENTATION_PLAN.md.
+
+## NEEDS CLARIFICATION (6)
+
+- **T014a**: quoted text: "Files: `docs/components.md` only ... The CSS rules for this contract are written in T015, together with the first markup that uses them: `TestTheStylesheetAndTheMarkupNameTheSameThings` ... fails on any class no template renders, so CSS without markup cannot be green" and "Tests: `TestRadioGroupStylesExist` (served `crswd.css` contains `.radio-group`, `.radio-option` and `:focus-visible` for `.radio-option input`)." and "Acceptance: `go test ./internal/httpapi/... -run RadioGroup` passes." The task contradicts itself. The test asserts CSS that the task says is not written until T015, and writing the CSS here would turn `TestTheStylesheetAndTheMarkupNameTheSameThings` red (no template renders `.radio-group`). Also no httpapi test file is in the Files line, and `grep -rn 'RadioGroup\|radio-group' internal web docs` prints nothing today. As written, the acceptance command either matches no test (exits 0 with "no tests to run", proving nothing) or the test cannot pass. Question: should T014a drop `TestRadioGroupStylesExist` and run as docs-only (acceptance becomes a grep for the `radio-group` section in `docs/components.md`), moving the CSS test into T015 beside the CSS and the markup? Suggested fix: edit T014a's Tests and Acceptance to a docs-only check, and add `TestRadioGroupStylesExist` to T015's Tests (partials_test.go is already in T015's Files). Then update the IMPLEMENTATION_PLAN T014a line's "Done when" to match.
