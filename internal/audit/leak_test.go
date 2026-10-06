@@ -224,6 +224,12 @@ const (
 // audited, and neither is the route's own name for it.
 const compactDelivered = "/compact"
 
+// canaryTyped is text an operator typed into a session from the browser (spec
+// 018). Unlike compactDelivered it is caller-authored, so it can be marked: it is
+// the one value this door delivers into a live shell that the daemon did not
+// write, and FR-042 forbids it from the trail like a prompt.
+const canaryTyped = "crswd-canary-typed-7f3a"
+
 // The pane's escape sequences, in the two spellings a sink can hold them in.
 //
 // markPane already catches a whole screen. These catch the narrower leak: a
@@ -916,6 +922,14 @@ func (r *leakRun) driveTheActionRoutes(t *testing.T, assertion string) {
 		form: authorised(url.Values{}),
 	})
 
+	// Typed text with Enter. The canary is the caller's own, so this is the route
+	// where a record built from what was delivered would carry something a caller
+	// wrote into a shell.
+	r.act(t, http.StatusNoContent, "POST /dashboard/sessions/{id}/type", browserAction{
+		path: "/dashboard/sessions/" + id + "/type", assertion: assertion, site: siteSameOrigin,
+		form: authorised(url.Values{"text": {canaryTyped}, "enter": {confirmYes}}),
+	})
+
 	// And a compact the host refused, which is the only way this route reaches
 	// its fail-closed answer at all — the not-found arm beside it needs a session
 	// that vanished between two reads of the store. It is worth driving twice
@@ -1388,6 +1402,7 @@ func (r *leakRun) marks() []leakMark {
 		// The mutating half's own (T021, contracts/actions.md).
 		{"a page token a caller presented", markPageProof},
 		{"the text a compact delivered", compactDelivered},
+		{"the text an operator typed", canaryTyped},
 		{"a pane's escape sequences, raw", paneEscapeRaw},
 		{"a pane's escape sequences as JSON writes them", paneEscapeJSON},
 	}
@@ -1473,7 +1488,7 @@ func (r *leakRun) pasted(t *testing.T) string {
 
 	var payloads []string
 	for _, call := range r.tmux.Calls() {
-		if call.Op == tmuxctl.OpPaste && len(call.Stdin) > 0 {
+		if (call.Op == tmuxctl.OpPaste || call.Op == tmuxctl.OpPasteBracketed) && len(call.Stdin) > 0 {
 			payloads = append(payloads, string(call.Stdin))
 		}
 	}
@@ -1540,7 +1555,7 @@ func TestTheLeakSuiteReallyDrivesTheDaemon(t *testing.T) {
 		// different depths, and a sweep that accepted either would pass on a run
 		// where the action gate never refused anything at all.
 		"dashboard.create", "dashboard.destroy", "dashboard.rename", "dashboard.compact",
-		"dashboard.reject",
+		"dashboard.type", "dashboard.reject",
 		// And the fleet stream, which is the second record in this list written
 		// while the daemon is mid-response — and the only one written by a handler
 		// that is about to stay open.
@@ -1586,6 +1601,7 @@ func TestTheLeakSuiteReallyDrivesTheDaemon(t *testing.T) {
 		// two values the action routes had that no read on this door ever holds.
 		{"a credential-shaped session name", markName, "the card a rename rendered back", run.renamedCard},
 		{"the compact command", compactDelivered, "the payload that reached the host", run.pasted(t)},
+		{"the typed text", canaryTyped, "the payload that reached the host", run.pasted(t)},
 	} {
 		if !strings.Contains(reached.text, reached.mark) {
 			t.Errorf("%s never reached %s, so its absence from the trail proves nothing", reached.what, reached.where)
