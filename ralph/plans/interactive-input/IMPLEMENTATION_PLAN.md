@@ -76,7 +76,7 @@ The loop may create or edit these paths and no others:
 - [x] **T001** Create every session with `history-limit 5000` (chain in `argvNew`, `HistoryLimit` const, three argv expectations updated). Done when `go test -tags tmux ./internal/tmuxctl -run FiveThousand` and `go test ./internal/tmuxctl ./internal/session` pass.
 - [x] **T002** Add `PasteBracketed` to `Controller`, `Fake`, `Exec`, plus `ArgvPasteBracketed`. Done when `go test -tags tmux ./internal/tmuxctl -run Bracketed` passes and removing `-p` fails it.
 - [x] **T003** Add `CaptureHistory` (`-S -5000 -E -1`, refuse past 5000 lines or 4 MiB with `ErrHistoryTooLarge`) and `Fake.SetHistory`. Done when `go test -tags tmux ./internal/tmuxctl -run History` and `go test ./internal/tmuxctl` pass.
-- [ ] **T004** Add `session.Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes` and three sentinels in a new input file. Done when `go test ./internal/session -run 'Key|Typed'` passes.
+- [x] **T004** Add `session.Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes` and three sentinels in a new input file. Done when `go test ./internal/session -run 'Key|Typed'` passes.
 - [ ] **T005** Add `Manager.Type` (Touch, bracketed paste, optional Enter) and `Manager.PressKey`. Done when `go test ./internal/session -run 'Type|PressKey'` passes.
 - [ ] **T006** Add `Manager.History` (strip, no Touch, no `unreadable`). Done when `go test ./internal/session -run History` passes.
 - [ ] **T007** Add audit actions `dashboard.type`, `dashboard.key`, `dashboard.history` to both action tables. Done when `go test ./internal/audit` passes.

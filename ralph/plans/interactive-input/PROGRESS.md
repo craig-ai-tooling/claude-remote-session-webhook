@@ -138,3 +138,16 @@ and real-tmux tests the task names.
 
 - `argv_test.go` `TestArgvWrappersEqualBuilders` has no `ArgvPasteBracketed` row, which T002's entry
   asked for. Not fixed here (T002 is closed and the task did not name it).
+
+## Iteration 6: T004 (2026-10-06)
+
+Added `internal/session/input.go` (`Key`, `Keys`, `ParseKey`, `ValidateTyped`, `MaxTypeBytes`, three
+sentinels, unexported `tmuxKeys`) and `input_test.go` with the three tests the task names.
+
+- Guard proven: with `\r` and `0x1b` allowed through the control-byte check, `TestValidateTyped`
+  rows `paste_terminator` and `carriage_return` FAILED. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2
+  (0 issues), no `go.sum`. The `-tags tmux` run was skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration: `ValidateTyped` checks length before UTF-8, so an oversize invalid string reports
+  `ErrInputTooLong`; a test row pins that order. T005 should call `ValidateTyped` first and leave
+  `ErrEmptyPrompt` to it.
