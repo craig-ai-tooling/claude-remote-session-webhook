@@ -216,7 +216,9 @@ Phase 4b (credentials) is specified after operator-run measurement O-1 (tasks.md
 - **FR-024**: A `crswd session-pod`-side helper MUST answer the D7 lookup inside the pod, so the
   daemon never reads a pod's `/proc` directly.
 - **FR-025**: Phase 4b (Codex credentials in pods) MUST NOT be built until O-1 records a
-  measurement and a follow-up plan names the design.
+  measurement and a follow-up plan names the design. Met 10/6/26: O-1 recorded M21 and M23, and
+  spec 017 FR-022 names the design (the namespace's own login, a read-only Secret). Spec 017 slice
+  S5/S6 builds it. A keeper that refreshes the pod's Codex login waits on M22.
 
 ## Success Criteria *(mandatory)*
 
