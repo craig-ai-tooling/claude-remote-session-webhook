@@ -40,30 +40,30 @@ func dispatch(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	rest := args[1:]
 	switch args[0] {
 	case "--version":
-		_, _ = fmt.Fprintf(stdout, "crswd %s (cluster build)\n", version)
+		say(stdout, "crswd %s (cluster build)\n", version)
 		return 0
 	case "session-pod":
 		name, workdir, roots, err := parseSessionPodArgs(rest)
 		if err != nil {
-			_, _ = fmt.Fprintln(stderr, "crswd:", err)
+			say(stderr, "crswd: %v\n", err)
 			return 2
 		}
 		return report(stderr, sessionpod.Run(name, workdir, roots))
 	case "pane-loop":
 		if len(rest) != 1 {
-			_, _ = fmt.Fprintln(stderr, "crswd: pane-loop takes one argument: the session name")
+			sayln(stderr, "crswd: pane-loop takes one argument: the session name")
 			return 2
 		}
 		return report(stderr, sessionpod.PaneLoop(rest[0], stdout))
 	case "codex-conversation":
 		if len(rest) != 1 {
-			_, _ = fmt.Fprintln(stderr, "crswd: codex-conversation takes one argument: the session name")
+			sayln(stderr, "crswd: codex-conversation takes one argument: the session name")
 			return 2
 		}
 		return report(stderr, codexConversation(ctx, rest[0], stdout))
 	case "has-transcript":
 		if len(rest) != 4 {
-			_, _ = fmt.Fprintln(stderr, "crswd: has-transcript takes four arguments: name, harness, id, workdir")
+			sayln(stderr, "crswd: has-transcript takes four arguments: name, harness, id, workdir")
 			return 2
 		}
 		if sessionpod.HasTranscript(harness.Name(rest[1]), rest[2], rest[3], os.Environ()) {
@@ -73,7 +73,7 @@ func dispatch(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	case "reconcile":
 		return report(stderr, runReconciler(ctx))
 	default:
-		_, _ = fmt.Fprintf(stderr, "crswd: unknown command %q\n", args[0])
+		say(stderr, "crswd: unknown command %q\n", args[0])
 		return 2
 	}
 }
@@ -83,7 +83,7 @@ func report(stderr io.Writer, err error) int {
 	if err == nil {
 		return 0
 	}
-	_, _ = fmt.Fprintln(stderr, "crswd:", err)
+	say(stderr, "crswd: %v\n", err)
 	return 1
 }
 
@@ -112,4 +112,15 @@ func codexConversation(ctx context.Context, name string, stdout io.Writer) error
 		_, err = fmt.Fprintln(stdout, id)
 	}
 	return err
+}
+
+// say and sayln write a report to stdout or stderr. The dropped error mirrors
+// cmd/crswd/config_cmd.go: there is no answer to a failed write to the stream
+// you would report the failure on, and check-blank flags `_, _ =` at each site.
+func say(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...) //nolint:errcheck // see the comment above.
+}
+
+func sayln(w io.Writer, line string) {
+	_, _ = fmt.Fprintln(w, line) //nolint:errcheck // see the comment above.
 }
