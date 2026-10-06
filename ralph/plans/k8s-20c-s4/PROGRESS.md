@@ -71,3 +71,20 @@ Gate: `go -C k8s vet/test/build` pass. Root `go build`, `go vet`, `go test`, `-t
 Rediscovery traps: the sandbox refuses `;`, `|` and `until` in a Bash call, so run each gate command as its own call. The format hook rewrote the import block after an Edit; read before a second Edit on that region.
 
 Noticed, not fixed: the iteration 4 quickstart failure (`TestDashboardQuickstartStory2Cap` 429) did not recur with 8765 free, so it was most likely port contention with the deployed daemon, as suspected.
+
+## Iteration 6 (T4)
+
+Ran every VALIDATION_CONTRACT.md bullet, each command as its own call. Results:
+
+1. Host module unchanged: `git diff --name-only origin/main...HEAD -- go.mod` printed nothing, `test ! -e go.sum` exit 0, `grep -c require go.mod` printed `0`. Pass.
+2. Root gate: `go build ./...`, `go vet ./...`, `go test ./...`, `golangci-lint run` (0 issues) all exit 0. Also `go test -tags tmux ./...` pass and `go test -tags quickstart ./cmd/crswd` pass (53.9s, 8765 free).
+3. Cluster module: `go -C k8s mod download`, `go -C k8s vet ./...`, `go -C k8s test ./...`, `go -C k8s build ./...` all exit 0. **`golangci-lint run` inside `k8s/` was NOT run**: the prompt forbids it (sandbox refuses `cd`), so the operator runs it before the PR. This bullet is only partly verified.
+4. Go version: `grep -n '^go ' k8s/go.mod` printed `3:go 1.23.0`, `grep -c '^toolchain' k8s/go.mod` printed `0`. Pass.
+5. Pins: `grep -n 'k8s.io/client-go v0.32.8' k8s/go.mod` printed `7:`, `grep -c controller-runtime k8s/go.mod` printed `0`. Pass.
+6. `go -C k8s test ./internal/kube -run ExactlyOneLeads -v` passes (3.00s).
+7. `go -C k8s test ./internal/kube -run Boundary -v` passes (both tests).
+8. `grep -n 'directory: "/k8s"' .github/dependabot.yml` printed `38:`. Pass.
+
+Noticed, not fixed: none. Operator to do before the PR: `golangci-lint run` from inside `k8s/`.
+
+RALPH_COMPLETE
