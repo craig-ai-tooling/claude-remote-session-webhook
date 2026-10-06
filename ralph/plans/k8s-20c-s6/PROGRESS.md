@@ -62,3 +62,11 @@ BLOCKED: dependency not merged
 - Gate: all green, quickstart included (8765 free). Root go.sum absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean. Lint of `k8s/` left to CI.
 - Next iteration: `reconcile_test.go` has `newRig(t, cfg, objs, pods...)` returning `rig{r, kube, dyn}` with `count(verb, resource)` and `status(t, name)`; reuse it in `loop_test.go`. `Reconciler.dyn` is only written so far; T4 reads it for the informer. `Admit` filters the object itself out of `others` by UID, so List needs no filtering. Unparseable `pod-recreates` counts as 0.
 - Noticed, not fixed: none.
+
+## Iteration 4: T4 loop and lease
+
+- Added `k8s/internal/reconcile/loop.go` and `loop_test.go`: `Run` (dynamic and pod informers, rate-limited queue, one worker), `RunWithLease`, `leaseTimings`, `runLoop`, per Design 4.
+- Failing first: `go -C k8s test ./internal/reconcile -run 'Loop|Lease'` printed `loop_test.go:33:26: g.r.Run undefined (type *Reconciler has no field or method Run)` (did not compile).
+- Gate: all green, quickstart included (8765 free). Root go.sum absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean; loop tests also pass under `-race`. `k8s/go.mod` unchanged. Lint of `k8s/` left to CI.
+- Next iteration: T5 is spec text only (Design 5). T6 runs VALIDATION_CONTRACT.md. The lease tests take about 4 s and change package variables, so they must not call `t.Parallel()`. `createObject(t, g, ns)` in `loop_test.go` makes an object through the dynamic fake.
+- Noticed, not fixed: none.
