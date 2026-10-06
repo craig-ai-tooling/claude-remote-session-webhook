@@ -678,9 +678,9 @@ planning time). T015 needs one; this task defines it once.
   from the switch rules in `crswd.css` (`grep -n 'switch' web/static/crswd.css`); introduce no new token.
 - **Edge cases**: wraps to one option per line under the phone breakpoint already used by the create
   form (no horizontal scroll); disabled options use the switch's disabled opacity rule.
-- **Tests**: `TestRadioGroupStylesExist` (served `crswd.css` contains `.radio-group`,
-  `.radio-option` and `:focus-visible` for `.radio-option input`).
-- **Acceptance**: `go test ./internal/httpapi/... -run RadioGroup` passes.
+- **Tests**: none (docs only; the CSS test moved to T015 with the CSS).
+- **Acceptance**: `grep -n 'Radio group' docs/components.md` prints the new section heading, and
+  `go test ./...` still passes.
 - **Depends**: none in code (ordering: before T015).
 - **Guardrails**: no template uses the component in this task; no inline style; CSP unchanged.
 
@@ -702,8 +702,9 @@ planning time). T015 needs one; this task defines it once.
 - **Tests** (`partials_test.go`): `TestCreateFormOffersCodexWhenConfigured`,
   `TestCreateFormUnchangedWithoutCodex` (existing exact-markup assertions pass unedited),
   `TestCreateFormScriptReadsHarness` (grep the served `crswd.js` for `name="harness"` handling, the
-  same way existing script tests do).
-- **Acceptance**: `go test ./internal/httpapi/... -run CreateForm` passes.
+  same way existing script tests do), `TestRadioGroupStylesExist` (served `crswd.css` contains
+  `.radio-group`, `.radio-option` and `:focus-visible` for `.radio-option input`; moved from T014a).
+- **Acceptance**: `go test ./internal/httpapi/... -run 'CreateForm|RadioGroup'` passes.
 - **Radio group CSS**: write the `.radio-group*` / `.radio-option*` rules for the contract T014a put
   in `docs/components.md`, in `web/static/crswd.css`, in this task.
 - **Depends**: T014, T014a.
