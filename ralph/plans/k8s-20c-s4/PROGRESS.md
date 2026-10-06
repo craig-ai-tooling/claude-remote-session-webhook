@@ -59,3 +59,15 @@ Gate: root `go build`, `go vet`, `go test`, `-tags tmux` and `golangci-lint run`
 Rediscovery traps: a `... | tail` after a Go command hides its exit status, so read the output rather than the `$?`. `git worktree add` and `mktemp -d` command substitution are refused by the sandbox.
 
 Noticed, not fixed: the quickstart failure above.
+
+## Iteration 5 (T3)
+
+Added `k8s/internal/kube/boundary_test.go`: `TestBoundaryRootImportsNothingFromK8s` (walks the repo root, skips `k8s/`, `.git/`, `.claude/` and `testdata`, parses imports with `parser.ImportsOnly`, asserts at least 50 files read and no root `go.sum`) and `TestBoundaryDetectsK8sImport` (table over synthetic source: module root, subpackage, grouped import, stdlib only, root-module package), which proves the check can fail.
+
+Failing first: before the `importsK8s` helper existed, `go -C k8s test ./internal/kube -run Boundary` printed `boundary_test.go:42:16: undefined: importsK8s ... [build failed]`. After: both tests pass.
+
+Gate: `go -C k8s vet/test/build` pass. Root `go build`, `go vet`, `go test`, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed, 51s) and `golangci-lint run` (0 issues) pass. `test ! -e go.sum` ok, `grep -c require go.mod` prints 0. `k8s/` not linted, per the operator note.
+
+Rediscovery traps: the sandbox refuses `;`, `|` and `until` in a Bash call, so run each gate command as its own call. The format hook rewrote the import block after an Edit; read before a second Edit on that region.
+
+Noticed, not fixed: the iteration 4 quickstart failure (`TestDashboardQuickstartStory2Cap` 429) did not recur with 8765 free, so it was most likely port contention with the deployed daemon, as suspected.
