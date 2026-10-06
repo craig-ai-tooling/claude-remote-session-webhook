@@ -93,3 +93,11 @@ Added `session.TranscriptExists` (conversation.go; `(*Manager).HasTranscript` no
 - Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
 - Rediscovery savings: the require line is `github.com/nctiggy/claude-remote-session-webhook v0.0.0-00010101000000-000000000000` (pseudo-version is fine with a `replace`), so later k8s packages can import root `internal/...` and `api/...` with no further go.mod edit. Importing root `internal/` from `k8s/` works because the replace puts it in the same module path prefix. `dynamicfake` with `NewSimpleDynamicClientWithCustomListKinds` handles Create, Get, Patch (merge), Update and UpdateStatus here.
 - The fake does not enforce resourceVersion, so the "no typed object sent back" rule is by construction only, not proven by a test. Real conflicts surface in S7's live acceptance.
+
+## T6 (podctl skeleton)
+
+- Added `k8s/internal/podctl/{podctl.go,remote.go}` (`Executor`, `Describer`, `Config`, `Controller`, `New`, `SetDescriber`, `annotationKey`, `inPod`, `RemoteExecutor`) and tests `podctl_test.go`, `fake_test.go` (`recorder`), `remote_test.go`. `go mod tidy` added the remotecommand deps to `k8s/go.mod` and `k8s/go.sum`.
+- Failing first: `go -C k8s test ./internal/podctl` failed by not compiling: `undefined: Config`, `undefined: New`, `undefined: Executor`.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- Rediscovery savings: the Bash sandbox rejects heredocs containing `{` next to quotes ("expansion obfuscation"), so write Go files with the Write tool. `Controller.describe` and the `stream` type are placeholders for T7/T8; `New` also refuses nil sessions/pods clients (beyond the plan's list). Test names carry the `Executor` prefix so the T6 `-run 'Executor|NewController'` filter picks them up.
+- Not fixed: the `k8s` module lint was not run here (CI does).
