@@ -70,3 +70,11 @@ BLOCKED: dependency not merged
 - Gate: all green, quickstart included (8765 free). Root go.sum absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean; loop tests also pass under `-race`. `k8s/go.mod` unchanged. Lint of `k8s/` left to CI.
 - Next iteration: T5 is spec text only (Design 5). T6 runs VALIDATION_CONTRACT.md. The lease tests take about 4 s and change package variables, so they must not call `t.Parallel()`. `createObject(t, g, ns)` in `loop_test.go` makes an object through the dynamic fake.
 - Noticed, not fixed: none.
+
+## Iteration 5: T5 spec amendment
+
+- Edited `specs/017-k8s-native-execution/plan.md` (Reconcile paragraph: the supervisor types `--resume`, no finalizer) and `k8s-20c-plan.md` S6 (both runtimes' homes and credential sidecars in every pod), per Design 5. No em-dash, no dates added.
+- Failing first: `grep -n 'finalizer' specs/017-k8s-native-execution/plan.md` printed nothing before the edit; it now prints line 48, inside the Reconcile paragraph.
+- Gate: all green, quickstart included (8765 free). Root go.sum absent, `grep -c require go.mod` is 0. Cluster module vet, test, build clean. Lint of `k8s/` left to CI.
+- Next iteration: T6 only. Run every command in VALIDATION_CONTRACT.md and record each result, then append `RALPH_COMPLETE`. Test results were cached this run; use `-count=1` when recording T6 evidence.
+- Noticed, not fixed: none.
