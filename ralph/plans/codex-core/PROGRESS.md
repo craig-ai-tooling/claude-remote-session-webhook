@@ -126,3 +126,12 @@ Notebook for `ralph/plans/codex-core`. Each iteration appends below.
 - Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
 - Learned: a Codex fixture's fake pane reports `claude`, which is outside the Codex process set, so a test must `SetPaneCommand` to `codex` or `node` before the quit means anything. The Continue tests set HOME through `conversationHome`, so they are not parallel. They pass on Claude's transcript layout because `HasTranscript` is not yet per harness (T010b).
 - Left: T010a onward. No findings unfixed.
+
+## Iteration 15 (T010a)
+
+- Wrote `conversation_codex_test.go` first (`TestCodexConversations`, `TestReadCodexMeta`, `TestCodexHasTranscript`, `TestCodexRolloutRejectsSymlinks`); it failed to compile on the old code. Then added `conversation_codex.go`: `codexConversations`, `codexHasTranscript`, `readCodexMeta`, `codexRollout`, the three limits, and two small helpers (`sortedSubdirs`, `sortConversations`).
+- Gate green: gofmt, build, vet, `go test ./...`, `go test -tags tmux ./internal/session/... ./internal/tmuxctl/...`, golangci-lint. quickstart suite not run: nothing in `cmd/crswd` changed.
+- Learned: listing sorts by mtime as `Conversations` does, so tests set mtimes with `Chtimes`; the walk order only decides which files fall inside the scan and list limits. The unreadable-day case is skipped when the tests run as root, since root reads a mode-0 directory.
+- Added `//nolint` on the `os.Open` (gosec G304, path proven by `codexRollout`) and the read-only `Close`, following `journal.go` and `trust_codex.go`.
+- Nothing calls these yet; T010b dispatches to them.
+- Left: T010b onward. No findings unfixed.
