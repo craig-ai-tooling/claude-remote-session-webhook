@@ -225,3 +225,42 @@ func TestCRDPrinterColumns(t *testing.T) {
 		}
 	}
 }
+
+// Admission runs only before a pod exists, so the fields it reads must not
+// change afterwards. Conversation stays mutable: the daemon records it.
+func TestCRDImmutableSpecFields(t *testing.T) {
+	t.Parallel()
+	crd := decodedCRD(t)
+	rules := asList(t, dig(t, crd, "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "spec", "x-kubernetes-validations"))
+	got := map[string]string{}
+	for _, r := range rules {
+		m := asObject(t, r)
+		rule, okRule := m["rule"].(string)
+		msg, okMsg := m["message"].(string)
+		if !okRule || !okMsg {
+			t.Fatalf("validation %v needs a string rule and message", m)
+		}
+		got[rule] = msg
+	}
+	for _, f := range []string{"sessionName", "owner", "workDir", "startCommand", "lifetime"} {
+		rule := "self." + f + " == oldSelf." + f
+		if msg, ok := got[rule]; !ok || msg != f+" is immutable" {
+			t.Errorf("missing rule %q with message %q; have %v", rule, f+" is immutable", got)
+		}
+	}
+	if len(got) != 5 {
+		t.Errorf("rules = %d, want 5 (conversation must stay mutable): %v", len(got), got)
+	}
+}
+
+func TestCRDStatusRecreateFields(t *testing.T) {
+	t.Parallel()
+	props := dig(t, decodedCRD(t), "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "status", "properties")
+	n := asObject(t, dig(t, props, "podRecreates"))
+	if n["type"] != "integer" || n["minimum"] != float64(0) {
+		t.Errorf("podRecreates = %v, want an integer with minimum 0", n)
+	}
+	if got := asObject(t, dig(t, props, "recreateOf"))["type"]; got != "string" {
+		t.Errorf("recreateOf type = %v, want string", got)
+	}
+}

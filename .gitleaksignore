@@ -1,0 +1,3 @@
+# Reviewed false positives only. Each line is one finding, by fingerprint, with why.
+# k8s/internal/reconcile/pod.go:177 names two file paths (.credentials.json), not a credential (PR #216).
+4fd465b3b90bd402838234b37c8da03ec670ab09:k8s/internal/reconcile/pod.go:generic-api-key:177

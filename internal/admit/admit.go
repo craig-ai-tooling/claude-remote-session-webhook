@@ -20,22 +20,9 @@ import (
 // ceiling (config.SessionLifetimeMax); zero or negative means none, as
 // CRSW_SESSION_LIFETIME_MAX=never does for a session made through the API.
 func Admit(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, cap int, maxLifetime time.Duration, others []v1alpha1.AgentSession, now time.Time) (bool, string) {
-	// Lexical only: the daemon and reconciler cannot see the session's
-	// filesystem. The resolved check runs in the pod.
-	if _, err := session.LexicalWorkDir(obj.Spec.WorkDir, roots); err != nil {
-		return false, "working directory is not under an approved root"
-	}
-
-	// A pod needs a finite activeDeadlineSeconds, so "never" and garbage fail
-	// here along with zero and negative durations.
-	lifetime, err := time.ParseDuration(obj.Spec.Lifetime)
-	if err != nil || lifetime <= 0 {
-		return false, "lifetime must be a positive duration such as 8h"
-	}
-	// An object written with kubectl skips the API's override check, so the
-	// ceiling is enforced here too (FR-007).
-	if maxLifetime > 0 && lifetime > maxLifetime {
-		return false, "lifetime is longer than the configured maximum"
+	lifetime, ok, reason := checkSpec(obj, roots, maxLifetime)
+	if !ok {
+		return false, reason
 	}
 	if !obj.Metadata.CreationTimestamp.Add(lifetime).After(now) {
 		return false, "session is past its lifetime"
@@ -56,6 +43,37 @@ func Admit(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, cap int, maxL
 		return false, "session limit reached"
 	}
 	return true, ""
+}
+
+// CheckSpec runs the checks that read only the object's spec: the working
+// directory and the lifetime, including the configured ceiling. The reconciler
+// re-runs it against a live pod, where the cap must not apply because it counts
+// creation order and would evict a session that is already running.
+func CheckSpec(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, maxLifetime time.Duration) (bool, string) {
+	_, ok, reason := checkSpec(obj, roots, maxLifetime)
+	return ok, reason
+}
+
+// checkSpec also returns the parsed lifetime, which Admit needs next.
+func checkSpec(obj v1alpha1.AgentSession, roots []config.ApprovedRoot, maxLifetime time.Duration) (time.Duration, bool, string) {
+	// Lexical only: the daemon and reconciler cannot see the session's
+	// filesystem. The resolved check runs in the pod.
+	if _, err := session.LexicalWorkDir(obj.Spec.WorkDir, roots); err != nil {
+		return 0, false, "working directory is not under an approved root"
+	}
+
+	// A pod needs a finite activeDeadlineSeconds, so "never" and garbage fail
+	// here along with zero and negative durations.
+	lifetime, err := time.ParseDuration(obj.Spec.Lifetime)
+	if err != nil || lifetime <= 0 {
+		return 0, false, "lifetime must be a positive duration such as 8h"
+	}
+	// An object written with kubectl skips the API's override check, so the
+	// ceiling is enforced here too (FR-007).
+	if maxLifetime > 0 && lifetime > maxLifetime {
+		return 0, false, "lifetime is longer than the configured maximum"
+	}
+	return lifetime, true, ""
 }
 
 // sameObject matches on UID when both sides have one. Without it, two objects

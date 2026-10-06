@@ -18,10 +18,16 @@ const (
 
 // ObjectMeta carries only the metadata the daemon and reconciler read.
 type ObjectMeta struct {
-	Name              string            `json:"name"`
-	Namespace         string            `json:"namespace,omitempty"`
-	UID               string            `json:"uid,omitempty"`
-	CreationTimestamp time.Time         `json:"creationTimestamp,omitempty"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+	UID       string `json:"uid,omitempty"`
+	// ResourceVersion is the version a writer read. A write that carries it is
+	// refused by the API server if the object has moved on.
+	ResourceVersion   string    `json:"resourceVersion,omitempty"`
+	CreationTimestamp time.Time `json:"creationTimestamp,omitempty"`
+	// DeletionTimestamp is set while the object is being deleted. Without it
+	// the reconciler cannot tell a deleting object from a live one.
+	DeletionTimestamp *time.Time        `json:"deletionTimestamp,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
 	Annotations       map[string]string `json:"annotations,omitempty"`
 	Finalizers        []string          `json:"finalizers,omitempty"`
@@ -57,6 +63,12 @@ type AgentSessionStatus struct {
 	Phase        Phase  `json:"phase,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 	Conversation string `json:"conversation,omitempty"`
+	// PodRecreates counts consecutive pod recreates and RecreateOf names the
+	// failed pod whose recreate is counted. They live in status because only the
+	// reconciler can write it; an annotation is writable by anyone who can
+	// update the object, and a forged one would bypass the recreate cap.
+	PodRecreates int    `json:"podRecreates,omitempty"`
+	RecreateOf   string `json:"recreateOf,omitempty"`
 }
 
 // Phase is the reconciler's verdict on one AgentSession.

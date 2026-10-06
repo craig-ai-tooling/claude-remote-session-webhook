@@ -43,9 +43,10 @@ in `spec`, and phase (`Pending`, `Running`, `Rejected`, `Reviving`, `Failed`) an
 identifier in `status`. Nothing in it is a secret.
 
 **Reconcile.** List objects, list pods by owner reference, and converge: create a missing pod,
-recreate a deleted one with `--resume <conversation>`, delete the pod of a deleted object and
-confirm it is gone, reject an object that fails FR-007. One reconciler by Lease, as its own
-Deployment (FR-009).
+recreate a deleted one; the daemon's supervisor types `--resume <conversation>` into it (E1),
+delete the pod of a deleted object and confirm it is gone, reject an object that fails FR-007.
+There is no finalizer, because `podctl.Kill` confirms the pod gone and the object type carries
+no `deletionTimestamp` (S6 §3 rule 1). One reconciler by Lease, as its own Deployment (FR-009).
 
 **Session pod.** tmux as the entrypoint's child, `claude` started by the same start command
 `tmuxctl` sends today, `creds-link` as a native sidecar, `CLAUDE_CONFIG_DIR` and the working

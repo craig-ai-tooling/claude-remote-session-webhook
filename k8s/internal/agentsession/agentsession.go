@@ -114,14 +114,37 @@ func (c *Client) SetAnnotation(ctx context.Context, name, key, value string) err
 	return nil
 }
 
-// UpdateStatus and Update never send a typed object back: ObjectMeta has no
-// resourceVersion and the API server refuses an update without one. Each
-// reads the unstructured object fresh and changes only its own part. A
-// conflict is returned as is; the caller retries on its next pass.
-func (c *Client) UpdateStatus(ctx context.Context, name string, status v1alpha1.AgentSessionStatus) error {
+// fresh reads the object and refuses it unless it is the very object, at the
+// very version, the caller computed its write from. A name alone is not an
+// identity: the object may have been deleted and recreated under it, and a
+// write computed from the old one would land on the new one. The refusal is a
+// Conflict, which the caller requeues rather than reports.
+func (c *Client) fresh(ctx context.Context, op string, from v1alpha1.AgentSession) (*unstructured.Unstructured, error) {
+	name := from.Metadata.Name
 	u, err := c.res().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return fmt.Errorf("agentsession: update status %s: %w", name, err)
+		return nil, fmt.Errorf("agentsession: %s %s: %w", op, name, err)
+	}
+	if string(u.GetUID()) != from.Metadata.UID {
+		return nil, fmt.Errorf("agentsession: %s %s: %w", op, name,
+			apierrors.NewConflict(GVR.GroupResource(), name, errors.New("the object was replaced since it was read")))
+	}
+	if u.GetResourceVersion() != from.Metadata.ResourceVersion {
+		return nil, fmt.Errorf("agentsession: %s %s: %w", op, name,
+			apierrors.NewConflict(GVR.GroupResource(), name, errors.New("the object changed since it was read")))
+	}
+	return u, nil
+}
+
+// UpdateStatus and Update never send a typed object back: they re-read the
+// unstructured object and change only their own part. Both take the object the
+// caller read and write only if the live one has the same UID and
+// resourceVersion; otherwise they return a Conflict and write nothing.
+func (c *Client) UpdateStatus(ctx context.Context, from v1alpha1.AgentSession, status v1alpha1.AgentSessionStatus) error {
+	name := from.Metadata.Name
+	u, err := c.fresh(ctx, "update status", from)
+	if err != nil {
+		return err
 	}
 	m, err := toMap(status)
 	if err != nil {
@@ -137,23 +160,30 @@ func (c *Client) UpdateStatus(ctx context.Context, name string, status v1alpha1.
 }
 
 // Update lets mutate change metadata only. Spec is never written back, so a
-// caller cannot reshape what the reconciler will run.
-func (c *Client) Update(ctx context.Context, name string, mutate func(*v1alpha1.AgentSession)) error {
-	u, err := c.res().Get(ctx, name, metav1.GetOptions{})
+// caller cannot reshape what the reconciler will run. It returns the stored
+// object, so a later write in the same pass carries the new resourceVersion.
+func (c *Client) Update(ctx context.Context, from v1alpha1.AgentSession, mutate func(*v1alpha1.AgentSession)) (v1alpha1.AgentSession, error) {
+	name := from.Metadata.Name
+	u, err := c.fresh(ctx, "update", from)
 	if err != nil {
-		return fmt.Errorf("agentsession: update %s: %w", name, err)
+		return v1alpha1.AgentSession{}, err
 	}
 	obj, err := ToObject(u)
 	if err != nil {
-		return fmt.Errorf("agentsession: update %s: %w", name, err)
+		return v1alpha1.AgentSession{}, fmt.Errorf("agentsession: update %s: %w", name, err)
 	}
 	mutate(&obj)
 	u.SetAnnotations(obj.Metadata.Annotations)
 	u.SetLabels(obj.Metadata.Labels)
-	if _, err := c.res().Update(ctx, u, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("agentsession: update %s: %w", name, err)
+	stored, err := c.res().Update(ctx, u, metav1.UpdateOptions{})
+	if err != nil {
+		return v1alpha1.AgentSession{}, fmt.Errorf("agentsession: update %s: %w", name, err)
 	}
-	return nil
+	out, err := ToObject(stored)
+	if err != nil {
+		return v1alpha1.AgentSession{}, fmt.Errorf("agentsession: update %s: %w", name, err)
+	}
+	return out, nil
 }
 
 // ToObject converts through JSON.

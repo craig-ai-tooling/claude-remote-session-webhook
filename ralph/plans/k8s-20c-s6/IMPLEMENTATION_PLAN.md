@@ -18,12 +18,12 @@ differently, use `ls k8s/internal/agentsession/` and record the real name in PRO
 
 Take the topmost open task. One per iteration. All of them are in the cluster module `k8s/`.
 
-- [ ] T1: `k8s/internal/reconcile` config, constants and `ConfigFromEnv`, per Design §1. Verify: `go -C k8s test ./internal/reconcile -run Config -v` passes.
-- [ ] T2: `PodFor`, the session pod template, per Design §2. Verify: `go -C k8s test ./internal/reconcile -run PodFor -v` passes.
-- [ ] T3: `ReconcileOne`, the decision table, per Design §3. Verify: `go -C k8s test ./internal/reconcile -run Reconcile -v` passes.
-- [ ] T4: The loop: informers, queue, `Run`, and `RunWithLease`, per Design §4. Verify: `go -C k8s test ./internal/reconcile -run 'Loop|Lease' -v` passes.
-- [ ] T5: The spec and plan amendment per Design §5. Verify: `grep -n 'finalizer' specs/017-k8s-native-execution/plan.md` prints at least one line inside the Reconcile paragraph.
-- [ ] T6: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go -C k8s test ./... && go test ./...` exits 0.
+- [x] T1: `k8s/internal/reconcile` config, constants and `ConfigFromEnv`, per Design §1. Verify: `go -C k8s test ./internal/reconcile -run Config -v` passes.
+- [x] T2: `PodFor`, the session pod template, per Design §2. Verify: `go -C k8s test ./internal/reconcile -run PodFor -v` passes.
+- [x] T3: `ReconcileOne`, the decision table, per Design §3. Verify: `go -C k8s test ./internal/reconcile -run Reconcile -v` passes.
+- [x] T4: The loop: informers, queue, `Run`, and `RunWithLease`, per Design §4. Verify: `go -C k8s test ./internal/reconcile -run 'Loop|Lease' -v` passes.
+- [x] T5: The spec and plan amendment per Design §5. Verify: `grep -n 'finalizer' specs/017-k8s-native-execution/plan.md` prints at least one line inside the Reconcile paragraph.
+- [x] T6: Run every command in VALIDATION_CONTRACT.md, record each result in PROGRESS.md, then append `RALPH_COMPLETE`. Verify: `go -C k8s test ./... && go test ./...` exits 0.
 
 ## Files touched
 
@@ -237,7 +237,15 @@ The table, first match wins:
    Not ok: status `Rejected` with `reason`; return. No pod.
 5. `pod, err := PodFor(obj, cfg, cfg.now())`. `ErrLifetimeOver`: status `Failed`, reason
    `the session reached its lifetime`; return.
-6. Create the pod. `AlreadyExists` is nil (the deterministic name is the one-pod guard). Status
+6. Re-read the object live, never from the informer cache: `live, err := sessions.Get(ctx, n)` through
+   the dynamic client. Absent, or `live.Metadata.UID != obj.Metadata.UID`: return nil and create
+   nothing. This narrows the window in which `podctl.Kill` deletes the object, sees no pod, and
+   returns while this reconciler is about to create one (cross-family review of S5, 10/6/26). A
+   pod that still slips through carries an owner reference to a deleted UID, so the garbage
+   collector removes it, and it only ever runs a login shell because the daemon is the only writer
+   of the start command (E1). Test: a fake whose Get returns NotFound on this second read gets no
+   pod create.
+7. Create the pod. `AlreadyExists` is nil (the deterministic name is the one-pod guard). Status
    `Reviving` when the object's phase was `Running` or `Reviving`, else `Pending`.
 
 "Set status" means: compute the wanted status (phase, reason, and `conversation` = the object's

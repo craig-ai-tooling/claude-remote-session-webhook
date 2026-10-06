@@ -45,6 +45,11 @@ func CRD() map[string]any {
 							"properties": map[string]any{
 								"spec": map[string]any{
 									"type": "object",
+									// Admission runs only while no pod exists, so what it
+									// read must not change under a running session.
+									// Conversation stays mutable: the daemon records it.
+									"x-kubernetes-validations": immutable(
+										"sessionName", "owner", "workDir", "startCommand", "lifetime"),
 									"required": []string{
 										"sessionName", "owner", "workDir", "startCommand", "lifetime",
 									},
@@ -72,6 +77,8 @@ func CRD() map[string]any {
 										},
 										"reason":       str,
 										"conversation": str,
+										"podRecreates": map[string]any{"type": "integer", "minimum": 0},
+										"recreateOf":   str,
 									},
 								},
 							},
@@ -81,4 +88,17 @@ func CRD() map[string]any {
 			},
 		},
 	}
+}
+
+// immutable is one transition rule per field, set on the spec object. A rule
+// that mentions oldSelf is skipped on create, so it only bites on update.
+func immutable(fields ...string) []any {
+	rules := make([]any, 0, len(fields))
+	for _, f := range fields {
+		rules = append(rules, map[string]any{
+			"rule":    "self." + f + " == oldSelf." + f,
+			"message": f + " is immutable",
+		})
+	}
+	return rules
 }

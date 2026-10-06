@@ -67,7 +67,29 @@
                   "startCommand",
                   "lifetime"
                 ],
-                "type": "object"
+                "type": "object",
+                "x-kubernetes-validations": [
+                  {
+                    "message": "sessionName is immutable",
+                    "rule": "self.sessionName == oldSelf.sessionName"
+                  },
+                  {
+                    "message": "owner is immutable",
+                    "rule": "self.owner == oldSelf.owner"
+                  },
+                  {
+                    "message": "workDir is immutable",
+                    "rule": "self.workDir == oldSelf.workDir"
+                  },
+                  {
+                    "message": "startCommand is immutable",
+                    "rule": "self.startCommand == oldSelf.startCommand"
+                  },
+                  {
+                    "message": "lifetime is immutable",
+                    "rule": "self.lifetime == oldSelf.lifetime"
+                  }
+                ]
               },
               "status": {
                 "properties": {
@@ -84,7 +106,14 @@
                     ],
                     "type": "string"
                   },
+                  "podRecreates": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
                   "reason": {
+                    "type": "string"
+                  },
+                  "recreateOf": {
                     "type": "string"
                   }
                 },
