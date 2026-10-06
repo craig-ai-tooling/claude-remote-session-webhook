@@ -38,3 +38,11 @@ None open.
 BLOCKED: dependency not merged
 
 - Operator (10/6/26): S5 merged (#214); dependency met, branch rebased onto main. Ignore the BLOCKED line above.
+
+## Iteration 1 (T1, config, 10/6/26)
+
+- Added `k8s/internal/reconcile/config.go` and `config_test.go`: `Config`, the constants, `Roots()`, `now()`, `ConfigFromEnv` per Design 1.
+- Failing first: `go -C k8s test ./internal/reconcile -run Config` printed `config_test.go:27:14: undefined: ConfigFromEnv` (package did not exist, so the test did not compile).
+- Gate: all green, quickstart included (8765 was free). `k8s/go.mod` and `go.sum` unchanged by `go mod tidy`.
+- Flake, not fixed: the first `go test ./...` run failed three `internal/sessionpod` tests (`TestRunTakesAnEmptyListAsTheSessionBeingGone`, `TestRunKillsAndConfirmsTheSessionOnCancel`) on 5s timeouts while other packages ran in parallel. The package passes alone (2.3s) and a second full run was clean. Root module untouched, so it predates this slice.
+- Next iteration: `v1alpha1` lives at repo-root `api/v1alpha1`, imported as `github.com/nctiggy/claude-remote-session-webhook/api/v1alpha1`. `agentsession.Client.Get` returns `(obj, found, err)`. `ApprovedRoot` is `{Path, IsDefault}`. An image whose registry has a port but no tag (`host:5000/img`) is refused, covered by a test.
