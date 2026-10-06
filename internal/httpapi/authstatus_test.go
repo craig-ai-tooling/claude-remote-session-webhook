@@ -615,6 +615,7 @@ func TestDashboardAuthHarnessParam(t *testing.T) {
 		"codex signed out":     {"?harness=codex", &fakeRelay{signedIn: false}, http.StatusOK, authBad},
 		"codex not configured": {"?harness=codex", nil, http.StatusOK, authUnknown},
 		"duplicate":            {"?harness=codex&harness=claude", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
+		"malformed":            {"?harness=codex&harness=claude;ignored=x", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
 		"unknown":              {"?harness=gemini", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
 		"empty value":          {"?harness=", &fakeRelay{signedIn: true}, http.StatusBadRequest, ""},
 	}

@@ -10,7 +10,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 )
 
-const codexPill = `data-harness="codex"`
+const codexPill = `data-auth-pill data-harness="codex"`
 
 // pageHeader is the masthead of a page the daemon served, failing rather than
 // returning an empty string, which every Contains assertion would pass on.

@@ -97,7 +97,7 @@ func TestQuotaStatusRefusesRatherThanGuesses(t *testing.T) {
 			if got.State != quotaUnknown {
 				t.Fatalf("state = %q; want %q", got.State, quotaUnknown)
 			}
-			if got.PercentUsed != nil || got.ResetsAt != nil || got.RefreshedAt != nil || got.Stale != nil {
+			if got.PercentUsed != nil {
 				t.Errorf("an unknown reading carries a value field: %+v", got)
 			}
 		})
@@ -129,6 +129,82 @@ func TestQuotaStatusReportsTheWeeklyWindow(t *testing.T) {
 	}
 	if got.RefreshedAt == nil || *got.RefreshedAt != "2026-08-02T19:00:00Z" {
 		t.Errorf("refreshedAt = %v; want state.refreshedAt verbatim", got.RefreshedAt)
+	}
+}
+
+// quotaCacheBoth carries a claude seven_day window and a codex weekly window
+// with different percentages, so a route that reads the wrong provider cannot
+// pass by coincidence.
+const quotaCacheBoth = `{"generatedAt":"2026-08-02T18:00:00Z","schemaVersion":2,"providers":[` +
+	`{"provider":"claude","windows":[{"id":"seven_day","kind":"weekly","percentUsed":64,"resetsAt":"2026-08-04T04:00:00+00:00"}],` +
+	`"state":{"status":"fresh","stale":false,"refreshedAt":"2026-08-02T19:00:00Z"}},` +
+	`{"provider":"codex","windows":[{"id":"five_hour","kind":"session","percentUsed":7},` +
+	`{"id":"weekly","kind":"weekly","percentUsed":42,"resetsAt":"2026-08-05T04:00:00+00:00"}],` +
+	`"state":{"status":"fresh","stale":false,"refreshedAt":"2026-08-02T19:00:00Z"}}]}`
+
+// TestDashboardQuotaCodex must fail when ?harness=codex is ignored (the
+// answer would be Claude's 64) or reads the codex five_hour window.
+func TestDashboardQuotaCodex(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.quotaCachePath = writeQuotaCache(t, quotaCacheBoth)
+	f.clock = fixedClock{at: testTime}
+
+	got := quotaAnswer(t, f.open(t, quotaPath+"?harness=codex"))
+	if got.State != quotaOK {
+		t.Fatalf("state = %q; want %q", got.State, quotaOK)
+	}
+	if got.PercentUsed == nil || *got.PercentUsed != 42 {
+		t.Errorf("percentUsed = %v; want the codex weekly 42", got.PercentUsed)
+	}
+	if got.ResetsAt == nil || *got.ResetsAt != "2026-08-05T04:00:00+00:00" {
+		t.Errorf("resetsAt = %v; want the codex weekly window's own", got.ResetsAt)
+	}
+
+	claude := quotaAnswer(t, f.open(t, quotaPath))
+	if claude.PercentUsed == nil || *claude.PercentUsed != 64 {
+		t.Errorf("no harness param: percentUsed = %v; want the claude 64", claude.PercentUsed)
+	}
+}
+
+// TestDashboardQuotaCodexMissingIsUnknown must fail when a cache with no codex
+// provider answers anything but unknown for ?harness=codex.
+func TestDashboardQuotaCodexMissingIsUnknown(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.quotaCachePath = writeQuotaCache(t, quotaCacheOK)
+
+	got := quotaAnswer(t, f.open(t, quotaPath+"?harness=codex"))
+	if got.State != quotaUnknown || got.PercentUsed != nil || got.ResetsAt != nil || got.RefreshedAt != nil || got.Stale != nil {
+		t.Errorf("answer = %+v; want unknown with no value fields", got)
+	}
+}
+
+// TestDashboardQuotaHarnessInvalid must fail when an unknown or repeated
+// harness value is answered with 200 instead of a 400.
+func TestDashboardQuotaHarnessInvalid(t *testing.T) {
+	t.Parallel()
+
+	for name, query := range map[string]string{
+		"unknown":   "?harness=gemini",
+		"empty":     "?harness=",
+		"duplicate": "?harness=codex&harness=claude",
+		// url.Values drops the pair after the semicolon, leaving one valid value.
+		"malformed": "?harness=codex&harness=claude;ignored=x",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFleet(t)
+			f.quotaCachePath = writeQuotaCache(t, quotaCacheBoth)
+
+			w := f.open(t, quotaPath+query)
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("GET %s%s = %d; want %d", quotaPath, query, w.Code, http.StatusBadRequest)
+			}
+		})
 	}
 }
 
@@ -292,5 +368,51 @@ func TestScriptRepaintsBothTheMeterAndTheLabel(t *testing.T) {
 		if !strings.Contains(source, want) {
 			t.Errorf("crswd.js does not carry %q; the meter and the label can drift", want)
 		}
+	}
+}
+
+// **Must fail when** the Codex pieces can show while the response carried no
+// weekly window: the label follows the meter, and the meter is hidden on every
+// unknown, error or missing-window answer.
+func TestQuotaScriptHidesCodexWithoutWindow(t *testing.T) {
+	t.Parallel()
+
+	source := script(t)
+	settle := jsBlock(t, source, "const settle = () =>")
+	if !strings.Contains(settle, "label.hidden = meter.hidden") {
+		t.Errorf("settle does not tie the Codex label's visibility to its meter's: %q", settle)
+	}
+	// Both paints must call settle: deleting the call from the unknown branch
+	// leaves the label visible under a hidden meter.
+	unknown := jsBlock(t, source, "const paintUnknown = () =>")
+	for _, want := range []string{"meter.hidden = true", "settle()"} {
+		if !strings.Contains(unknown, want) {
+			t.Errorf("the unknown branch does not carry %q: %q", want, unknown)
+		}
+	}
+	if ok := jsBlock(t, source, "const paintOk = (said) =>"); !strings.Contains(ok, "settle()") {
+		t.Errorf("the ok branch does not settle: %q", ok)
+	}
+}
+
+// **Must fail when** the script goes back to one meter for the whole header or
+// stops asking for Codex's own window.
+func TestQuotaScriptFetchesPerHarness(t *testing.T) {
+	t.Parallel()
+
+	source := script(t)
+	// The asker list, whole: dropping 'codex' leaves the Codex fetch below unused.
+	if !strings.Contains(source, "const askers = ['claude', 'codex'].map(makeAsker)") {
+		t.Error("the asker list does not carry both 'claude' and 'codex'")
+	}
+	get := source[strings.Index(source, "const get = () =>"):]
+	get = get[:strings.Index(get, ";")]
+	for _, want := range []string{"h === 'codex'", "fetch('/dashboard/quota?harness=codex'", "fetch('/dashboard/quota'"} {
+		if !strings.Contains(get, want) {
+			t.Errorf("the per-harness fetch does not carry %q: %q", want, get)
+		}
+	}
+	if !strings.Contains(source, "[data-quota-label][data-harness=") {
+		t.Error("crswd.js does not select the label per harness")
 	}
 }

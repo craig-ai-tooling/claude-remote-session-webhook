@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/quota"
 )
 
@@ -65,11 +66,14 @@ type quotaStatusResponse struct {
 // readQuota is the one place this package reads quota-axi's cache, so the
 // route and any future caller share one reading of "no path resolved at
 // construction" rather than each inventing its own.
-func (s *Server) readQuota() (quota.Reading, error) {
+func (s *Server) readQuota(h harness.Name) (quota.Reading, error) {
 	if s.quotaCachePath == "" {
 		return quota.Reading{}, quota.ErrNoCacheFile
 	}
-	return quota.Read(s.quotaCachePath)
+	if h == harness.Codex {
+		return quota.ReadProvider(s.quotaCachePath, "codex", "weekly")
+	}
+	return quota.ReadProvider(s.quotaCachePath, "claude", "seven_day")
 }
 
 // dashboardQuota serves GET /dashboard/quota (spec 016).
@@ -82,7 +86,13 @@ func (s *Server) readQuota() (quota.Reading, error) {
 // not having run yet is the ordinary state of a freshly installed host, not a
 // fault this daemon should narrate on every poll.
 func (s *Server) dashboardQuota(w http.ResponseWriter, r *http.Request) {
-	reading, err := s.readQuota()
+	h, _, err := parseHarnessQuery(r, "harness")
+	if err != nil {
+		s.rejectBadRequest(w, r, errHarnessParam)
+		return
+	}
+
+	reading, err := s.readQuota(h)
 	if err != nil {
 		s.writeJSON(w, r, http.StatusOK, quotaStatusResponse{State: quotaUnknown})
 		return

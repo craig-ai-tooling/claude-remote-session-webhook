@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"net/http"
 	"net/url"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
@@ -47,4 +48,17 @@ func parseHarness(values url.Values, key string) (harness.Name, error) {
 		return harness.Codex, nil
 	}
 	return "", errHarnessParam
+}
+
+// parseHarnessQuery reads key from r's raw query. r.URL.Query() discards a pair
+// it cannot parse, so "?harness=codex&harness=claude;x=1" would read as one
+// value; parsing RawQuery directly makes any malformed pair a refusal instead.
+// It returns the parsed values too, for a route that reads other keys.
+func parseHarnessQuery(r *http.Request, key string) (harness.Name, url.Values, error) {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return "", nil, errHarnessParam
+	}
+	h, err := parseHarness(values, key)
+	return h, values, err
 }

@@ -3,12 +3,12 @@
 
 <div class="masthead-bar">
 <h1 class="brand"><a class="brand-link" href="/">crswd</a><span class="brand-version">dev</span> <span class="brand-tag">session control</span></h1>
-<p class="quota-label quota-label-unknown" data-quota-label>weekly quota: checking</p>
+<p class="quota-label quota-label-unknown" data-quota-label data-harness="claude">weekly quota: checking</p>
 <p class="operator" title="operator@example.com">operator@example.com</p>
 <button type="button" class="pill pill-unknown" data-auth-pill command="show-modal" commandfor="signin-dialog">auth: checking</button>
 <a class="masthead-link" href="/settings">Settings</a>
 </div>
-<meter class="quota-meter" data-quota-meter min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
+<meter class="quota-meter" data-quota-meter data-harness="claude" min="0" max="100" low="74" high="89" optimum="0" value="0" aria-label="Weekly Claude quota used" hidden></meter>
 </header>
 <dialog class="modal" id="signin-dialog" closedby="any" aria-labelledby="signin-title">
 <div class="modal-head">

@@ -357,6 +357,23 @@ Rules:
   an ellipsis above the breakpoint and carry the whole sentence in `title`,
   which the script writes together with the text.
 
+#### The second meter (spec 019)
+
+When `headerView.CodexConfigured` is true the header renders a second
+`.quota-label` and a second `.quota-meter` with `data-harness="codex"`, after the
+Claude pair. The Claude pair carries `data-harness="claude"` and is otherwise
+unchanged; without Codex no second pair is rendered.
+
+Rules:
+- **One route, one parameter.** `crswd.js` asks `GET /dashboard/quota?harness=codex`
+  for the Codex pair and the bare route for Claude. An unknown, empty or repeated
+  `harness` value is a 400.
+- **The Codex pair starts `hidden` and is shown only by a reading.** The label reads
+  `Codex weekly N% used`. When the cache holds no Codex weekly window the script sets
+  `label.hidden = meter.hidden`, so Codex never shows an "unknown" the operator
+  cannot act on. Claude keeps its own "unknown" text.
+- **No new CSS class.** The second pair reuses `.quota-label` and `.quota-meter`.
+
 Rules for the bar as a whole:
 - **The settings link is in the bar, after the operator and the auth control,
   and outside the heading.** The wordmark is the route home and it lives inside

@@ -1665,12 +1665,6 @@
 (() => {
   'use strict';
 
-  const meter = document.querySelector('[data-quota-meter]');
-  const label = document.querySelector('[data-quota-label]');
-  if (!meter || !label) {
-    return;
-  }
-
   const QUOTA_POLL_MS = 60000;
 
   // Rendered as whole minutes under an hour, whole hours after: an operator
@@ -1702,47 +1696,82 @@
     return resets.toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
   };
 
-  // The words truncate first on the bar's one line, so the whole sentence is
-  // carried in title as well — written together, so the two never disagree.
-  const say = (text) => {
-    label.textContent = text;
-    label.title = text;
-  };
-
-  const paintUnknown = () => {
-    meter.hidden = true;
-    label.classList.add('quota-label-unknown');
-    say('weekly quota: unknown');
-  };
-
-  const paintOk = (said) => {
-    meter.value = said.percentUsed;
-    meter.hidden = false;
-    label.classList.remove('quota-label-unknown');
-
-    let text = 'Weekly ' + said.percentUsed + '% used';
-    const resets = resetText(said.resetsAt);
-    if (resets) {
-      text += ' · resets ' + resets;
+  // One meter and one label per harness, each keyed on its own data-harness: the
+  // label is a <p> in the bar and the meter its sibling under it, so there is no
+  // wrapper to find them through. A harness the header did not draw (Codex, on a
+  // daemon without it) is skipped rather than asked about.
+  const makeAsker = (h) => {
+    const meter = document.querySelector('[data-quota-meter][data-harness="' + h + '"]');
+    const label = document.querySelector('[data-quota-label][data-harness="' + h + '"]');
+    if (!meter || !label) {
+      return null;
     }
-    if (said.stale) {
-      const age = ageText(said.refreshedAt);
-      text += age ? ' · as of ' + age : ' · stale';
-    }
-    say(text);
+    const noun = h === 'codex' ? 'Codex weekly ' : 'Weekly ';
+    const unknownText = h === 'codex' ? 'codex quota: unknown' : 'weekly quota: unknown';
+
+    // The words truncate first on the bar's one line, so the whole sentence is
+    // carried in title as well — written together, so the two never disagree.
+    const say = (text) => {
+      label.textContent = text;
+      label.title = text;
+    };
+
+    // Codex shows only when its answer carries a weekly window (NC-1): the label
+    // follows the meter, so both are hidden on any unknown, error or missing
+    // window. Claude's label is never hidden and keeps its unknown text.
+    const settle = () => {
+      if (h === 'codex') {
+        label.hidden = meter.hidden;
+      }
+    };
+
+    const paintUnknown = () => {
+      meter.hidden = true;
+      label.classList.add('quota-label-unknown');
+      say(unknownText);
+      settle();
+    };
+
+    const paintOk = (said) => {
+      meter.value = said.percentUsed;
+      meter.hidden = false;
+      label.classList.remove('quota-label-unknown');
+
+      let text = noun + said.percentUsed + '% used';
+      const resets = resetText(said.resetsAt);
+      if (resets) {
+        text += ' · resets ' + resets;
+      }
+      if (said.stale) {
+        const age = ageText(said.refreshedAt);
+        text += age ? ' · as of ' + age : ' · stale';
+      }
+      say(text);
+      settle();
+    };
+
+    const options = { credentials: 'same-origin', cache: 'no-store' };
+    const get = () =>
+      h === 'codex' ? fetch('/dashboard/quota?harness=codex', options) : fetch('/dashboard/quota', options);
+
+    return () =>
+      get()
+        .then((answer) => (answer.ok ? answer.json() : null))
+        .then((said) => {
+          if (said && said.state === 'ok' && typeof said.percentUsed === 'number') {
+            paintOk(said);
+          } else {
+            paintUnknown();
+          }
+        })
+        .catch(paintUnknown);
   };
 
-  const askQuota = () =>
-    fetch('/dashboard/quota', { credentials: 'same-origin', cache: 'no-store' })
-      .then((answer) => (answer.ok ? answer.json() : null))
-      .then((said) => {
-        if (said && said.state === 'ok' && typeof said.percentUsed === 'number') {
-          paintOk(said);
-        } else {
-          paintUnknown();
-        }
-      })
-      .catch(paintUnknown);
+  const askers = ['claude', 'codex'].map(makeAsker).filter(Boolean);
+  if (askers.length === 0) {
+    return;
+  }
+  const askQuota = () => Promise.all(askers.map((ask) => ask()));
 
   let quotaTimer;
   const scheduleQuota = () => {

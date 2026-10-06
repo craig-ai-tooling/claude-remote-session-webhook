@@ -26,12 +26,18 @@ import (
 // this package, can say which — but never with the file's own bytes: a
 // percentage is not a secret, and neither is a reason authored here.
 var (
-	ErrNoCacheFile      = errors.New("quota: no cache file")
-	ErrUnreadable       = errors.New("quota: cache file could not be read")
-	ErrMalformed        = errors.New("quota: cache file is not valid JSON")
-	ErrNoClaudeProvider = errors.New("quota: no claude provider in the cache")
-	ErrNoWeeklyWindow   = errors.New("quota: claude provider has no seven_day window")
-	ErrInvalidPercent   = errors.New("quota: seven_day percentUsed is missing or out of range")
+	ErrNoCacheFile    = errors.New("quota: no cache file")
+	ErrUnreadable     = errors.New("quota: cache file could not be read")
+	ErrMalformed      = errors.New("quota: cache file is not valid JSON")
+	ErrNoProvider     = errors.New("quota: no such provider in the cache")
+	ErrNoWindow       = errors.New("quota: the provider has no such window")
+	ErrInvalidPercent = errors.New("quota: seven_day percentUsed is missing or out of range")
+)
+
+// Kept for the callers that predate ReadProvider.
+var (
+	ErrNoClaudeProvider = ErrNoProvider
+	ErrNoWeeklyWindow   = ErrNoWindow
 )
 
 // Reading is the one window this daemon cares about, parsed into a small value
@@ -130,6 +136,13 @@ type cacheState struct {
 // Reading, which would be indistinguishable from a real 0% (spec 016 D4: "a
 // check that cannot run must refuse, never pass").
 func Read(path string) (Reading, error) {
+	return ReadProvider(path, claudeProviderID, sevenDayWindowID)
+}
+
+// ReadProvider is Read for any provider and window id quota-axi caches, with
+// the same refusal rules: a missing provider is ErrNoProvider, a missing
+// window ErrNoWindow.
+func ReadProvider(path, provider, window string) (Reading, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // G304: path is quota.DefaultCachePath()'s own resolution (or a test fixture); no request or caller-supplied value reaches this call.
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -143,33 +156,33 @@ func Read(path string) (Reading, error) {
 		return Reading{}, ErrMalformed
 	}
 
-	var provider *cacheProvider
+	var prov *cacheProvider
 	for i := range doc.Providers {
-		if doc.Providers[i].Provider == claudeProviderID {
-			provider = &doc.Providers[i]
+		if doc.Providers[i].Provider == provider {
+			prov = &doc.Providers[i]
 			break
 		}
 	}
-	if provider == nil {
-		return Reading{}, ErrNoClaudeProvider
+	if prov == nil {
+		return Reading{}, ErrNoProvider
 	}
 
-	var window *cacheWindow
-	for i := range provider.Windows {
-		if provider.Windows[i].ID == sevenDayWindowID {
-			window = &provider.Windows[i]
+	var win *cacheWindow
+	for i := range prov.Windows {
+		if prov.Windows[i].ID == window {
+			win = &prov.Windows[i]
 			break
 		}
 	}
-	if window == nil {
-		return Reading{}, ErrNoWeeklyWindow
+	if win == nil {
+		return Reading{}, ErrNoWindow
 	}
 
-	if window.PercentUsed == nil || *window.PercentUsed < 0 || *window.PercentUsed > 100 {
+	if win.PercentUsed == nil || *win.PercentUsed < 0 || *win.PercentUsed > 100 {
 		return Reading{}, ErrInvalidPercent
 	}
 
-	refreshedRaw := provider.State.RefreshedAt
+	refreshedRaw := prov.State.RefreshedAt
 	if refreshedRaw == "" {
 		refreshedRaw = doc.GeneratedAt
 	}
@@ -181,10 +194,10 @@ func Read(path string) (Reading, error) {
 	refreshedAt, _ := time.Parse(time.RFC3339, refreshedRaw) //nolint:errcheck // an unparsable timestamp deliberately falls back to the zero time, read as arbitrarily old rather than as a fourth failure mode — see the comment above.
 
 	return Reading{
-		PercentUsed:    int(math.Round(*window.PercentUsed)),
-		ResetsAt:       window.ResetsAt,
+		PercentUsed:    int(math.Round(*win.PercentUsed)),
+		ResetsAt:       win.ResetsAt,
 		RefreshedAt:    refreshedAt,
 		RefreshedAtRaw: refreshedRaw,
-		Stale:          provider.State.Stale,
+		Stale:          prov.State.Stale,
 	}, nil
 }
