@@ -1,0 +1,110 @@
+name: Images
+
+# Publishes the two images and the Helm chart to ghcr.io on every merge to main
+# that touches what they are built from. There is no tag trigger: the version is
+# the commit count, as release.yml computes it, so 2.0.<N> here and v0.<N> there
+# name the same commit. release.yml is not touched (spec 017 FR-004); the host
+# install and the Kubernetes install release independently.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'k8s/**'
+      - 'internal/**'
+      - 'api/**'
+      - 'deploy/image/**'
+      - 'deploy/session-image/**'
+      - 'deploy/chart/**'
+      - 'deploy/k8s/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write # push the images and the chart to ghcr.io with GITHUB_TOKEN
+
+# One publish at a time, never cancelled part-way: a cancelled run can leave the
+# images pushed and the chart not, which is a version that names a missing chart.
+concurrency:
+  group: images
+  cancel-in-progress: false
+
+jobs:
+  images:
+    name: Build and publish
+    # GitHub-hosted for the reason release.yml gives: these are the bytes other
+    # people pull and run, so they are built on a machine that holds nothing of
+    # the operator's.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The version is the commit count, and a depth of 1 counts 1.
+          fetch-depth: 0
+
+      - name: Version
+        id: version
+        run: echo "version=2.0.$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Match ci.yml and release.yml. The three move together.
+          go-version: '1.24'
+          cache: true
+
+      - name: Build the cluster binary for amd64 and arm64
+        env:
+          CGO_ENABLED: "0" # the image base is distroless static: no libc to link
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          for a in amd64 arm64; do
+            GOOS=linux GOARCH="$a" go -C k8s build -trimpath -ldflags "-X main.version=$VERSION" -o "$RUNNER_TEMP/bin/crswd-$a" ./cmd/crswd
+          done
+
+      - name: Stage the session image context
+        run: |
+          mkdir -p "$RUNNER_TEMP/session"
+          deploy/session-image/fetch-codex.sh "$RUNNER_TEMP/session"
+          cp "$RUNNER_TEMP/bin/crswd-amd64" "$RUNNER_TEMP/session/crswd"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push crswd
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ runner.temp }}/bin
+          file: deploy/image/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          tags: ghcr.io/craig-ai-tooling/crswd:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.source=https://github.com/craig-ai-tooling/claude-remote-session-webhook
+          push: true
+
+      - name: Push crswd-session
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ runner.temp }}/session
+          file: deploy/session-image/Dockerfile
+          platforms: linux/amd64
+          tags: ghcr.io/craig-ai-tooling/crswd-session:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.source=https://github.com/craig-ai-tooling/claude-remote-session-webhook
+          push: true
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.16.3
+
+      - name: Package and push the chart
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          helm package deploy/chart --version "$VERSION" --app-version "$VERSION" -d "$RUNNER_TEMP"
+          echo "$GH_TOKEN" | helm registry login ghcr.io -u "$GH_ACTOR" --password-stdin
+          helm push "$RUNNER_TEMP/crswd-$VERSION.tgz" oci://ghcr.io/craig-ai-tooling/charts

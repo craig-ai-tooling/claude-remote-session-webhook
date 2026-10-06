@@ -132,3 +132,32 @@ Next iteration would waste time on:
 - Gate steps 1 to 9 passed. The quickstart suite passed with 127.0.0.1:8765 free.
 
 Noticed, not fixed: none.
+
+## Iteration 6 (T6, CI renders the chart, images.yml publishes)
+
+Done: `ci.yml` gains `Set up helm` and `Chart (lint and render)` after `Build (k8s)`, both guarded on
+`hashFiles('deploy/chart/Chart.yaml')`, the commands exactly as Design §6. New `images.yml`: push to
+main on the listed paths plus `workflow_dispatch`, `packages: write`, version `2.0.<commit count>`,
+both binaries, session context with `fetch-codex.sh`, two `build-push-action` steps, `helm package`
+and `helm push` to `oci://ghcr.io/craig-ai-tooling/charts`. Action SHAs are the ones in iteration 0.
+
+Failing first: `grep -c 'helm lint deploy/chart' .github/workflows/ci.yml` printed `0` and
+`.github/workflows/images.yml` did not exist (`ls`: no such file).
+After: both verify greps print `1`.
+
+Deviation from the Design text: the chart step in `images.yml` passes the version, actor and token
+through `env:` and reads `$VERSION`, `$GH_ACTOR`, `$GH_TOKEN` instead of putting `${{ }}` inside the
+`run:` script. Same commands, no expression interpolated into shell.
+
+Next iteration would waste time on:
+- `actionlint` is not allowed in the loop's sandbox (it asks for approval), so neither workflow was
+  linted here. CI's actionlint step and the operator's push are the first check. Run
+  `actionlint .github/workflows/ci.yml .github/workflows/images.yml` before pushing.
+- The sandbox refuses `;`/`&&` chains and `$?`. Run each gate command as its own Bash call.
+- T7 touches README.md and docs/k8s-mode.md; `internal/release/readme_test.go` and
+  `internal/config/docs_test.go` read the README, so run them before the full gate.
+- The loop cannot push this; the operator uses the App token for `.github/workflows/**`.
+- Gate steps 1 to 9 passed, except actionlint (not a gate step, not run). Quickstart passed.
+
+Noticed, not fixed: `images.yml` builds the session image's `crswd` from the same `-X main.version`
+build as the daemon, so session pods report the same version as the daemon. Intended, not a problem.
