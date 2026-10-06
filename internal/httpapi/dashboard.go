@@ -29,6 +29,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 )
 
@@ -309,7 +310,7 @@ func (s *Server) fleet(operator *access.VerifiedOperator, token string, outcome 
 		// passes it through, so a session parked on a dialog is named the
 		// moment its own page is opened; the grid still reads DisplayRunning
 		// for it until then.
-		views = append(views, cardOf(live, now, token, s.cfg.RemoteControlCommand, ""))
+		views = append(views, cardOf(live, now, token, s.cfg.RemoteControlCommand, "", s.sessions.SpecOf(live).Name))
 	}
 
 	return fleetView{
@@ -366,6 +367,7 @@ func (s *Server) fleet(operator *access.VerifiedOperator, token string, outcome 
 			Suggestions:            suggestions,
 			LifetimeCeilingRemoved: s.sessions.LifetimeCeilingRemoved(),
 			Commands:               s.previewCommands(),
+			CodexCommand:           s.previewCodexCommand(),
 		},
 		Outcome: outcome,
 	}
@@ -404,6 +406,20 @@ func (s *Server) previewCommands() map[bool]string {
 	return out
 }
 
+// previewCodexCommand is the line a Codex create would run, or empty where this
+// daemon offers no Codex harness. It asks the manager for the same reason
+// previewCommands does: the page and the session must share one renderer.
+func (s *Server) previewCodexCommand() string {
+	if _, ok := s.codexOffered(); !ok {
+		return ""
+	}
+	line, err := s.sessions.StartCommandLineFor(codexStartCommandName, "")
+	if err != nil {
+		return ""
+	}
+	return line
+}
+
 // conversationsFor stood here until spec 013. It answered for the first
 // suggested directory, because the create form had no session to ask about. The
 // control it fed is gone; conversationsForDir now serves the session page, which
@@ -438,6 +454,22 @@ func (s *Server) rootPaths() []string {
 	return paths
 }
 
+// harnessCardLabel is the card's name for a harness. Other answers empty rather
+// than harness.Label's "Other", so the card renders no span for a session the
+// daemon cannot place.
+func harnessCardLabel(h harness.Name) string {
+	switch h {
+	case harness.Claude:
+		return "Claude Code"
+	case harness.Codex:
+		return "Codex"
+	case harness.Other:
+		return ""
+	default:
+		return ""
+	}
+}
+
 // cardOf projects one record into the parameters the card renders from.
 //
 // One function because there is one card (docs/components.md, FR-024): the fleet
@@ -465,8 +497,10 @@ func (s *Server) rootPaths() []string {
 // route). Empty means "not checked" — sessionPage passes its own screen
 // capture; fleet does not capture one per card on every render, so its cards
 // answer exactly as they did before this parameter existed.
-func cardOf(live session.Session, now time.Time, token, remoteCommand, paneText string) sessionView {
-	displayState, parkedOn := effectiveDisplayState(live, now, paneText)
+//
+// h is the session's harness, which also decides the card's Harness label.
+func cardOf(live session.Session, now time.Time, token, remoteCommand, paneText string, h harness.Name) sessionView {
+	displayState, parkedOn := effectiveDisplayState(live, now, paneText, h)
 	return sessionView{
 		ID:           live.ID,
 		Name:         live.Name,
@@ -474,6 +508,7 @@ func cardOf(live session.Session, now time.Time, token, remoteCommand, paneText 
 		DisplayState: displayState,
 		ParkedOn:     parkedOn,
 		StartCommand: live.StartCommand,
+		Harness:      harnessCardLabel(h),
 		// The record's own method again, for the reason DisplayState is one: a
 		// derived value is computed where it is defined, and the card renders
 		// what it was handed.
@@ -510,7 +545,7 @@ func cardOf(live session.Session, now time.Time, token, remoteCommand, paneText 
 // keeps a caller with no capture to offer (fleet, today) behaving exactly as
 // it did before this function existed, rather than this function inventing an
 // opinion about a pane nobody read.
-func effectiveDisplayState(live session.Session, now time.Time, paneText string) (session.DisplayState, string) {
+func effectiveDisplayState(live session.Session, now time.Time, paneText string, h harness.Name) (session.DisplayState, string) {
 	if base := live.DisplayState(now); base == session.DisplayFailed {
 		return base, ""
 	}
@@ -528,7 +563,7 @@ func effectiveDisplayState(live session.Session, now time.Time, paneText string)
 		// exists to do something with it.
 		return session.DisplayNeedsAuth, ""
 	}
-	name, dialog := session.DetectDialog(paneText)
+	name, dialog := session.DetectDialogFor(h, paneText)
 	switch {
 	case !dialog:
 		return session.DisplayRunning, ""
@@ -637,11 +672,11 @@ func (s *Server) sessionPage(w http.ResponseWriter, r *http.Request) {
 		// Text, which DetectDialog never matches, so an unreadable screen
 		// answers exactly as it did before this parameter existed rather than
 		// this page inventing an opinion about content it never saw.
-		Session: cardOf(live, s.clock.Now(), token, s.cfg.RemoteControlCommand, pane.Text),
+		Session: cardOf(live, s.clock.Now(), token, s.cfg.RemoteControlCommand, pane.Text, s.sessions.SpecOf(live).Name),
 		Pane:    pane,
 		// The record's own directory. Every failure is an empty list, so a host
 		// whose Claude layout moved renders a page that still works.
-		Conversations: s.conversationsForDir(s.clock.Now(), live.WorkDir),
+		Conversations: s.conversationsForDir(s.clock.Now(), s.sessions.SpecOf(live).Name, live.WorkDir),
 	})
 }
 

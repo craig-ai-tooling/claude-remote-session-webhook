@@ -125,7 +125,7 @@ func SeedTrust(path, dir string) (err error) {
 	if !changed {
 		return nil
 	}
-	return replaceFile(path, updated, info.Mode().Perm())
+	return replaceFile(path, updated, info.Mode().Perm(), ".claude.json.crswd-*")
 }
 
 // isTrusted reports whether raw already records dir as trusted.
@@ -185,8 +185,8 @@ func withTrust(raw []byte, dir string) ([]byte, bool, error) {
 // replaceFile writes data beside path and renames it over path, so the file is
 // never seen half-written. A failure removes the temporary file and reports
 // both errors if that fails too.
-func replaceFile(path string, data []byte, mode fs.FileMode) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".claude.json.crswd-*")
+func replaceFile(path string, data []byte, mode fs.FileMode, prefix string) (err error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), prefix)
 	if err != nil {
 		return fmt.Errorf("seed workspace trust: create temporary file: %w", err)
 	}

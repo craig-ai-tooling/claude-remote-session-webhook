@@ -1537,7 +1537,7 @@ type frozenAnswer struct {
 func frozenEntry(f sessionFixture) string {
 	return `{"id":"` + frozenSessionID + `","name":"` + frozenName + `","work_dir":"` + f.repo +
 		`","state":"running","created_at":"` + frozenCreatedAt + `","expires_at":"` + frozenExpiresAt +
-		`","last_activity":"` + frozenCreatedAt + `","adopted":false}`
+		`","last_activity":"` + frozenCreatedAt + `","harness":"claude","adopted":false}`
 }
 
 var frozenAnswers = map[Route]frozenAnswer{

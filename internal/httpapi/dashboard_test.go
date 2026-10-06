@@ -1091,6 +1091,35 @@ func TestTheSessionPageNamesTheDialogAParkedSessionIsOn(t *testing.T) {
 	}
 }
 
+// TestCodexPaneOnTrustRendersBlocked is the same fix for a Codex session: its
+// own trust prompt is not Claude's, and the page must read it through the
+// harness the session runs under.
+func TestCodexPaneOnTrustRendersBlocked(t *testing.T) {
+	t.Parallel()
+
+	pane, err := os.ReadFile(filepath.Join("..", "session", "testdata", "codex-trust.pane"))
+	if err != nil {
+		t.Fatalf("read the Codex trust fixture: %v", err)
+	}
+
+	f := newFleet(t)
+	f.fixture.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --yolo",
+	}))
+	live, _ := f.fixture.plant(t, session.Session{Name: "a codex session", WorkDir: f.fixture.repo, StartCommand: "codex"})
+	f.fixture.tmux.SetPane(live.TmuxName(), string(pane))
+
+	card := cardFor(t, f.viewOf(t, live.ID).Body.String(), live.ID)
+
+	if !strings.Contains(card, ">"+string(session.DisplayBlocked)+"<") {
+		t.Errorf("the card does not show %q for a Codex session on its trust prompt:\n%s", session.DisplayBlocked, card)
+	}
+	if !strings.Contains(card, "codex-trust") {
+		t.Errorf("the card does not name the dialog:\n%s", card)
+	}
+}
+
 // TestAnUncatalogedDialogRendersUnknownNeverRunning is the registry's own
 // fail-closed rule (internal/session/dialog.go): a pane that looks
 // dialog-shaped but matches no named signature must never render as the
@@ -2030,5 +2059,105 @@ func TestTheFleetGridDoesNotYetCheckPanesForALogin(t *testing.T) {
 
 	if !strings.Contains(card, ">"+string(session.DisplayRunning)+"<") {
 		t.Errorf("the fleet grid's card no longer reads %q for a session needing a login — if the grid now checks panes, update this test to expect %q instead:\n%s", session.DisplayRunning, session.DisplayNeedsAuth, card)
+	}
+}
+
+// TestCardShowsHarness is FR-013 on the card: the harness is named, and only a
+// Claude session keeps a mode row, because only Claude has a remote mode.
+func TestCardShowsHarness(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.fixture.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --yolo",
+	}))
+	claude, _ := f.fixture.plant(t, session.Session{Name: "a claude session", WorkDir: f.fixture.repo})
+	codex, _ := f.fixture.plant(t, session.Session{Name: "a codex session", WorkDir: f.fixture.repo, StartCommand: "codex"})
+
+	page := f.open(t, "/").Body.String()
+
+	claudeCard, codexCard := cardFor(t, page, claude.ID), cardFor(t, page, codex.ID)
+	if !strings.Contains(claudeCard, `<span class="card-harness">Claude Code</span>`) {
+		t.Errorf("the Claude card does not name its harness:\n%s", claudeCard)
+	}
+	if !strings.Contains(codexCard, `<span class="card-harness">Codex</span>`) {
+		t.Errorf("the Codex card does not name its harness:\n%s", codexCard)
+	}
+	if !strings.Contains(claudeCard, "<dt>mode</dt>") {
+		t.Errorf("the Claude card lost its mode row:\n%s", claudeCard)
+	}
+	if strings.Contains(codexCard, "<dt>mode</dt>") {
+		t.Errorf("the Codex card shows a mode row, and Codex has no remote mode:\n%s", codexCard)
+	}
+}
+
+// TestCardOmitsHarnessForOther: a session whose command resolves to nothing the
+// daemon knows is not labelled with a guess, and keeps today's mode row.
+func TestCardOmitsHarnessForOther(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	live, _ := f.fixture.plant(t, session.Session{Name: "adopted", WorkDir: f.fixture.repo, StartCommand: "removed"})
+
+	card := cardFor(t, f.open(t, "/").Body.String(), live.ID)
+
+	if strings.Contains(card, "card-harness") {
+		t.Errorf("a session of unknown harness is labelled anyway:\n%s", card)
+	}
+	if !strings.Contains(card, "<dt>mode</dt>") {
+		t.Errorf("the mode row went missing for an Other session; only Codex loses it:\n%s", card)
+	}
+}
+
+// TestSessionPageListsCodexConversations: the session page's resume list reads
+// the session's own harness, so a Codex session is offered Codex rollouts.
+func TestSessionPageListsCodexConversations(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	f.fixture.mgr.SetStartCommands(config.NewStartCommands(map[string]string{
+		config.DefaultStartCommandName: "claude local-command",
+		"codex":                        "codex --yolo",
+	}))
+	home := t.TempDir()
+	f.fixture.mgr.SetCodexHome(home)
+	const id = "019a0000-0000-7000-8000-000000000042"
+	plantCodexRolloutFile(t, home, id, f.fixture.repo)
+	live, _ := f.fixture.plant(t, session.Session{Name: "a codex session", WorkDir: f.fixture.repo, StartCommand: "codex"})
+
+	page := f.viewOf(t, live.ID).Body.String()
+
+	if !strings.Contains(page, id) {
+		t.Errorf("the session page does not list the Codex conversation %s:\n%s", id, page)
+	}
+}
+
+// plantCodexRolloutFile lays a one-line Codex rollout for id and cwd under
+// home/sessions, in the layout Codex writes.
+func plantCodexRolloutFile(t *testing.T, home, id, cwd string) {
+	t.Helper()
+
+	dir := filepath.Join(home, "sessions", "2026", "10", "06")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("create the Codex store: %v", err)
+	}
+	line := `{"type":"session_meta","payload":{"id":"` + id + `","cwd":"` + cwd + `"}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "rollout-2026-10-06T00-11-13-"+id+".jsonl"), []byte(line), 0o600); err != nil {
+		t.Fatalf("record a Codex conversation: %v", err)
+	}
+}
+
+// TestCardOmitsHarnessForAdoptedWithoutAStartCommand: an adopted session that
+// recorded no start-command name is Other, not whatever the default is now.
+func TestCardOmitsHarnessForAdoptedWithoutAStartCommand(t *testing.T) {
+	t.Parallel()
+
+	f := newFleet(t)
+	live, _ := f.fixture.plant(t, session.Session{Name: "adopted", WorkDir: f.fixture.repo, Adopted: true})
+
+	card := cardFor(t, f.open(t, "/").Body.String(), live.ID)
+	if strings.Contains(card, "card-harness") {
+		t.Errorf("an adopted session with no start command is labelled with the default harness:\n%s", card)
 	}
 }

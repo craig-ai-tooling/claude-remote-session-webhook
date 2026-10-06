@@ -9,8 +9,15 @@ package tmuxctl
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrUnexpectedOutput is tmux answering a question with something this daemon
+// cannot read as the answer. It names the shape of the failure and carries none
+// of the output, which for a pane query is still the operator's own process id
+// and nothing worth logging beyond that it was wrong.
+var ErrUnexpectedOutput = errors.New("tmux answered something this daemon cannot read")
 
 // Controller drives a tmux server. It is an interface so that every other
 // package's tests run against the in-memory fake rather than a real tmux
@@ -47,6 +54,11 @@ type Controller interface {
 	// must never pass -e, which would reconstruct ANSI escapes from cell
 	// attributes and hand raw control bytes to the API.
 	CapturePane(ctx context.Context, name string) (string, error)
+
+	// PanePID returns the process id of the session's pane process, the login
+	// shell, which is the root a /proc walk starts from to find what a harness
+	// has open. A pid that is not a positive integer is ErrUnexpectedOutput.
+	PanePID(ctx context.Context, name string) (int, error)
 
 	// CaptureHistory returns the scrollback above the visible screen as plain
 	// text. Like CapturePane it never passes -e. It refuses with
@@ -227,6 +239,12 @@ const (
 	// Raw, like OptionName and OptionStart: a binary name is validated to
 	// [A-Za-z0-9._-] before it is written, so it can carry neither the separator
 	// nor a newline.
+	//
+	// The value may be a set of names joined by "|" ("codex|node"): tmux compares
+	// it with an m/r regex anchored at both ends, so "|" is alternation and the
+	// pane is alive when it runs any one of them. A name's only regex
+	// metacharacter is ".", which matches any character; that looseness is
+	// accepted.
 	OptionBinary = "@crswd-binary"
 
 	// OptionManagedValue is what OptionManaged is set to. List only tests the

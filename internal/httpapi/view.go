@@ -19,7 +19,10 @@ package httpapi
 // from the owner-scoped reads (FR-017, FR-037), which is the only way a session
 // this viewer does not own can fail to be here.
 
-import "github.com/nctiggy/claude-remote-session-webhook/internal/session"
+import (
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
+)
 
 // sessionView is one session as the card renders it — the projection
 // data-model.md names, built per render rather than stored, so it cannot drift
@@ -86,6 +89,13 @@ type sessionView struct {
 	// constants for every record, including an adopted one, which is why the
 	// card renders it unconditionally where it states the absence of a name.
 	Mode session.Mode
+
+	// Harness is the label of the agent this session runs: "Claude Code" or
+	// "Codex", and empty for Other. Not harness.Label, which answers "Other": a
+	// card that said so would name a harness the daemon cannot place, and the
+	// card renders nothing rather than a guess. The mode row below also reads it,
+	// and an empty value keeps the row, so a view built without one is unchanged.
+	Harness string
 
 	// Age is already formatted — coarse, human-readable, computed server-side.
 	// There is no ticking clock in the browser for it to drift from, and no
@@ -359,6 +369,24 @@ type createFormView struct {
 	// preview for it is not rendered at all — FR-018a's discipline about absent
 	// values, applied to a readout.
 	Commands map[bool]string
+
+	// CodexCommand is the preview line for the codex entry. Empty means this daemon
+	// offers no Codex harness and the form renders no harness control, the same
+	// absence rule Commands follows. It is a resolved line to read, never a name
+	// to post: the control posts one of two literals (fieldHarness).
+	CodexCommand string
+}
+
+// codexOffered reports whether this daemon configures a command named codex that
+// really runs Codex. The name alone is not enough: an entry called codex that
+// runs another binary would put a Claude session behind a Codex label, so the
+// binary is checked too.
+func (s *Server) codexOffered() (template string, ok bool) {
+	template, ok = s.cfg.StartCommands.Command(codexStartCommandName)
+	if !ok || harness.Of(template) != harness.Codex {
+		return "", false
+	}
+	return template, true
 }
 
 // conversationView is one prior conversation on the create form.

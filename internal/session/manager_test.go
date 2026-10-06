@@ -1382,8 +1382,8 @@ func TestCompactRefusesWhatItCannotDeliver(t *testing.T) {
 // spelled to be unmistakable in an argv rather than to be runnable.
 const (
 	remoteCommandName = "rc"
-	localCommandLine  = "local-command"
-	remoteCommandLine = "remote-command"
+	localCommandLine  = "claude local-command"
+	remoteCommandLine = "claude remote-command"
 )
 
 // configuredForModes gives the fixture's manager the two things a toggle needs:
@@ -1413,10 +1413,8 @@ func TestSetModeRestartsInPlaceOnTheSameConversation(t *testing.T) {
 	f := newManagerFixture(t)
 	f.configuredForModes()
 	s, _ := mustCreate(t, f, f.request())
-	// Set explicitly: this fixture's start commands are stand-ins rather than
-	// claude, so a create under them mints no conversation (see claudeBinary).
-	// What is under test is what a mode change does with one, not which sessions
-	// get one.
+	// Set explicitly: what is under test is what a mode change does with a
+	// conversation, not which creates mint one (see conversationCapable).
 	if err := f.store.SetConversation(s.ID, conversation); err != nil {
 		t.Fatalf("SetConversation() = %v", err)
 	}
@@ -2299,7 +2297,7 @@ func TestAdoptTakesBackASurvivingSessionWithAFreshCredential(t *testing.T) {
 	// argv is spelled out rather than built from tmuxctl's helpers: this asserts
 	// the command line tmux will receive, not that Adopt called a builder.
 	want := []tmuxctl.Call{
-		{Op: tmuxctl.OpList, Argv: []string{"tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{@crswd-managed}|#{@crswd-name}|#{@crswd-workdir}|#{@crswd-start}|#{@crswd-lifetime}|#{@crswd-width}|#{@crswd-conversation}|#{?#{@crswd-binary},#{==:#{pane_current_command},#{@crswd-binary}},?}"}},
+		{Op: tmuxctl.OpList, Argv: []string{"tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{@crswd-managed}|#{@crswd-name}|#{@crswd-workdir}|#{@crswd-start}|#{@crswd-lifetime}|#{@crswd-width}|#{@crswd-conversation}|#{?#{@crswd-binary},#{m/r:^(#{@crswd-binary})$,#{pane_current_command}},?}"}},
 		{Op: tmuxctl.OpHas, Argv: []string{"tmux", "has-session", "-t", "=" + name}},
 	}
 	calls := f.tmux.Calls()[before:]

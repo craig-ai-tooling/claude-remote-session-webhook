@@ -248,6 +248,21 @@
 {{ end }}</ul>
 </div>{{ end }}
 </div>{{/*
+  The harness (spec 019 T015): the radio group docs/components.md defines, with
+  the legend "Runtime". It exists only where this daemon really offers Codex
+  (.CodexCommand is the resolved line, empty otherwise), so a daemon that
+  configured none renders the form it always did.
+
+  The two values are literals the route accepts, never a configured command name
+  (FR-002 again). Claude Code ships checked: the existing behaviour is the
+  default, stated in the markup. With no script both radios submit as they are
+  and the server's own rules for Codex apply; crswd.js only previews them.
+*/}}{{ if .CodexCommand }}<fieldset class="radio-group">
+  <legend class="radio-group-legend">Runtime</legend>
+  <label class="radio-option"><input type="radio" name="harness" value="claude" checked> <span>Claude Code</span></label>
+  <label class="radio-option"><input type="radio" name="harness" value="codex"> <span>Codex</span></label>
+  <p class="field-hint">Codex runs the line shown below and has no remote control.</p>
+</fieldset>{{ end }}{{/*
   Remote control as a mode, which is FR-026 finally rendered
   (contracts/remote-control-toggle.md). What stood here was a `<select>` of the
   operator's configured command *names*, and it is the reason milestone 4 shipped
@@ -361,7 +376,7 @@
   that renders pane output as text (FR-017, Principle VII).
 */}}{{ $local := index .Commands false }}{{ $remote := index .Commands true }}{{ if $local }}<div class="field">
 <span class="field-label" id="create-preview-label">Will run</span>
-<pre class="command-preview" data-command-preview aria-labelledby="create-preview-label" data-command-local="{{ $local }}"{{ if $remote }} data-command-remote="{{ $remote }}"{{ end }}>{{ $local }}</pre>
+<pre class="command-preview" data-command-preview aria-labelledby="create-preview-label" data-command-local="{{ $local }}"{{ if $remote }} data-command-remote="{{ $remote }}"{{ end }}{{ if .CodexCommand }} data-command-codex="{{ .CodexCommand }}"{{ end }}>{{ $local }}</pre>
 </div>{{ end }}{{/*
   The two ways out, on one row (contracts/new-session-modal.md).
 

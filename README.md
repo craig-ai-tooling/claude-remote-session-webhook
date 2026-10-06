@@ -166,6 +166,15 @@ neither door runs, serves the API, and admits nobody to the dashboard.
   rather than `running`. The fleet grid does not, because it captures no pane per
   card — and since every session shares one credential store, one expired login
   parks all of them.
+- **`codex`, optionally**, if you want Codex sessions. Tested against Codex 0.153.4.
+  Add it as a named command and the create form gains a Runtime choice, for example
+  `start_commands = codex=/path/to/codex --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust`.
+  The daemon adds `--no-alt-screen` and `-c check_for_update_on_startup=false` to
+  every Codex line it types, and refuses a command that turns the update check back
+  on. Sign Codex in on the host once with `codex login --device-auth`: the dashboard
+  does not relay that sign-in yet. If Codex keeps its state outside `~/.codex`, name
+  `CODEX_HOME` in `CRSW_SESSION_ENVIRONMENT` so sessions see it. See
+  [`docs/harnesses.md`](docs/harnesses.md).
 
 Then, on that host, whichever path you picked:
 

@@ -28,6 +28,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 )
 
 // Every setting the daemon has, named as constants so an error message and the
@@ -1129,19 +1131,38 @@ func withFile(getenv func(string) string, f *File, src map[string]Source) func(s
 func loadRemoteControlCommand(getenv func(string) string, cmds StartCommands) (string, error) {
 	name := strings.TrimSpace(getenv(EnvRemoteControlCommand))
 	if name == "" {
-		if _, ok := cmds.Command(DefaultRemoteControlCommandName); !ok {
+		cmd, ok := cmds.Command(DefaultRemoteControlCommandName)
+		if !ok {
 			return "", nil
+		}
+		if err := refuseCodexRemoteControl(DefaultRemoteControlCommandName, cmd); err != nil {
+			return "", err
 		}
 		return DefaultRemoteControlCommandName, nil
 	}
 	if err := validateStartCommandName(EnvRemoteControlCommand, name); err != nil {
 		return "", err
 	}
-	if _, ok := cmds.Command(name); !ok {
+	cmd, ok := cmds.Command(name)
+	if !ok {
 		return "", fmt.Errorf("%s names the %q start command, which %s does not configure; refusing to start",
 			EnvRemoteControlCommand, name, EnvStartCommands)
 	}
+	if err := refuseCodexRemoteControl(name, cmd); err != nil {
+		return "", err
+	}
 	return name, nil
+}
+
+// ErrCodexRemoteControl is what a remote-control command earns by resolving to
+// Codex, which has no remote-control mode.
+var ErrCodexRemoteControl = errors.New("the remote-control command may not be a Codex command")
+
+func refuseCodexRemoteControl(name, command string) error {
+	if harness.Of(command) == harness.Codex {
+		return fmt.Errorf("%s names the %q start command: %w; refusing to start", EnvRemoteControlCommand, name, ErrCodexRemoteControl)
+	}
+	return nil
 }
 
 // loadWorkdirSuggestions reads the operator's own list of directories the create
@@ -1527,7 +1548,7 @@ func validateStartCommand(variable, name, command string) error {
 		return fmt.Errorf("%s: the %q start command contains %s, which is not a placeholder this daemon substitutes (only %s); refusing to start",
 			variable, name, token, StartCommandNamePlaceholder)
 	}
-	return nil
+	return validateCodexUpdateCheck(variable, name, command)
 }
 
 // loadSecret returns errors that name the variable and nothing else. The value

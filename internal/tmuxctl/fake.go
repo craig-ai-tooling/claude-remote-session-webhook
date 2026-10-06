@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,6 +24,7 @@ const (
 	OpPaste          Op = "Paste"
 	OpPasteBracketed Op = "PasteBracketed"
 	OpCapturePane    Op = "CapturePane"
+	OpPanePID        Op = "PanePID"
 	OpCaptureHistory Op = "CaptureHistory"
 	OpResize         Op = "Resize"
 	OpKill           Op = "Kill"
@@ -110,6 +112,10 @@ func argvDeleteBuffer(buffer string) []string {
 // raw control bytes to the API.
 func argvCapturePane(name string) []string {
 	return []string{"tmux", "capture-pane", "-p", "-t", PaneTarget(name)}
+}
+
+func argvPanePID(name string) []string {
+	return []string{"tmux", "display-message", "-p", "-t", PaneTarget(name), "#{pane_pid}"}
 }
 
 // -E -1 stops one line above the visible screen, so the history and the pane
@@ -217,7 +223,7 @@ func argvReconcileEnv() []string {
 // and the comment above about the last two fields stays true. Digits only, so it
 // cannot carry the separator either.
 func argvList() []string {
-	live := "#{?#{" + OptionBinary + "},#{==:#{pane_current_command},#{" + OptionBinary + "}},?}"
+	live := "#{?#{" + OptionBinary + "},#{m/r:^(#{" + OptionBinary + "})$,#{pane_current_command}},?}"
 	return []string{"tmux", "list-sessions", "-F", "#{session_name}|#{session_created}|#{" + OptionManaged + "}|#{" + OptionName + "}|#{" + OptionWorkDir + "}|#{" + OptionStart + "}|#{" + OptionLifetime + "}|#{" + OptionWidth + "}|#{" + OptionConversation + "}|" + live}
 }
 
@@ -237,15 +243,19 @@ const fakeAliveCommand = "claude"
 // the fake models the round trip rather than only its first half. A fake that
 // always answered "running" would let every revival test pass against a daemon
 // that never revives anything.
+//
+// The binary may be a set of names joined by "|", which tmux reads as regex
+// alternation. An empty element is skipped so it can never match an empty pane.
 func livenessOf(binary, paneCommand string) Liveness {
-	switch binary {
-	case "":
+	if binary == "" {
 		return LivenessUnknown
-	case paneCommand:
-		return LivenessRunning
-	default:
-		return LivenessStopped
 	}
+	for _, name := range strings.Split(binary, "|") {
+		if name != "" && name == paneCommand {
+			return LivenessRunning
+		}
+	}
+	return LivenessStopped
 }
 
 // Fake is an in-memory Controller for every other package's tests, so no unit
@@ -284,6 +294,16 @@ type fakeSession struct {
 	options     map[string]string
 	pane        string
 	history     string
+
+	// panePID is what PanePID reports. Zero is unset, which the fake answers as
+	// tmux printing something unreadable, so a test that walks /proc says which
+	// pid it means rather than inheriting one.
+	panePID int
+
+	// quitAfter is the interrupt count at which the pane's process exits, and
+	// interrupts the count so far. Zero quitAfter means the process ignores
+	// interrupts, which is how a test says "Codex is still running".
+	quitAfter, interrupts int
 
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
@@ -347,10 +367,37 @@ func (f *Fake) SendKeys(_ context.Context, name string, keys ...string) error {
 	if err := f.fail[OpSendKeys]; err != nil {
 		return err
 	}
-	if _, ok := f.sessions[name]; !ok {
+	s, ok := f.sessions[name]
+	if !ok {
 		return errNoSession(name)
 	}
+	for _, key := range keys {
+		if key != "C-c" {
+			continue
+		}
+		s.interrupts++
+		if s.quitAfter > 0 && s.interrupts == s.quitAfter {
+			s.paneCommand = "bash"
+		}
+	}
 	return nil
+}
+
+// QuitAfterInterrupts makes the n-th "C-c" sent to name end its process: the
+// pane's command becomes the login shell, as it does when Codex exits. The
+// count starts from zero when this is called. It seeds the session if it does
+// not exist yet, as SetPane does.
+func (f *Fake) QuitAfterInterrupts(name string, n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.quitAfter = n
+	s.interrupts = 0
 }
 
 // Paste records two calls, as the real controller runs two commands. The
@@ -410,6 +457,24 @@ func (f *Fake) CapturePane(_ context.Context, name string) (string, error) {
 		return "", errNoSession(name)
 	}
 	return s.pane, nil
+}
+
+func (f *Fake) PanePID(_ context.Context, name string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.record(OpPanePID, argvPanePID(name), nil)
+	if err := f.fail[OpPanePID]; err != nil {
+		return 0, err
+	}
+	s, ok := f.sessions[name]
+	if !ok {
+		return 0, errNoSession(name)
+	}
+	if s.panePID <= 0 {
+		return 0, fmt.Errorf("read the pane pid of %s: %w", name, ErrUnexpectedOutput)
+	}
+	return s.panePID, nil
 }
 
 func (f *Fake) CaptureHistory(_ context.Context, name string) (string, error) {
@@ -659,6 +724,20 @@ func (f *Fake) SetPane(name, content string) {
 		f.sessions[name] = s
 	}
 	s.pane = content
+}
+
+// SetPanePID sets what PanePID returns, seeding the session if it does not
+// exist yet, as SetPane does.
+func (f *Fake) SetPanePID(name string, pid int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.panePID = pid
 }
 
 // SetHistory sets what CaptureHistory returns, seeding the session if it does

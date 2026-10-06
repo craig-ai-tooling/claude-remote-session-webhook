@@ -3,6 +3,8 @@ package httpapi
 import (
 	"net/http"
 	"time"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 )
 
 // The conversation lookup exists because the control it feeds was answering for
@@ -56,16 +58,25 @@ type conversationsResponse struct {
 // route a way to ask which directories exist, which is the enumeration every
 // other refusal in this package is shaped to prevent.
 func (s *Server) conversations(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	// The one reader of a harness value (T014). The 400 is the only refusal this
+	// route has: a harness that names nothing is the caller's error, where an
+	// empty history is not.
+	h, err := parseHarness(query, fieldHarness)
+	if err != nil {
+		s.rejectBadRequest(w, r, err)
+		return
+	}
 	s.writeJSON(w, r, http.StatusOK, conversationsResponse{
-		Conversations: s.conversationsForDir(s.clock.Now(), r.URL.Query().Get(queryDir)),
+		Conversations: s.conversationsForDir(s.clock.Now(), h, query.Get(queryDir)),
 	})
 }
 
 // conversationsForDir is the one place a directory becomes a list of
 // conversations, shared by this route and by the first render of the form so the
 // two cannot disagree about what an offer looks like.
-func (s *Server) conversationsForDir(now time.Time, dir string) []conversationView {
-	found := s.sessions.Conversations(dir)
+func (s *Server) conversationsForDir(now time.Time, h harness.Name, dir string) []conversationView {
+	found := s.sessions.ConversationsFor(h, dir)
 	out := make([]conversationView, 0, len(found))
 	for _, c := range found {
 		out = append(out, conversationView{

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
@@ -77,6 +79,16 @@ const (
 // SetMode, which says what this daemon may and may not claim about that.
 const interruptKey = "C-c"
 
+const (
+	// steppedQuitPresses is how many single interrupts a harness that quits
+	// stepwise is given before the restart gives up, and steppedQuitWait the
+	// pause after each. Codex reads the first Ctrl-C as "clear the composer" and
+	// a second inside its window as "exit", so two in one call is not a quit and
+	// the only proof of one is the pane's process having changed.
+	steppedQuitPresses = 5
+	steppedQuitWait    = 1500 * time.Millisecond
+)
+
 // compactCommand is Claude Code's own /compact and the newline that submits it
 // (FR-016, research D2). Nine bytes, every one of them delivered as data.
 //
@@ -133,6 +145,11 @@ var (
 	// whoever asks and no session is touched by it.
 	ErrModeUnavailable = errors.New("this daemon configures no command for that mode")
 
+	// ErrQuitUnconfirmed is a stepped quit that ran out of presses with the
+	// pane's process still alive. Nothing was typed after it, because a start
+	// line sent into a running Codex lands in its composer as a prompt.
+	ErrQuitUnconfirmed = errors.New("the session's process did not exit, so nothing was typed into it")
+
 	// ErrModeUnchanged refuses a toggle to the mode the session is already in.
 	//
 	// It is a refusal rather than a silent success because of what carrying it out
@@ -178,10 +195,12 @@ type Manager struct {
 	restartingMu sync.Mutex
 	restarting   map[string]bool
 
-	// inputLocks holds one *sync.Mutex per session ID, taken by Type and
-	// PressKey for the whole of a delivery (spec 018 review #1). A typed message
-	// is a paste and then an Enter, and a key arriving between the two would land
-	// inside another request's text. The zero Map is ready, and Destroy removes
+	// inputLocks holds one *sync.Mutex per session ID, the lifecycle lock that
+	// lockSession takes. Type and PressKey hold it for the whole of a delivery
+	// (spec 018 review #1): a typed message is a paste and then an Enter, and a
+	// key arriving between the two would land inside another request's text.
+	// Destroy, Continue, Prompt, Compact, SetMode and Codex discovery hold it too
+	// (spec 019 core review #2, #8). The zero Map is ready, and Destroy removes
 	// the entry with the record, so it does not outlive its session.
 	inputLocks sync.Map
 
@@ -211,6 +230,21 @@ type Manager struct {
 	// trust is left alone, which is every test's manager and every daemon
 	// before 2026-10-05.
 	claudeConfig string
+
+	// codexHome is the directory holding Codex's config.toml, where a session's
+	// directory is trusted before a Codex start command is typed
+	// (trust_codex.go). Empty means Codex trust is left alone: every test's
+	// manager, and a daemon in kubernetes mode.
+	codexHome string
+
+	// sleep is the wait between interrupts in quitStepped. A field so a test
+	// does not pay 1.5 seconds per press.
+	sleep func(ctx context.Context, d time.Duration) error
+
+	// findCodexConversation answers which Codex conversation a session is in.
+	// A field so a test, and a later phase that learns it another way, can
+	// replace the /proc walk.
+	findCodexConversation func(ctx context.Context, s Session) (string, error)
 
 	tmux  tmuxctl.Controller
 	store *Store
@@ -272,6 +306,24 @@ func (m *Manager) SetRemoteControlCommand(name string) { m.remoteControlCommand 
 // setter for the reason SetStartCommands is one, and because a manager built by
 // a test must never reach the operator's real ~/.claude.json.
 func (m *Manager) SetClaudeConfig(path string) { m.claudeConfig = path }
+
+// SetCodexHome names the directory whose config.toml records workspace trust
+// for Codex sessions. A setter for the same reason SetClaudeConfig is one: a
+// test's manager must never reach the operator's real ~/.codex.
+func (m *Manager) SetCodexHome(path string) { m.codexHome = path }
+
+// seedTrustFor sets workspace trust for dir in the config the harness reads.
+// Other has no trust store crswd knows, so it seeds nothing.
+func (m *Manager) seedTrustFor(spec harness.Spec, dir string) error {
+	switch spec.Name {
+	case harness.Claude:
+		return SeedTrust(m.claudeConfig, dir)
+	case harness.Codex:
+		return SeedCodexTrust(m.codexHome, dir)
+	default:
+		return nil
+	}
+}
 
 // SetLifetimes gives the manager the operator's configured default and ceiling
 // (#37). A setter for the reason SetStartCommands is one: every existing caller
@@ -384,6 +436,18 @@ func NewManager(tmux tmuxctl.Controller, store *Store, roots []config.ApprovedRo
 	return NewManagerWithClock(tmux, store, roots, maxSessions, systemClock{})
 }
 
+// sleepContext waits d, or returns the context's error if it ends first.
+func sleepContext(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
 // NewManagerWithClock fails closed on anything that would let a session start
 // without the constraints standing in for the permission prompt.
 //
@@ -413,13 +477,29 @@ func NewManagerWithClock(tmux tmuxctl.Controller, store *Store, roots []config.A
 		return nil, fmt.Errorf("session: a concurrent-session cap of %d would permit no session at all; refusing to start", maxSessions)
 	}
 
-	return &Manager{
+	m := &Manager{
 		tmux:        tmux,
 		store:       store,
 		roots:       roots,
 		maxSessions: maxSessions,
 		clock:       clock,
-	}, nil
+		sleep:       sleepContext,
+	}
+	m.findCodexConversation = m.hostCodexConversation
+	return m, nil
+}
+
+// hostCodexConversation reads /proc under the session's pane for a rollout file
+// Codex holds open. It is the only place this daemon reads /proc.
+func (m *Manager) hostCodexConversation(ctx context.Context, s Session) (string, error) {
+	if m.codexHome == "" {
+		return "", nil
+	}
+	pid, err := m.tmux.PanePID(ctx, s.TmuxName())
+	if err != nil {
+		return "", fmt.Errorf("find the process of session %s: %w", s.ID, err)
+	}
+	return DiscoverCodexConversation("/proc", pid, filepath.Join(m.codexHome, "sessions"))
 }
 
 // FleetEventKind is what happened, in the vocabulary contracts/fleet-stream.md
@@ -1050,18 +1130,55 @@ func (m *Manager) Prompt(ctx context.Context, s Session, text string) error {
 		return fmt.Errorf("prompt session %s: %w", s.ID, ErrEmptyPrompt)
 	}
 
+	unlock := m.lockSession(s.ID)
+	defer unlock()
+
 	name := s.TmuxName()
 
 	// The error deliberately names the session and nothing else. Prompt text is
 	// secret under docs/security.md §3, so it may not travel back to a caller in
 	// an error string any more than it may reach the trail (FR-042).
-	if err := m.tmux.Paste(ctx, name, []byte(text)); err != nil {
+	if err := m.paste(ctx, s, []byte(text)); err != nil {
 		return fmt.Errorf("paste the prompt into session %s: %w", s.ID, err)
 	}
 	if err := m.tmux.SendKeys(ctx, name, enterKey); err != nil {
 		return fmt.Errorf("submit the prompt in session %s: %w", s.ID, err)
 	}
 	return nil
+}
+
+// specOf is the harness facts for a session, derived from its configured start
+// command each time (research D1). A name the operator has since removed reads
+// as Other, whose spec asks for nothing special.
+func (m *Manager) specOf(s Session) harness.Spec {
+	// An adopted session that recorded no start-command name has no known
+	// harness: labelling it with whatever the default is now would be a guess.
+	if s.Adopted && s.StartCommand == "" {
+		return harness.For(harness.Other)
+	}
+	name := s.StartCommand
+	if name == "" {
+		name = config.DefaultStartCommandName
+	}
+	cmd, err := m.resolveStartCommand(name)
+	if err != nil {
+		return harness.For(harness.Other)
+	}
+	return harness.For(harness.Of(cmd))
+}
+
+// SpecOf is specOf for callers outside the package.
+func (m *Manager) SpecOf(s Session) harness.Spec { return m.specOf(s) }
+
+// paste delivers a payload the way the session's harness submits it: Codex
+// swallows the Enter after a plain paste (research M3), so it gets a bracketed
+// one. It serves Prompt and Compact only. Type is bracketed for every harness
+// and must not route through here, because Claude's BracketedPaste is false.
+func (m *Manager) paste(ctx context.Context, s Session, payload []byte) error {
+	if m.specOf(s).BracketedPaste {
+		return m.tmux.PasteBracketed(ctx, s.TmuxName(), payload)
+	}
+	return m.tmux.Paste(ctx, s.TmuxName(), payload)
 }
 
 // Compact asks a session to compact itself, by delivering Claude Code's own
@@ -1101,6 +1218,9 @@ func (m *Manager) Compact(ctx context.Context, s Session) error {
 		return fmt.Errorf("compact session %s: %w", s.ID, ErrSessionDead)
 	}
 
+	unlock := m.lockSession(s.ID)
+	defer unlock()
+
 	// The clock moves, and it moves before the bytes do. Both halves of that are
 	// decisions.
 	//
@@ -1133,6 +1253,18 @@ func (m *Manager) Compact(ctx context.Context, s Session) error {
 	// the record changed on the line above.
 	if after := s.DisplayState(now); after != displayed {
 		m.emit(FleetChanged, s)
+	}
+
+	// Codex takes the command bracketed and a separate Enter (research M5): a
+	// newline inside a bracketed paste is text, not a submit.
+	if m.specOf(s).BracketedPaste {
+		if err := m.paste(ctx, s, []byte("/compact")); err != nil {
+			return fmt.Errorf("deliver the compact command to session %s: %w", s.ID, err)
+		}
+		if err := m.tmux.SendKeys(ctx, s.TmuxName(), enterKey); err != nil {
+			return fmt.Errorf("submit the compact command in session %s: %w", s.ID, err)
+		}
+		return nil
 	}
 
 	// One call, and nothing after it. The newline is in the payload, so there is
@@ -1233,6 +1365,9 @@ func (m *Manager) commandForMode(mode Mode) (string, error) {
 		if m.remoteControlCommand == "" {
 			return "", fmt.Errorf("%w: no remote-control command is configured", ErrModeUnavailable)
 		}
+		if err := m.requireClaudeTarget(m.remoteControlCommand); err != nil {
+			return "", err
+		}
 		return m.remoteControlCommand, nil
 	case ModeLocal:
 		// The operator pointed remote control at the default command, so the two
@@ -1242,6 +1377,9 @@ func (m *Manager) commandForMode(mode Mode) (string, error) {
 		if m.remoteControlCommand == config.DefaultStartCommandName {
 			return "", fmt.Errorf("%w: the remote-control command is this daemon's default", ErrModeUnavailable)
 		}
+		if err := m.requireClaudeTarget(config.DefaultStartCommandName); err != nil {
+			return "", err
+		}
 		return config.DefaultStartCommandName, nil
 	default:
 		// Never the value. It is not caller text today — the dashboard matches the
@@ -1250,6 +1388,21 @@ func (m *Manager) commandForMode(mode Mode) (string, error) {
 		// (FR-042).
 		return "", fmt.Errorf("%w", ErrUnknownMode)
 	}
+}
+
+// requireClaudeTarget is the second line behind the config loader: remote
+// control is a Claude Code feature, so a mode switch or a browser create whose
+// target command is Codex is refused rather than typed into a pane. Only Codex
+// is refused, not every non-Claude command: FR-012a keeps Other as it was.
+func (m *Manager) requireClaudeTarget(name string) error {
+	cmd, err := m.resolveStartCommand(name)
+	if err != nil {
+		return fmt.Errorf("%w: %q", ErrModeUnavailable, name)
+	}
+	if harness.Of(cmd) == harness.Codex {
+		return fmt.Errorf("%w: the %q command is a Codex command", ErrModeUnavailable, name)
+	}
+	return nil
 }
 
 // RemoteStartCommand is the configured name a session started under remote
@@ -1311,6 +1464,14 @@ func (m *Manager) SetMode(ctx context.Context, s Session, mode Mode) (Session, e
 	if s.State == StateDead {
 		return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrSessionDead)
 	}
+	// Codex has no remote-control mode to switch to. Only Codex is refused, not
+	// every harness without one: an Other session keeps today's behaviour.
+	if m.specOf(s).Name == harness.Codex {
+		return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable)
+	}
+
+	unlock := m.lockSession(s.ID)
+	defer unlock()
 
 	target, err := m.commandForMode(mode)
 	if err != nil {
@@ -1549,6 +1710,11 @@ func (m *Manager) Destroy(ctx context.Context, s Session) error {
 	if s.ID == "" {
 		return fmt.Errorf("destroy session: %w", ErrSessionNotFound)
 	}
+
+	// Held to the end, so a discovery or a continue that is mid-flight finishes
+	// before the record goes, and one that arrives later finds it gone.
+	unlock := m.lockSession(s.ID)
+	defer unlock()
 
 	name := s.TmuxName()
 	killErr := m.tmux.Kill(ctx, name)
@@ -2029,7 +2195,7 @@ func (m *Manager) start(ctx context.Context, s Session, resume string) error {
 	if err != nil {
 		return fmt.Errorf("resolve the start command for session %s: %w", s.ID, err)
 	}
-	if err := m.tmux.SetOption(ctx, name, tmuxctl.OptionBinary, startBinary(template)); err != nil {
+	if err := m.tmux.SetOption(ctx, name, tmuxctl.OptionBinary, paneProcesses(template)); err != nil {
 		return fmt.Errorf("record the session start binary: %w", err)
 	}
 	command, err := m.renderStart(template, resume, s.ConversationID, s.Name)
@@ -2038,7 +2204,7 @@ func (m *Manager) start(ctx context.Context, s Session, resume string) error {
 	}
 	// Before the command is typed, because the dialog is drawn the moment Claude
 	// starts and nothing on this host will answer it.
-	if err := SeedTrust(m.claudeConfig, s.WorkDir); err != nil {
+	if err := m.seedTrustFor(harness.For(harness.Of(template)), s.WorkDir); err != nil {
 		return err
 	}
 	if err := m.tmux.SendKeys(ctx, name, command, enterKey); err != nil {
@@ -2090,24 +2256,30 @@ func (m *Manager) resumeFlagged(template, resume, conversationID string) (string
 	if err != nil {
 		return "", err
 	}
+	spec := harness.For(harness.Of(template))
+	base := withRequiredFlags(template, spec.RequiredFlags)
 	switch checked {
 	case "":
 		// A fresh conversation, and the one case where this daemon *chooses* the
 		// identifier instead of being handed one. It is checked here rather than
 		// trusted from the record for the reason everything on this line is: the
 		// result is typed into a live shell.
-		if conversationID == "" {
+		if conversationID == "" || spec.FreshIDFlag == "" {
 			// A session with no identifier — one created before spec 012, or one
-			// being revived without a conversation. The line is byte-identical to
-			// the one this daemon typed before the option existed.
-			return template, nil
+			// being revived without a conversation, or a harness that cannot be
+			// given one. For Claude the line is byte-identical to the one this
+			// daemon typed before the option existed.
+			return base, nil
 		}
 		if _, err := ValidateResume(conversationID); err != nil {
 			return "", fmt.Errorf("check the conversation identifier: %w", err)
 		}
-		return config.InsertStartFlags(template, SessionIDFlag, conversationID), nil
+		return config.InsertStartFlags(base, spec.FreshIDFlag, conversationID), nil
 	default:
-		return config.InsertStartFlags(template, ResumeOneFlag, checked), nil
+		if spec.ResumeArgs == nil {
+			return "", fmt.Errorf("%w: this start command cannot resume a conversation", ErrInvalidResume)
+		}
+		return config.InsertStartFlags(base, spec.ResumeArgs(checked)...), nil
 	}
 }
 
@@ -2167,6 +2339,21 @@ func (m *Manager) StartCommandLine(mode Mode, resume, sessionName string) (strin
 	return m.renderStart(template, resume, "", sessionName)
 }
 
+// StartCommandLineFor is StartCommandLine for a configured command name instead of
+// a mode, for the entry the create form previews beside the two modes. Same
+// readout-only contract: it resolves the name out of the operator's configured set
+// and returns a string to render. An empty sessionName leaves the placeholder.
+func (m *Manager) StartCommandLineFor(name, sessionName string) (string, error) {
+	template, err := m.resolveStartCommand(name)
+	if err != nil {
+		return "", err
+	}
+	if sessionName == "" {
+		return m.resumeFlagged(template, "", "")
+	}
+	return m.renderStart(template, "", "", sessionName)
+}
+
 // rollback undoes a half-started session and returns the error Create answers
 // with. It is deliberately asymmetric about what it does not know.
 //
@@ -2223,7 +2410,7 @@ func (m *Manager) rollback(ctx context.Context, s Session, cause error) error {
 // so the conversation is this daemon's to find again — unless the start command
 // is one this daemon cannot give an identifier to, in which case the session runs
 // exactly as it always did and is supervised but never revived or continued by an
-// identifier it never had (see claudeBinary).
+// identifier it never had (see conversationCapable).
 //
 // The third answer was "the most recent in this directory", and spec 013 removed
 // it: it named a conversation only the CLI could resolve, so nobody choosing it
@@ -2456,6 +2643,12 @@ func (m *Manager) releaseRestart(id string) {
 // Written after, the same crash leaves a session running a conversation nothing
 // has recorded.
 func (m *Manager) Continue(ctx context.Context, s Session, conversationID string) (Session, error) {
+	// Before any store, option, journal or pane change: a harness with no resume
+	// flag has nothing to continue into, and finding that out after the quit
+	// would already have interrupted a working pane.
+	if harness.For(m.specOf(s).Name).ResumeArgs == nil {
+		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, ErrInvalidResume)
+	}
 	// Validated before anything else, because the value is caller-supplied and
 	// its next stop is a command line typed into a live shell. ResumeLatest no
 	// longer exists, so "latest" fails here exactly as any other unrecognised
@@ -2484,7 +2677,7 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 	// Resuming an identifier with no transcript behind it does not fail — it
 	// starts something that is not the conversation the operator asked for, which
 	// is worse than refusing.
-	if !m.HasTranscript(checked, s.WorkDir) {
+	if !m.hasTranscriptFor(s, checked) {
 		return Session{}, fmt.Errorf("continue session %s: %w: there is no such conversation on this host", s.ID, ErrInvalidResume)
 	}
 
@@ -2492,6 +2685,11 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, ErrRestartInFlight)
 	}
 	defer m.releaseRestart(s.ID)
+
+	// From here to the start line: the shell Continue verified is not to be
+	// typed into, or restarted under, by any other operation on this session.
+	unlock := m.lockSession(s.ID)
+	defer unlock()
 
 	// Touch first, and this is where Continue differs from a revival: a human
 	// asked for this, so it is a driving like a prompt or a compact. Touch is
@@ -2503,6 +2701,17 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
 	}
 	s.LastActivity = now
+
+	// A harness that quits stepwise is quit before anything is recorded: the
+	// record, the option and the journal all name the new conversation, so one
+	// written ahead of a quit that then fails would claim a conversation the
+	// pane never moved to.
+	stepped := m.specOf(s).SteppedQuit
+	if stepped {
+		if err := m.quitStepped(ctx, s); err != nil {
+			return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
+		}
+	}
 
 	// Recorded before the restart. See the note above on why the order matters.
 	if err := m.store.SetConversation(s.ID, checked); err != nil {
@@ -2519,7 +2728,12 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 	// The supervisor's own restart path, deliberately: continue and revive must
 	// type the same line for the same session, and two implementations of "start
 	// this session on this conversation" is one more than can be kept in step.
-	if err := m.restartInto(ctx, s); err != nil {
+	restart := m.restartInto
+	if stepped {
+		// The process has already exited, so only the start line is left.
+		restart = m.sendStart
+	}
+	if err := restart(ctx, s); err != nil {
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
 	}
 

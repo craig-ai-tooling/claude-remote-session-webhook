@@ -381,6 +381,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// below uses it. Wired here and not in NewWith so that no test server ever
 	// writes the operator's ~/.claude.json.
 	srv.sessions.SetClaudeConfig(session.ClaudeConfigFile(sessionEnv))
+	srv.sessions.SetCodexHome(session.CodexHome(sessionEnv))
 	if startCommand, named := cfg.StartCommands.Command(config.DefaultStartCommandName); named {
 		relay, err := loginrelay.New(tmux, startCommand, relayWorkDir(cfg), sessionEnv)
 		if err != nil {

@@ -176,8 +176,9 @@ Phase 4b (credentials) is specified after operator-run measurement O-1 (tasks.md
 - **FR-012**: The browser create form MUST offer Codex only per D2, MUST send a `harness` field whose
   only accepted values are `claude` and `codex`, and MUST refuse `harness=codex` with
   `remote_control=on`.
-- **FR-012a**: `Manager.SetMode` on a session whose harness is not Claude MUST return
-  `ErrModeUnavailable` before touching the pane; otherwise a Codex session switched to remote would
+- **FR-012a**: `Manager.SetMode` on a session whose harness is Codex MUST return
+  `ErrModeUnavailable` before touching the pane (an Other session keeps today's behaviour, per the
+  non-goal above; operator decision 2026-10-06); otherwise a Codex session switched to remote would
   be restarted into the Claude `rc` command.
 - **FR-013**: Session cards, the session page and `GET /sessions` entries MUST show the harness label;
   the API entry gains `"harness"` (omitted for `other`).

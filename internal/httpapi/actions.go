@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 )
 
@@ -448,6 +449,31 @@ func (s *Server) createFromBrowser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Which agent this create starts. The field carries one of two literals and is
+	// never looked up as a configured name; a Codex create resolves to the fixed
+	// codexStartCommandName below, and only on a daemon whose entry by that name
+	// really runs Codex. Remote control is Claude's, so the two do not combine.
+	// Every refusal here is ahead of the manager: no path is resolved and no tmux
+	// command runs.
+	harnessChoice, err := parseHarness(r.PostForm, fieldHarness)
+	if err != nil {
+		AuditFrom(r.Context()).Deny(errCreateStateNotOffered.Error())
+		s.redirectOutcome(w, r, outcomeBadMode)
+		return
+	}
+	if harnessChoice == harness.Codex {
+		if _, ok := s.codexOffered(); !ok {
+			AuditFrom(r.Context()).Deny(errCreateStateNotOffered.Error())
+			s.redirectOutcome(w, r, outcomeBadMode)
+			return
+		}
+		if mode == session.ModeRemote {
+			AuditFrom(r.Context()).Deny(errModeUnavailable.Error())
+			s.redirectOutcome(w, r, outcomeBadMode)
+			return
+		}
+	}
+
 	// How long this session may live, and how long it may go untouched — the
 	// operator's own choice, read through the parser POST /sessions reads them
 	// with (#37, milestone 10). Until this existed the fields were on the record,
@@ -492,6 +518,9 @@ func (s *Server) createFromBrowser(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		startCommand = name
+	}
+	if harnessChoice == harness.Codex {
+		startCommand = codexStartCommandName
 	}
 
 	// The form was parsed by the gate, under the configured body limit, and the

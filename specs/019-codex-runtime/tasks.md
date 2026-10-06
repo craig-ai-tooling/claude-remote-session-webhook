@@ -54,7 +54,9 @@ move them; find the named function with `grep -n` and edit that, never the stale
 
 - **Files**: `internal/tmuxctl/fake.go`, `internal/tmuxctl/controller.go` (comments on
   `OptionBinary` at `:199-214` only), `internal/tmuxctl/fake_test.go`,
-  `internal/tmuxctl/exec_tmux_test.go`.
+  `internal/tmuxctl/exec_tmux_test.go`, `internal/tmuxctl/exec_test.go` (the argv literal at
+  `:284` only, which carries the old liveness expression), `internal/session/manager_test.go` (the
+  list argv literal at `:2302` only, same expression).
 - **Interface**: no signature changes. `argvList` (`fake.go:185`) liveness expression becomes
   `#{?#{@crswd-binary},#{m/r:^(#{@crswd-binary})$,#{pane_current_command}},?}` (use the
   `OptionBinary` constant as today). `livenessOf(binary, paneCommand string) Liveness`
@@ -124,7 +126,16 @@ landed: follow PROMPT.md "Blocked work" with the reason `spec 018 not merged` an
 - **Files**: `internal/session/manager.go` (`resumeFlagged` `:2072`, `markSession` caller list,
   `start` `:1948`), `internal/session/conversation.go` (`conversationCapable` `:345`, new
   `paneProcesses`), `internal/session/supervisor.go` (`markSession` `:377`),
-  `internal/session/harness_test.go` (new).
+  `internal/session/harness_test.go` (new), `internal/session/manager_test.go` and
+  `internal/httpapi/actions_test.go` (fixture stand-ins only, see "Fixture stand-ins" below).
+- **Fixture stand-ins** (operator decision 2026-10-06): the test stand-in start commands resolve to
+  the Other harness once this task lands, and Other refuses resume and mode changes. Change them to
+  resolve to Claude. In `internal/session/manager_test.go:1385-1387` the constants become
+  `localCommandLine = "claude local-command"` and `remoteCommandLine = "claude remote-command"`. In
+  `internal/httpapi/actions_test.go` `offersRemoteControl` (`:5793-5799`) both command lines get the
+  same `claude ` prefix. Update every assertion in those two files that spells the old typed line
+  (grep `local-command` and `remote-command`). This also keeps the mode tests (T006), the Continue
+  tests (T010b) and the card mode row (T016) green; those tasks need no fixture edits.
 - **Interface**:
   ```go
   func (m *Manager) specOf(s Session) harness.Spec   // resolveStartCommand(s.StartCommand); error → harness.For(harness.Other)
@@ -235,16 +246,20 @@ the last `-c` for a key, so an operator's own later `-c check_for_update_on_star
   `TestTypeStaysBracketedForClaude` (fake `Calls()` shows `paste-buffer -p` for a Claude session's
   `Type`).
 
-### T006 — `SetMode` refuses non-Claude sessions (FR-012a)
+### T006 — `SetMode` refuses Codex sessions (FR-012a)
 
-- **Files**: `internal/session/manager.go` (`SetMode` `:1297`), `internal/session/mode_test.go`.
-- **Interface**: first check after the dead-state check: `if !m.specOf(s).RemoteControl { return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable) }`.
-- **Edge cases**: Claude session behaviour unchanged; a session whose start-command name is no longer
-  configured resolves to Other and is refused the same way (it could not be switched today either:
-  `resolveStartCommand` fails later).
+- **Files**: `internal/session/manager.go` (`SetMode` `:1297`), `internal/session/harness_test.go`
+  (default build; `mode_test.go` is `//go:build tmux` and must not be used for this fake-based test,
+  operator decision 2026-10-06).
+- **Interface**: first check after the dead-state check: `if m.specOf(s).Name == harness.Codex { return Session{}, fmt.Errorf("change the mode of session %s: %w", s.ID, ErrModeUnavailable) }`.
+  Codex only, not `!RemoteControl`: an Other session keeps today's behaviour (spec non-goal), and the
+  real-tmux mode tests in `mode_test.go` run Other stand-ins (`seq`, `echo`) that must keep passing
+  unedited (operator decision 2026-10-06).
+- **Edge cases**: Claude session behaviour unchanged; Other session behaviour unchanged; Codex refused
+  with zero pane operations.
 - **Mirror**: the existing `ErrModeUnchanged` check.
 - **Tests**: `TestSetModeRefusesCodex` (fake records zero SendKeys calls), existing mode tests unedited.
-- **Acceptance**: `go test ./internal/session/... -run Mode` passes.
+- **Acceptance**: `go test ./internal/session/... -run Mode` and `go test -tags tmux ./internal/session/...` pass.
 - **Depends**: T004.
 - **Guardrails**: do not touch `commandForMode`.
 
@@ -433,7 +448,12 @@ the last `-c` for a key, so an operator's own later `-c check_for_update_on_star
 
 - **Files**: `internal/session/conversation.go` (dispatchers), `internal/session/supervisor.go`
   (`:197` HasTranscript gate), `internal/session/manager.go` (`Continue` `:2471`),
-  `internal/session/conversation_codex_test.go`.
+  `internal/session/conversation_codex_test.go`, `internal/session/harness_test.go` (`continueFixture`
+  only: plant a Codex rollout instead of a Claude transcript. Replace its `conversationHome(...)` line
+  with `home := t.TempDir(); f.mgr.SetCodexHome(home); plantCodexRollout(t, home,
+  harnessTestConversation, s.WorkDir)`, where `plantCodexRollout` is a new helper in
+  `conversation_codex_test.go` built from `writeRollout` and `codexMetaLine`; operator decision
+  2026-10-06).
 - **Interface**:
   ```go
   func (m *Manager) ConversationsFor(h harness.Name, workDir string) []Conversation
@@ -634,9 +654,11 @@ the last `-c` for a key, so an operator's own later `-c check_for_update_on_star
 No radio or segmented control exists (`grep -rn 'type="radio"' web/templates` prints nothing at
 planning time). T015 needs one; this task defines it once.
 
-- **Files**: `docs/components.md` (new section "Radio group" after the switch section; find it with
-  `grep -n -i 'switch' docs/components.md`), `web/static/crswd.css`, `internal/httpapi/partials_test.go`
-  (a CSS presence test only).
+- **Files**: `docs/components.md` only (new section "Radio group" after the switch section; find it
+  with `grep -n -i 'switch' docs/components.md`). The CSS rules for this contract are written in
+  T015, together with the first markup that uses them: `TestTheStylesheetAndTheMarkupNameTheSameThings`
+  (`internal/httpapi/stylesheet_test.go:580`) fails on any class no template renders, so CSS without
+  markup cannot be green (operator decision 2026-10-06).
 - **Markup contract** (copy into components.md exactly):
   ```html
   <fieldset class="radio-group">
@@ -656,9 +678,9 @@ planning time). T015 needs one; this task defines it once.
   from the switch rules in `crswd.css` (`grep -n 'switch' web/static/crswd.css`); introduce no new token.
 - **Edge cases**: wraps to one option per line under the phone breakpoint already used by the create
   form (no horizontal scroll); disabled options use the switch's disabled opacity rule.
-- **Tests**: `TestRadioGroupStylesExist` (served `crswd.css` contains `.radio-group`,
-  `.radio-option` and `:focus-visible` for `.radio-option input`).
-- **Acceptance**: `go test ./internal/httpapi/... -run RadioGroup` passes.
+- **Tests**: none (docs only; the CSS test moved to T015 with the CSS).
+- **Acceptance**: `grep -n 'Radio group' docs/components.md` prints the new section heading, and
+  `go test ./...` still passes.
 - **Depends**: none in code (ordering: before T015).
 - **Guardrails**: no template uses the component in this task; no inline style; CSP unchanged.
 
@@ -680,8 +702,11 @@ planning time). T015 needs one; this task defines it once.
 - **Tests** (`partials_test.go`): `TestCreateFormOffersCodexWhenConfigured`,
   `TestCreateFormUnchangedWithoutCodex` (existing exact-markup assertions pass unedited),
   `TestCreateFormScriptReadsHarness` (grep the served `crswd.js` for `name="harness"` handling, the
-  same way existing script tests do).
-- **Acceptance**: `go test ./internal/httpapi/... -run CreateForm` passes.
+  same way existing script tests do), `TestRadioGroupStylesExist` (served `crswd.css` contains
+  `.radio-group`, `.radio-option` and `:focus-visible` for `.radio-option input`; moved from T014a).
+- **Acceptance**: `go test ./internal/httpapi/... -run 'CreateForm|RadioGroup'` passes.
+- **Radio group CSS**: write the `.radio-group*` / `.radio-option*` rules for the contract T014a put
+  in `docs/components.md`, in `web/static/crswd.css`, in this task.
 - **Depends**: T014, T014a.
 - **Guardrails**: design tokens only (docs/design-system.md); no inline style; CSP unchanged.
 
@@ -690,7 +715,13 @@ planning time). T015 needs one; this task defines it once.
 - **Files**: `internal/httpapi/view.go` (`sessionView` `:27`), `internal/httpapi/dashboard.go`
   (`cardOf` `:468`, session page conversations `:644`), `internal/httpapi/conversations.go` (`:67`),
   `internal/httpapi/sessions.go` (`sessionEntry` `:168`), `web/templates/partials/session-card.html`
-  (`:96`), `internal/httpapi/dashboard_test.go`, `internal/httpapi/sessions_test.go`.
+  (`:96`), `internal/httpapi/dashboard_test.go`, `internal/httpapi/sessions_test.go`,
+  `web/static/crswd.css` (a `.card-harness` rule, design tokens only: every rendered class needs a
+  rule, `stylesheet_test.go:580`), `internal/httpapi/server_test.go` (`frozenEntry` `:1535-1541`: the
+  frozen list/detail/create JSON gains `"harness":"claude"` for a default session).
+- **Mode row guard**: wrap the card's mode row in `{{ if ne .Harness "Codex" }}`, not
+  `eq .Harness "Claude Code"`, so a directly built `sessionView` with an empty `Harness`
+  (`partials_test.go:329-356`) keeps its row.
 - **Interface**: `sessionView.Harness string`: `Claude` → `"Claude Code"`, `Codex` → `"Codex"`,
   `Other` → `""` (do not use `Label()` here, it returns `"Other"`); the template renders the span
   only when `.Harness` is non-empty. `sessionEntry.Harness string`

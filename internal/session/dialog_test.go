@@ -1,6 +1,104 @@
 package session
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
+)
+
+func codexPane(t *testing.T, file string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", file)) //nolint:gosec // G304: fixture names are literals in this file
+	if err != nil {
+		t.Fatalf("read fixture %s: %v", file, err)
+	}
+	return string(b)
+}
+
+func TestDetectDialogForCodex(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		file     string
+		wantName string
+	}{
+		{"codex-trust.pane", "codex-trust"},
+		{"codex-hooks-review.pane", "codex-hooks-review"},
+		{"codex-approval.pane", "codex-approval"},
+		{"codex-update.pane", "codex-update"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.file, func(t *testing.T) {
+			t.Parallel()
+			name, dialog := DetectDialogFor(harness.Codex, codexPane(t, tt.file))
+			if name != tt.wantName || !dialog {
+				t.Fatalf("DetectDialogFor(Codex, %s) = (%q, %v), want (%q, true)", tt.file, name, dialog, tt.wantName)
+			}
+		})
+	}
+
+	t.Run("a bare marker is unnamed but still a dialog", func(t *testing.T) {
+		t.Parallel()
+		name, dialog := DetectDialogFor(harness.Codex, "  Something new\n  Press enter to confirm or esc to go back")
+		if name != "" || !dialog {
+			t.Fatalf("got (%q, %v), want (\"\", true)", name, dialog)
+		}
+	})
+}
+
+func TestCodexIdleAndWorkingAreNotDialogs(t *testing.T) {
+	t.Parallel()
+	for _, file := range []string{"codex-idle.pane", "codex-working.pane"} {
+		t.Run(file, func(t *testing.T) {
+			t.Parallel()
+			name, dialog := DetectDialogFor(harness.Codex, codexPane(t, file))
+			if name != "" || dialog {
+				t.Fatalf("got (%q, %v), want (\"\", false)", name, dialog)
+			}
+		})
+	}
+}
+
+func TestDetectDialogForClaudeIsUnchanged(t *testing.T) {
+	t.Parallel()
+	name, dialog := DetectDialogFor(harness.Claude, workspaceTrustPane)
+	if name != "workspace-trust" || !dialog {
+		t.Fatalf("got (%q, %v), want (workspace-trust, true)", name, dialog)
+	}
+	// Codex's registry is not consulted for a Claude session.
+	if name, dialog := DetectDialogFor(harness.Claude, codexPane(t, "codex-trust.pane")); name != "" || dialog {
+		t.Fatalf("Claude read a Codex dialog: (%q, %v)", name, dialog)
+	}
+	// And Claude's trust dialog is not a Codex dialog.
+	if name, dialog := DetectDialogFor(harness.Codex, workspaceTrustPane); name != "" || dialog {
+		t.Fatalf("Codex read a Claude dialog: (%q, %v)", name, dialog)
+	}
+}
+
+func TestDetectDialogForOtherFallsBack(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		pane     string
+		wantName string
+		want     bool
+	}{
+		{"claude dialog", workspaceTrustPane, "workspace-trust", true},
+		{"codex dialog", codexPane(t, "codex-trust.pane"), "codex-trust", true},
+		{"healthy", healthyPromptPane, "", false},
+		{"empty", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			name, dialog := DetectDialogFor(harness.Other, tt.pane)
+			if name != tt.wantName || dialog != tt.want {
+				t.Fatalf("got (%q, %v), want (%q, %v)", name, dialog, tt.wantName, tt.want)
+			}
+		})
+	}
+}
 
 // The fixtures below are stripped pane captures — tmuxctl.Strip has already
 // run, exactly as it has by the time anything reaches DetectDialog — shaped

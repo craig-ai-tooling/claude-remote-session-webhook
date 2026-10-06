@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
 
@@ -164,7 +165,9 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 				return fmt.Errorf("confirm session %s is running: %w", sess.ID, err)
 			}
 		}
-		return nil
+		// A failed discovery does not change the verdict: the session is
+		// healthy, and the next sweep asks again.
+		return s.discover(ctx, sess)
 	}
 
 	// 4 — backing off.
@@ -194,7 +197,7 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 	if sess.ConversationID == "" {
 		return s.giveUp(sess, reasonNoConversation)
 	}
-	if !s.mgr.HasTranscript(sess.ConversationID, sess.WorkDir) {
+	if !s.mgr.hasTranscriptFor(sess, sess.ConversationID) {
 		return s.giveUp(sess, reasonNoTranscript)
 	}
 	// The cap covers a recreate, which adds a shell to the host. A revive in
@@ -234,6 +237,51 @@ func (s *Supervisor) judge(ctx context.Context, sess Session, info tmuxctl.Sessi
 	if err := s.mgr.revive(ctx, sess, present); err != nil {
 		return fmt.Errorf("revive session %s: %w", sess.ID, err)
 	}
+	return nil
+}
+
+// discover records the conversation a healthy Codex session is in, once.
+//
+// The store is written last because it is what the next sweep reads: a failure
+// at the option or the journal leaves ConversationID empty, so the next sweep
+// finds the same id and writes both again, which is idempotent for one id.
+func (s *Supervisor) discover(ctx context.Context, sess Session) error {
+	if s.mgr.specOf(sess).Name != harness.Codex || sess.ConversationID != "" {
+		return nil
+	}
+	// Under the lifecycle lock, and judged on the record as it is now: a Destroy
+	// that ran since the sweep took its snapshot has appended "ended" and removed
+	// the record, and anything written after that would put the session back in
+	// the journal (019 core review #2).
+	unlock := s.mgr.lockSession(sess.ID)
+	defer unlock()
+	cur, err := s.mgr.store.Get(sess.ID, sess.Owner)
+	if err != nil || cur.State == StateDead || cur.State == StateFailed || cur.ConversationID != "" {
+		return nil //nolint:nilerr // a record that is gone, over, or already named has nothing to discover
+	}
+	sess = cur
+
+	id, err := s.mgr.findCodexConversation(ctx, sess)
+	if err != nil {
+		return fmt.Errorf("discover the conversation of session %s: %w", sess.ID, err)
+	}
+	if id == "" {
+		return nil
+	}
+	if _, err := ValidateResume(id); err != nil {
+		return fmt.Errorf("discover the conversation of session %s: %w", sess.ID, err)
+	}
+	if err := s.mgr.tmux.SetOption(ctx, sess.TmuxName(), tmuxctl.OptionConversation, id); err != nil {
+		return fmt.Errorf("record the conversation of session %s: %w", sess.ID, err)
+	}
+	sess.ConversationID = id
+	if err := s.mgr.journal.Append(reviveRecord(sess, journalDiscovered)); err != nil {
+		return fmt.Errorf("journal the conversation of session %s: %w", sess.ID, err)
+	}
+	if err := s.mgr.store.SetConversation(sess.ID, id); err != nil {
+		return fmt.Errorf("store the conversation of session %s: %w", sess.ID, err)
+	}
+	s.mgr.emit(FleetChanged, sess)
 	return nil
 }
 
@@ -348,7 +396,7 @@ func (m *Manager) sendStart(ctx context.Context, s Session) error {
 	}
 	// A revival can land in a directory that was trusted when it was created and
 	// is not now, so it is seeded again rather than assumed.
-	if err := SeedTrust(m.claudeConfig, s.WorkDir); err != nil {
+	if err := m.seedTrustFor(harness.For(harness.Of(template)), s.WorkDir); err != nil {
 		return err
 	}
 	if err := m.tmux.SendKeys(ctx, s.TmuxName(), command, enterKey); err != nil {
@@ -364,10 +412,50 @@ func (m *Manager) sendStart(ctx context.Context, s Session) error {
 // it a different function: the process is still alive, so it has to be stopped
 // first. A revival types into a shell whose Claude has already gone.
 func (m *Manager) restartInto(ctx context.Context, s Session) error {
+	if m.specOf(s).SteppedQuit {
+		if err := m.quitStepped(ctx, s); err != nil {
+			return err
+		}
+		return m.sendStart(ctx, s)
+	}
 	if err := m.tmux.SendKeys(ctx, s.TmuxName(), interruptKey, interruptKey); err != nil {
 		return fmt.Errorf("interrupt the process: %w", err)
 	}
 	return m.sendStart(ctx, s)
+}
+
+// quitStepped ends the pane's process one Ctrl-C at a time and returns only
+// once tmux reports the process gone. Unknown liveness is not confirmation: a
+// session that records no expectation keeps getting pressed until the budget
+// runs out, then fails, rather than being typed into on a guess.
+func (m *Manager) quitStepped(ctx context.Context, s Session) error {
+	name := s.TmuxName()
+	for i := 0; i < steppedQuitPresses; i++ {
+		if err := m.tmux.SendKeys(ctx, name, interruptKey); err != nil {
+			return fmt.Errorf("interrupt the process: %w", err)
+		}
+		if err := m.sleep(ctx, steppedQuitWait); err != nil {
+			return fmt.Errorf("wait for the process to exit: %w", err)
+		}
+		infos, err := m.tmux.List(ctx)
+		if err != nil {
+			return fmt.Errorf("check that the process exited: %w", err)
+		}
+		found := false
+		for _, info := range infos {
+			if info.Name != name {
+				continue
+			}
+			found = true
+			if info.Claude == tmuxctl.LivenessStopped {
+				return nil
+			}
+		}
+		if !found {
+			return fmt.Errorf("session %s: %w", s.ID, ErrSessionDead)
+		}
+	}
+	return fmt.Errorf("session %s: %w", s.ID, ErrQuitUnconfirmed)
 }
 
 // markSession writes every @crswd-* option a session carries. Create writes them
@@ -387,7 +475,7 @@ func (m *Manager) markSession(ctx context.Context, s Session) error {
 		{tmuxctl.OptionStart, s.StartCommand},
 		{tmuxctl.OptionLifetime, encodeLifetime(s.Lifetime)},
 		{tmuxctl.OptionConversation, s.ConversationID},
-		{tmuxctl.OptionBinary, startBinary(template)},
+		{tmuxctl.OptionBinary, paneProcesses(template)},
 	}
 	for _, o := range options {
 		if err := m.tmux.SetOption(ctx, s.TmuxName(), o.option, o.value); err != nil {

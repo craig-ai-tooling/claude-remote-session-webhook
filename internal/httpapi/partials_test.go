@@ -26,6 +26,7 @@ import (
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/auth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/session"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 	"github.com/nctiggy/claude-remote-session-webhook/web"
@@ -3033,7 +3034,7 @@ func TestCardShowsMode(t *testing.T) {
 				StartCommand: tc.start,
 				CreatedAt:    now.Add(-time.Hour),
 				LastActivity: now,
-			}, now, testCardToken, remoteCommand, "")
+			}, now, testCardToken, remoteCommand, "", harness.Claude)
 
 			if card.Mode != tc.want {
 				t.Fatalf("cardOf projected mode %q for a session running %q, want %q", card.Mode, tc.start, tc.want)
@@ -3114,7 +3115,7 @@ func TestCardShowsItsDeadline(t *testing.T) {
 				Lifetime:     tc.lifetime,
 				CreatedAt:    now.Add(-time.Hour),
 				LastActivity: now,
-			}, now, testCardToken, "rc", "")
+			}, now, testCardToken, "rc", "", harness.Claude)
 
 			out := renderComponent(t, "session-card", card)
 			found := cardLifetimeRow.FindStringSubmatch(out)
@@ -4061,7 +4062,7 @@ func TestACardSaysHowOldItIsWhatStartedItAndWhetherItDies(t *testing.T) {
 			adopted.Adopted = true
 
 			for what, s := range map[string]session.Session{"created": live, "adopted": adopted} {
-				out := renderComponent(t, "session-card", cardOf(s, now, testCardToken, "rc", ""))
+				out := renderComponent(t, "session-card", cardOf(s, now, testCardToken, "rc", "", harness.Claude))
 
 				for _, row := range []struct {
 					fact  string
@@ -4419,5 +4420,120 @@ func TestARefusedCreateHasSomewhereLegibleToBeSaid(t *testing.T) {
 	toast := openingTag(t, page, "output", "action-toast")
 	if strings.Contains(toast, "popover") {
 		t.Errorf("the toast is declared as a popover (<output%s>); a popover above a modal dialog is inert, and the attribute moves and resizes the region for nothing", toast)
+	}
+}
+
+// codexForm is the create form on a daemon that offers Codex: fullCreateForm
+// plus the resolved line previewCodexCommand supplies.
+func codexForm() createFormView {
+	form := fullCreateForm()
+	form.CodexCommand = "codex --yolo --no-alt-screen"
+	return form
+}
+
+// TestCreateFormOffersCodexWhenConfigured is the radio group's markup contract
+// from docs/components.md, read back out of the rendered form: one fieldset named
+// by a legend, two native radios sharing the name the route reads, Claude Code
+// checked and Codex not, and the Codex line riding on the preview.
+//
+// **Must fail when** the group is missing, either option is absent or posts a
+// value the route does not accept, both or neither ship checked, or the preview
+// carries no Codex line for the script to swap in.
+func TestCreateFormOffersCodexWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	out := renderComponent(t, "create-form", codexForm())
+
+	for _, want := range []string{
+		`<fieldset class="radio-group">`,
+		`<legend class="radio-group-legend">Runtime</legend>`,
+		`<span>Claude Code</span>`,
+		`<span>Codex</span>`,
+		`data-command-codex="codex --yolo --no-alt-screen"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the create form of a daemon offering Codex lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `role="radiogroup"`) {
+		t.Error("the radio group adds an ARIA role; the fieldset and native radios already carry the semantics (docs/components.md)")
+	}
+
+	values := map[string]bool{}
+	var checked []string
+	for _, input := range formInput.FindAllStringSubmatch(out, -1) {
+		if kind, _ := attributeValue(t, input[1], "type"); kind != "radio" {
+			continue
+		}
+		if name, _ := attributeValue(t, input[1], "name"); name != "harness" {
+			t.Errorf("a radio posts %q, and the route reads harness (<input%s>)", name, input[1])
+		}
+		value, _ := attributeValue(t, input[1], "value")
+		values[value] = true
+		if strings.Contains(input[1], "checked") {
+			checked = append(checked, value)
+		}
+	}
+	if len(values) != 2 || !values["claude"] || !values["codex"] {
+		t.Errorf("the harness radios post %v; want exactly claude and codex", values)
+	}
+	if len(checked) != 1 || checked[0] != "claude" {
+		t.Errorf("checked harness radios are %v; want exactly claude, the existing behaviour", checked)
+	}
+
+	// Before the remote switch, so the choice that disables it is read first.
+	if group, remote := strings.Index(out, `class="radio-group"`), strings.Index(out, `name="remote_control"`); group < 0 || remote < 0 || group > remote {
+		t.Errorf("the radio group sits at %d and the remote switch at %d; the group comes first", group, remote)
+	}
+}
+
+// TestCreateFormUnchangedWithoutCodex holds the absence rule: with no Codex line
+// the form carries no trace of the harness, so a daemon that configured none
+// renders what it rendered before spec 019.
+func TestCreateFormUnchangedWithoutCodex(t *testing.T) {
+	t.Parallel()
+
+	out := renderComponent(t, "create-form", fullCreateForm())
+
+	for _, absent := range []string{"harness", "radio-group", "radio-option", "data-command-codex", "Runtime", `type="radio"`} {
+		if strings.Contains(out, absent) {
+			t.Errorf("a create form with no Codex line still renders %q:\n%s", absent, out)
+		}
+	}
+}
+
+// TestCreateFormScriptReadsHarness checks the served script reads the checked
+// harness radio, shows the Codex line, and disables the remote switch with both
+// the attribute and aria-disabled. It matches strings because the repo has no
+// browser, as the other script tests do.
+func TestCreateFormScriptReadsHarness(t *testing.T) {
+	t.Parallel()
+
+	js, err := web.Static.ReadFile("static/crswd.js")
+	if err != nil {
+		t.Fatalf("read the embedded script: %v", err)
+	}
+	for _, want := range []string{
+		`input[name="harness"]:checked`,
+		`dataset.commandCodex`,
+		`remote.disabled`,
+		`aria-disabled`,
+	} {
+		if !strings.Contains(string(js), want) {
+			t.Errorf("crswd.js does not carry %q, so the preview ignores the harness choice", want)
+		}
+	}
+}
+
+// TestRadioGroupStylesExist holds the stylesheet to the radio group contract:
+// the three classes, and a focus-visible rule on the input.
+func TestRadioGroupStylesExist(t *testing.T) {
+	t.Parallel()
+
+	css := stylesheet(t)
+	for _, want := range []string{".radio-group", ".radio-group-legend", ".radio-option", ".radio-option input:focus-visible"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("crswd.css has no rule for %q", want)
+		}
 	}
 }
