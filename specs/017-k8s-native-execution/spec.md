@@ -221,12 +221,13 @@ Neither is a reduced version of the other. A change that breaks one is not done.
   9/22/26. Under B the name is in the `AgentSession` spec; v0's journal record gains a `name`
   field.
 - **FR-013**: Pod-creating permission is bounded and stays out of the daemon (FR-009). The
-  reconciler's ServiceAccount may create, list, watch and delete pods, and read and update
-  `AgentSession` objects, in the session namespace and nothing else. It needs no verb on PVCs,
-  because the claim belongs to the chart (FR-010). The daemon's ServiceAccount may manage
-  `AgentSession` objects, read pods and create `pods/exec` in the session namespace only, and MUST
-  NOT create pods or hold `pods/exec` in the reconciler's namespace. Neither has any verb on
-  `secrets`.
+  reconciler's ServiceAccount may create, get, list, watch and delete pods, read and update
+  `AgentSession` objects, and update `agentsessions/status`, in the session namespace and nothing
+  else. It also holds a Lease (`coordination.k8s.io` `leases`: get, create, update) in its own
+  namespace, for leader election. It needs no verb on PVCs, because the claim belongs to the chart
+  (FR-010). The daemon's ServiceAccount may manage `AgentSession` objects, read pods and hold
+  `pods/exec` with the verbs `create` and `get` in the session namespace only, and MUST NOT create
+  pods or hold `pods/exec` in the reconciler's namespace. Neither has any verb on `secrets`.
 
 ### Tokens across a restart (FR-021 of spec 001)
 

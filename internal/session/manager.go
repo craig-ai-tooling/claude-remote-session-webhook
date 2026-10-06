@@ -251,6 +251,10 @@ type Manager struct {
 	roots []config.ApprovedRoot
 	clock Clock
 
+	// resolveWorkDir replaces ResolveWorkDir when set. Nil is the host's own
+	// resolution; see SetWorkDirResolver.
+	resolveWorkDir func(string, []config.ApprovedRoot) (string, error)
+
 	// maxSessions is CRSW_MAX_SESSIONS, read once at construction. It is held
 	// here rather than in the store because it is configuration and the store is
 	// not configured — but it is *enforced* in the store, under the lock that
@@ -273,6 +277,24 @@ type Manager struct {
 // forbids. A manager that was never given a set starts sessions with
 // claudeStartCommand, which is exactly what it did before this existed.
 func (m *Manager) SetStartCommands(cmds config.StartCommands) { m.startCommands = cmds }
+
+// SetWorkDirResolver replaces how a working directory is checked, for a daemon
+// that cannot see the filesystem its sessions run on and so has nothing for
+// EvalSymlinks to resolve. A setter for the reason SetStartCommands is one:
+// every existing caller means the host's own resolution, which is what a
+// manager never given a resolver does.
+func (m *Manager) SetWorkDirResolver(f func(string, []config.ApprovedRoot) (string, error)) {
+	m.resolveWorkDir = f
+}
+
+// workDir is the one place a working directory is checked, so Create, journal
+// replay and Continue cannot disagree about which resolution is in force.
+func (m *Manager) workDir(p string) (string, error) {
+	if m.resolveWorkDir != nil {
+		return m.resolveWorkDir(p, m.roots)
+	}
+	return ResolveWorkDir(p, m.roots)
+}
 
 // SetJournal gives the manager somewhere durable to record session lifecycle
 // events (spec 012).
@@ -771,7 +793,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (*Session, stri
 	if _, err := config.RenderStartCommand(command, req.Name); err != nil {
 		return nil, "", fmt.Errorf("create session: %w: %w", ErrInvalidName, err)
 	}
-	workDir, err := ResolveWorkDir(req.WorkDir, m.roots)
+	workDir, err := m.workDir(req.WorkDir)
 	if err != nil {
 		return nil, "", fmt.Errorf("create session: %w", err)
 	}
@@ -2520,7 +2542,7 @@ func (m *Manager) ReplayJournal(ctx context.Context) ([]Recovered, ReplayStats, 
 			continue
 		}
 
-		workDir, err := ResolveWorkDir(rec.WorkDir, m.roots)
+		workDir, err := m.workDir(rec.WorkDir)
 		if err != nil {
 			out = append(out, Recovered{Session: Session{ID: rec.ID, Owner: auth.CallerID(rec.Owner)}, Reason: reasonWorkDirRefused})
 			continue
@@ -2670,7 +2692,7 @@ func (m *Manager) Continue(ctx context.Context, s Session, conversationID string
 	// The allowlist may have shrunk since this session was created. A directory
 	// it no longer covers is one this daemon may not start work in, whether the
 	// shell is already there or not.
-	if _, err := ResolveWorkDir(s.WorkDir, m.roots); err != nil {
+	if _, err := m.workDir(s.WorkDir); err != nil {
 		return Session{}, fmt.Errorf("continue session %s: %w", s.ID, err)
 	}
 

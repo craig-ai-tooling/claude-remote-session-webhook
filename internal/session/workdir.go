@@ -85,7 +85,7 @@ func ResolveWorkDir(path string, roots []config.ApprovedRoot) (string, error) {
 	// Containment before the directory check, so that the reason reaching the
 	// audit trail for a path outside the allowlist is the escape and not an
 	// incidental fact about what was found there.
-	if !underAnyRoot(resolved, roots) {
+	if !UnderAnyRoot(resolved, roots) {
 		return "", fmt.Errorf("%w: %w", ErrInvalidWorkDir, ErrWorkDirOutsideRoots)
 	}
 
@@ -100,10 +100,36 @@ func ResolveWorkDir(path string, roots []config.ApprovedRoot) (string, error) {
 	return resolved, nil
 }
 
-// underAnyRoot reports whether an already-resolved path is inside the
+// LexicalWorkDir is the string-only counterpart of ResolveWorkDir, for a daemon
+// that cannot see the session's filesystem: in kubernetes mode the directory
+// lives in a pod, so stat or EvalSymlinks here would answer about the wrong
+// machine and refuse every real path. It cleans the path and tests containment
+// and nothing else.
+//
+// This is weaker than ResolveWorkDir on purpose and is only the first of two
+// checks. A symlink inside a root is invisible to it, so the resolved-and-
+// verified check of constitution VI still runs where the directory exists, in
+// the pod (internal/sessionpod). Never put the caller's path in the error: it
+// is attacker text bound for an audit record.
+func LexicalWorkDir(p string, roots []config.ApprovedRoot) (string, error) {
+	if p == "" {
+		return "", fmt.Errorf("%w: a working directory is required", ErrInvalidWorkDir)
+	}
+	if !filepath.IsAbs(p) {
+		return "", fmt.Errorf("%w: %w", ErrInvalidWorkDir, ErrWorkDirNotAbsolute)
+	}
+	cleaned := filepath.Clean(p)
+	if !UnderAnyRoot(cleaned, roots) {
+		return "", fmt.Errorf("%w: %w", ErrInvalidWorkDir, ErrWorkDirOutsideRoots)
+	}
+	return cleaned, nil
+}
+
+// UnderAnyRoot reports whether an already-cleaned path is inside the
 // allowlist. An empty list contains nothing, which is the answer that fails
-// closed.
-func underAnyRoot(path string, roots []config.ApprovedRoot) bool {
+// closed. Exported so the admission package shares this one rule rather than
+// restating it.
+func UnderAnyRoot(path string, roots []config.ApprovedRoot) bool {
 	for _, root := range roots {
 		if underRoot(path, root.Path) {
 			return true
