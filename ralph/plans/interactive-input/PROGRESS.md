@@ -208,3 +208,20 @@ Added the seven input outcome codes and sentences to `outcome.go`, `inputRatePer
   file's lines, so match with one tab fewer than displayed.
 - Removing the `inputs:` literal line breaks the build (declared and not used), so it proves nothing;
   break a guard in a way that still compiles.
+
+## Iteration 11: T009 (2026-10-06)
+
+Added `internal/httpapi/input.go` (`typeFromBrowser`, `patternDashboardType`, `fieldText`, `fieldEnter`, two sentinels),
+registered it after the compact line in `server.go`, and wrote the eight tests the task names in `input_test.go`.
+
+- Guards proven: with the `handleAction(patternDashboardType...)` line commented out, seven Type tests FAILED
+  (including `TestTypeDeliversAndAnswersNoContent`); with the CRLF replace made a no-op, `TestTypeNormalisesCRLF` FAILED;
+  with the budget check short-circuited (`if false && ...`), `TestTypeSpendsTheInputBudget` FAILED. Restored, all PASSED.
+- Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`.
+  `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
+- Next iteration (T010): `testConfig` sets `MaxBodyBytes` to `testMaxBody`, far under 16 KiB, so the gate answers a too-long
+  text with 403 before the handler runs. The `typer` fixture in `input_test.go` builds its server with
+  `config.DefaultMaxBodyBytes`; reuse `newTyper` (it wraps `compactor`) and its `ops()` helper for the key route.
+- The task cites `server.go:806` for the compact line; it is at 817. A bare `cd` persists across Bash calls here, so use
+  absolute paths or stay at the worktree root.
+- The task's `TestTypeRefusesLikeEveryAction` also asserts no PasteBracketed or SendKeys reached the host on every refusal row.
