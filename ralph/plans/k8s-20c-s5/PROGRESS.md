@@ -59,3 +59,12 @@ Added `internal/tmuxctl/export.go` (`ParseSessions`, `NewBufferName`, `Absent`) 
 - Rediscovery savings: Bash here refuses commands containing `$?`; run the checks one per line or with `;`.
   A parse fixture row is `listFieldCount` pipe-joined empty fields with field 2 numeric (see `TestListFormatFieldCount`).
 - Nothing noticed to fix.
+
+## Iteration 2: T2 (sessionpod pass-through, WorkRoot, Seed)
+
+Added `internal/sessionpod/seed.go` (`Seed`), `seed_test.go`; `sessionpod.go` gains `WorkRoot`, `Pod.Env`, `Pod.seed`, `CODEX_HOME` in `passThrough`, and `Run` seeds after `ResolveWorkDir` and before `Tmux.New`.
+
+- Failing first: `go test ./internal/sessionpod -run 'PassThrough|Seed|RunSeeds'` failed by not compiling: `seed_test.go:68:12: undefined: Seed` and `p.Env undefined (type *Pod has no field or method Env)`. `TestPassThroughCarriesCodexHome` would also fail on the old `passThrough` once it compiles.
+- Gate: build, vet, test, `-tags tmux`, `-tags quickstart ./cmd/crswd` (port free, passed), golangci-lint 0 issues, `go -C k8s` vet/test/build green, no root go.sum, `grep -c require go.mod` is 0.
+- **Existing Run tests leave `Pod.Env` nil, so they now seed from `os.Environ()`.** That is the real `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME` of whoever runs the suite. I added a package `TestMain` in `seed_test.go` that points all three at a temp dir (no existing test file edited). The first `go test ./internal/sessionpod` run before that TestMain existed may have created `~/.codex` and trust entries in the real home; this sandbox cannot list `~`, so I could not check. The operator should look for `~/.codex/config.toml` and a `.claude.json` trust entry for a `t.TempDir` path.
+- Rediscovery savings: Bash refuses `$?` and `;`-joined commands that mix operations; one command per call. golangci-lint has errcheck check-blank on, so `_ = os.RemoveAll(x)` fails. The format hook already adds imports (goimports).

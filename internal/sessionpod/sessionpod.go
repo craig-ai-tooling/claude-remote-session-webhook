@@ -78,7 +78,14 @@ const (
 // config.SessionEnvironment's own base set. CLAUDE_CONFIG_DIR is not in that
 // set, and it is where FR-015's credential symlink and the session's transcripts
 // live: without it Claude in the pane would look in $HOME and find nothing.
-var passThrough = []string{"CLAUDE_CONFIG_DIR"}
+// CODEX_HOME is where Codex keeps its login, trust and rollouts in a pod (spec 019
+// FR-023).
+var passThrough = []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME"}
+
+// WorkRoot is the one approved root inside a session pod (k8s-20c-plan E3). The
+// reconciler mounts the session's working directory under it, and the session-pod
+// entrypoint passes it to Run as the only approved root.
+const WorkRoot = "/work"
 
 // Pod runs the two entrypoints against any tmuxctl.Controller. Run and PaneLoop
 // at package level build the real one; the type exists so a test can hand it the
@@ -86,10 +93,22 @@ var passThrough = []string{"CLAUDE_CONFIG_DIR"}
 type Pod struct {
 	Tmux tmuxctl.Controller
 
+	// Env is the environment Seed reads to find the Claude and Codex directories.
+	// Nil means the process's own, which is what production wants.
+	Env []string
+
 	// Interval is the period of the frame loop and of the liveness poll. Zero
 	// means DefaultInterval, so a Pod built as a literal behaves as production
 	// does.
 	Interval time.Duration
+}
+
+func (p *Pod) seed(dir string) error {
+	env := p.Env
+	if env == nil {
+		env = os.Environ()
+	}
+	return Seed(env, dir)
 }
 
 func (p *Pod) interval() time.Duration {
@@ -125,6 +144,9 @@ func (p *Pod) Run(ctx context.Context, name, workdir string, roots []config.Appr
 	resolved, err := session.ResolveWorkDir(workdir, roots)
 	if err != nil {
 		return fmt.Errorf("session pod %s: %w", name, err)
+	}
+	if err := p.seed(resolved); err != nil {
+		return fmt.Errorf("session pod %s: seed: %w", name, err)
 	}
 	if err := p.Tmux.New(ctx, name, resolved); err != nil {
 		return fmt.Errorf("session pod %s: start: %w", name, err)

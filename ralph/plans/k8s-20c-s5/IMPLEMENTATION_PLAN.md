@@ -21,7 +21,7 @@ Take the topmost open task. One per iteration. T1 to T4 are root module, standar
 T5 to T10 are the cluster module `k8s/`.
 
 - [x] T1: tmuxctl exports for a second Controller per Design §1. Verify: `go test ./internal/tmuxctl -run 'Export' -v` passes.
-- [ ] T2: sessionpod: `CODEX_HOME` pass-through, `WorkRoot`, and the config seed run by `Pod.Run`, per Design §2. Verify: `go test ./internal/sessionpod -run 'PassThrough|Seed|RunSeeds' -v` passes.
+- [x] T2: sessionpod: `CODEX_HOME` pass-through, `WorkRoot`, and the config seed run by `Pod.Run`, per Design §2. Verify: `go test ./internal/sessionpod -run 'PassThrough|Seed|RunSeeds' -v` passes.
 - [ ] T3: session `TranscriptExists` and the sessionpod in-pod helpers `CodexConversation` and `HasTranscript`, per Design §3. Verify: `go test ./internal/session ./internal/sessionpod -run 'TranscriptExists|CodexConversation|PodHasTranscript' -v` passes.
 - [ ] T4: Manager hooks per Design §4: `SetCodexConversationFinder`, `SetTranscriptChecker`, `PodRecord`, and the supervisor's allowlist check through the S2 resolver. Verify: `go test ./internal/session -run 'CodexConversationFinder|TranscriptChecker|PodRecord|SuperviseLexical' -v` passes.
 - [ ] T5: `k8s/internal/agentsession`, the typed client over the dynamic client, per Design §5. Verify: `go -C k8s test ./internal/agentsession -v` passes.
