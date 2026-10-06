@@ -292,3 +292,24 @@ Amended the never-types rule in `AGENTS.md` and `docs/security.md` §2 (the stal
 - Full gate green: gofmt, build, three `go vet` runs, `go test ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`. `-tags tmux` skipped: the task did not touch `internal/tmuxctl`.
 - Next iteration (T016): FR-021 gives only the Q4/Q5 titles and fallbacks, not question prose, so the "How it gets answered" and body paragraphs are mine. Edit them if the operator wants other wording. The closing paragraph of `mobile-open-questions.md` still says "all three" for milestone 7, which is correct for that milestone and was left alone.
 - `git -C` and `git commit` with a heredoc are refused by the sandbox here; use bare `git` from the worktree and `-m` flags.
+
+## Iteration 18: T016 (2026-10-06)
+
+Ran the full gate and broke the five guards. No source file changed; `git status` was clean after the restores.
+
+Guards, each broken, run, confirmed failing, restored, re-run green:
+
+- `"-p"` removed from `argvPasteBufferBracketed`: `TestExecPasteBracketedKeepsCallerTextOffTheCommandLine` and `go test -tags tmux -run Bracketed` `TestTmuxPasteBracketedWrapsTheText` FAILED (15s timeout). Restored, PASSED.
+- Control-byte check deleted from `ValidateTyped`: `TestValidateTyped` rows `delete`, `nul`, `paste_terminator`, `carriage_return` FAILED. Restored, PASSED.
+- `tmuxKeys[KeyInterrupt]` changed to `"C-d"`: `TestKeysMapToMeasuredTmuxNames` FAILED. Restored, PASSED.
+- Type route registered with `handleBrowser` instead of `handleAction`: `TestTypeRefusesLikeEveryAction` FAILED (refusals answered 303, the allowed row answered 303 instead of 204). Restored, PASSED.
+- `crossSite` made `false && crossSite(r)` in `sessionHistory`: `TestHistoryRefusesCrossSite` FAILED. Restored, PASSED.
+
+Gate after the restores, all exit 0: gofmt (empty), build, three `go vet` runs, `go test ./...`, `go test -tags tmux ./...`, `go test -tags dev ./...`, golangci-lint 2.12.2 (0 issues), no `go.sum`.
+
+- `go test -tags quickstart ./cmd/crswd` was not run (needs port 8765 free; the deployed daemon holds it). `go vet -tags quickstart` passes.
+- The first `go test -tags tmux ./...` failed on `TestKeyAndTypeShareOneBudget` (204 where 303 was wanted), the flake logged under Iteration 15 Findings. A rerun and the post-restore runs passed. It is still open.
+
+### Findings
+
+- `TestKeyAndTypeShareOneBudget` is flaky under load: it fired once in four full runs of `internal/httpapi` this iteration. The 240/min bucket refills during a slow run. A fix would pin the limiter's clock; T008 and T009 own those tests.
