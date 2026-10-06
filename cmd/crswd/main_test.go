@@ -216,6 +216,12 @@ func parseTheDaemon(t *testing.T, fset *token.FileSet) map[string]*ast.File {
 			if strings.HasPrefix(d.Name(), ".") && path != moduleRoot {
 				return fs.SkipDir
 			}
+			// A nested module is not compiled into this daemon.
+			if path != moduleRoot {
+				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
+					return fs.SkipDir
+				}
+			}
 			return nil
 		}
 		name := d.Name()

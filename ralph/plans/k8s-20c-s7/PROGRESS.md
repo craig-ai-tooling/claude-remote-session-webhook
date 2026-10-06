@@ -128,3 +128,29 @@ Do this as part of T3, in this order:
    synthetic source string that uses `os.Stdout` in another function.
 3. Verify: `go test ./cmd/crswd -run DiagnosticsGoToStderr` and `go -C k8s test ./cmd/crswd -run Stdout -v` pass.
 
+
+## Iteration 4 (T3, the cluster binary): done
+
+The files from Iteration 3 were already committed by the loop's sweep. This iteration applied the
+operator decision: `parseTheDaemon` in `cmd/crswd/main_test.go` now returns `fs.SkipDir` for a
+nested module (a directory other than the root that holds a `go.mod`), and the new
+`k8s/cmd/crswd/stdout_test.go` guards `os.Stdout` in the cluster binary. Its table case
+(`another function may not`) proves it can fail; `TestStdoutGuardOnThisPackage` runs it on the real sources.
+
+Failing first: `main_test.go:121: ../../k8s/cmd/crswd/main.go:30:37: k8s/cmd/crswd/main.go writes to standard output` (`TestDiagnosticsGoToStderr`, recorded in Iteration 3, before the skip).
+
+Full pre-commit list passed: gofmt, root build/vet/test, `-tags tmux`, `-tags quickstart`
+(`127.0.0.1:8765` free, 55s), golangci-lint (0 issues), `go -C k8s` vet/test/build, no `go.sum`,
+`grep -c require go.mod` prints 0. Task verify: 11 tests pass in `k8s/cmd/crswd`, build exits 0.
+
+One judgement call: the decision says `os.Stdout` is allowed in the functions that run
+`pane-loop`, `codex-conversation` and `has-transcript`. Those take a `stdout io.Writer` from
+`dispatch`, so the only `os.Stdout` selector is in `main`, which hands it to `dispatch`. The
+allow-map in `stdout_test.go` therefore holds `main`. Narrowing it would mean `main` avoiding
+`os.Stdout`, which only evades the guard.
+
+For the next iteration:
+- T4 edits `internal/sessionpod/dockerfile_test.go`; read it before writing `deploy/image/dockerfile_test.go`.
+- `go -C k8s` works for the cluster module; the sandbox refuses `(...)` groups, so run commands one per call.
+
+Noticed, not fixed: none.
