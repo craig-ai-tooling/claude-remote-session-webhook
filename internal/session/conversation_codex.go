@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 )
 
 const (
@@ -43,11 +44,12 @@ func codexConversations(sessionsDir, workDir string) []Conversation {
 		}
 		examined++
 
-		path := filepath.Join(day, e.Name())
-		if !codexRollout(sessionsDir, path) {
+		f, ok := openCodexRollout(sessionsDir, filepath.Join(day, e.Name()))
+		if !ok {
 			return false
 		}
-		id, cwd, ok := readCodexMeta(path)
+		id, cwd, ok := readCodexMeta(f)
+		_ = f.Close()
 		if !ok || id != nameID || !isConversationID(id) || cwd != workDir {
 			return false
 		}
@@ -191,21 +193,19 @@ func codexHasTranscript(sessionsDir, id, workDir string) bool {
 	if err != nil || len(matches) != 1 {
 		return false
 	}
-	if !codexRollout(sessionsDir, matches[0]) {
+	f, ok := openCodexRollout(sessionsDir, matches[0])
+	if !ok {
 		return false
 	}
-	metaID, cwd, ok := readCodexMeta(matches[0])
+	defer f.Close() //nolint:errcheck // Read-only; a close failure says nothing a reader could act on.
+	metaID, cwd, ok := readCodexMeta(f)
 	return ok && metaID == id && cwd == workDir
 }
 
-// readCodexMeta reads line 1 of a rollout, never more than codexMetaReadLimit bytes.
-func readCodexMeta(path string) (id, cwd string, ok bool) {
-	f, err := os.Open(path) //nolint:gosec // G304: path came from codexRollout, which proved it is a regular file inside the sessions tree.
-	if err != nil {
-		return "", "", false
-	}
-	defer f.Close() //nolint:errcheck // Read-only; a close failure says nothing a reader could act on.
-
+// readCodexMeta reads line 1 of an open rollout, never more than
+// codexMetaReadLimit bytes. It reads the descriptor openCodexRollout validated,
+// never a path, so what was checked is what is read.
+func readCodexMeta(f *os.File) (id, cwd string, ok bool) {
 	buf, err := io.ReadAll(io.LimitReader(f, codexMetaReadLimit))
 	if err != nil {
 		return "", "", false
@@ -227,11 +227,36 @@ func readCodexMeta(path string) (id, cwd string, ok bool) {
 	return meta.Payload.ID, meta.Payload.Cwd, true
 }
 
-// codexRollout reports whether path is a regular, non-symlink file whose resolved
-// parent lies inside the resolved sessionsDir. Lstat is what refuses a symlink
-// that points at another file inside the tree.
-func codexRollout(sessionsDir, path string) bool {
-	fi, err := os.Lstat(path)
+// openCodexRollout opens path once and judges the descriptor it got. O_NOFOLLOW
+// refuses a symlink as the last component; the descriptor must be a regular
+// file; and the resolved parent must lie inside the resolved sessionsDir with
+// the file the descriptor names still sitting at that resolved location. A
+// parent swapped for a symlink after the walk, or a leaf swapped after the
+// open, therefore costs a refusal and never a read of another file. O_NONBLOCK
+// keeps an opened FIFO from blocking before the type check.
+func openCodexRollout(sessionsDir, path string) (*os.File, bool) {
+	return openCodexRolloutHook(sessionsDir, path, nil)
+}
+
+// openCodexRolloutHook is openCodexRollout with a seam for a test to act in the
+// window between the open and the validation.
+func openCodexRolloutHook(sessionsDir, path string, afterOpen func()) (*os.File, bool) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0) //nolint:gosec // G304: path was built from names the bounded walker read under the sessions tree, and the descriptor is validated below.
+	if err != nil {
+		return nil, false
+	}
+	if afterOpen != nil {
+		afterOpen()
+	}
+	if codexDescriptorInside(f, sessionsDir, path) {
+		return f, true
+	}
+	_ = f.Close()
+	return nil, false
+}
+
+func codexDescriptorInside(f *os.File, sessionsDir, path string) bool {
+	fi, err := f.Stat()
 	if err != nil || !fi.Mode().IsRegular() {
 		return false
 	}
@@ -247,6 +272,11 @@ func codexRollout(sessionsDir, path string) bool {
 	if err != nil {
 		return false
 	}
-	_, ok := containedIn(root, filepath.Join(rel, filepath.Base(path)))
-	return ok
+	at, ok := containedIn(root, filepath.Join(rel, filepath.Base(path)))
+	if !ok {
+		return false
+	}
+	// Lstat, so a leaf swapped for a symlink is seen as the symlink it is.
+	now, err := os.Lstat(at)
+	return err == nil && os.SameFile(fi, now)
 }

@@ -279,6 +279,26 @@ func TestCodexConversations(t *testing.T) {
 	})
 }
 
+// readCodexMetaAt opens a path plainly and reads its metadata, for the tests
+// that exercise the parser and not the containment.
+func readCodexMetaAt(path string) (id, cwd string, ok bool) {
+	f, err := os.Open(path) //nolint:gosec // G304: a test's own temp file.
+	if err != nil {
+		return "", "", false
+	}
+	defer f.Close() //nolint:errcheck // read-only
+	return readCodexMeta(f)
+}
+
+// codexRollout is whether openCodexRollout accepts path.
+func codexRollout(root, path string) bool {
+	f, ok := openCodexRollout(root, path)
+	if ok {
+		_ = f.Close()
+	}
+	return ok
+}
+
 func TestReadCodexMeta(t *testing.T) {
 	t.Parallel()
 	id := codexTestID(1)
@@ -302,7 +322,7 @@ func TestReadCodexMeta(t *testing.T) {
 			if err := os.WriteFile(p, []byte(tt.content), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			gotID, gotCwd, ok := readCodexMeta(p)
+			gotID, gotCwd, ok := readCodexMetaAt(p)
 			if ok != tt.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
 			}
@@ -314,7 +334,7 @@ func TestReadCodexMeta(t *testing.T) {
 
 	t.Run("missing file", func(t *testing.T) {
 		t.Parallel()
-		if _, _, ok := readCodexMeta(filepath.Join(t.TempDir(), "none")); ok {
+		if _, _, ok := readCodexMetaAt(filepath.Join(t.TempDir(), "none")); ok {
 			t.Fatal("ok for a missing file")
 		}
 	})
@@ -496,5 +516,63 @@ func TestCodexWalkSkipsNonNumericDateDirs(t *testing.T) {
 				t.Errorf("a rollout under %q satisfied the transcript check", day)
 			}
 		})
+	}
+}
+
+func TestOpenCodexRolloutSymlinkedParent(t *testing.T) {
+	t.Parallel()
+	id := codexTestID(1)
+	root := t.TempDir()
+	outsideRoot := t.TempDir()
+	out := writeRollout(t, outsideRoot, "2026/10/02", "2026-10-02T10-00-00", id, codexMetaLine(t, id, codexTestWork, 0))
+
+	// root/2026 is a symlink to a tree outside the sessions dir.
+	if err := os.Symlink(filepath.Join(outsideRoot, "2026"), filepath.Join(root, "2026")); err != nil {
+		t.Fatal(err)
+	}
+	via := filepath.Join(root, "2026", "10", "02", filepath.Base(out))
+	if codexRollout(root, via) {
+		t.Error("a rollout reached through a symlinked parent outside the root was accepted")
+	}
+}
+
+func TestOpenCodexRolloutLeafSwappedAfterOpen(t *testing.T) {
+	t.Parallel()
+	id := codexTestID(1)
+	root := t.TempDir()
+	real := writeRollout(t, root, "2026/10/02", "2026-10-02T10-00-00", id, codexMetaLine(t, id, codexTestWork, 0))
+	secret := filepath.Join(t.TempDir(), "secret.jsonl")
+	if err := os.WriteFile(secret, []byte(codexMetaLine(t, codexTestID(9), "/elsewhere", 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// The window between the open and the check: the leaf becomes a symlink to a
+	// file outside the tree. What comes back must not be that file.
+	f, ok := openCodexRolloutHook(root, real, func() {
+		if err := os.Remove(real); err != nil {
+			t.Error(err)
+		}
+		if err := os.Symlink(secret, real); err != nil {
+			t.Error(err)
+		}
+	})
+	if ok {
+		defer f.Close() //nolint:errcheck // read-only
+		if gotID, _, _ := readCodexMeta(f); gotID == codexTestID(9) {
+			t.Fatal("the rollout read was the swapped-in outside file")
+		}
+		t.Fatal("a rollout whose path no longer names the opened file was accepted")
+	}
+}
+
+func TestOpenCodexRolloutRefusesNonRegular(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, "2026", "10", "02")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if codexRollout(root, dir) {
+		t.Error("a directory was accepted as a rollout")
 	}
 }
