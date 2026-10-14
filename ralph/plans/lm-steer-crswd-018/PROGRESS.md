@@ -213,6 +213,65 @@ Things the next iteration would otherwise rediscover:
   `specs/001-crswd-daemon-core/spec.md:444`. Both were read this iteration and are quoted
   verbatim in spec.md's FR-017 and FR-018.
 
+### P3 — plan.md (10/14/26)
+
+Wrote `specs/020-prompt-route-safety/plan.md` from `.specify/templates/plan-template.md`,
+in spec 019's plan voice. Markdown only, no Go changed. Contents: Summary (the six changes,
+one line each, each citing its D), Technical Context with every template placeholder
+replaced, a **Constitution Check** table over principles I–VII plus the constitution's own
+Quality Gates list, Project Structure (the four spec documents, and the notebook's
+allowlist reproduced verbatim as the source-code file list with the task that touches each
+path), Design (the gate's step order in `Manager.Prompt`, the handler, the audit record,
+the fake, the docs), a Task order and dependencies table for P1–F1, Risks, and a
+Complexity Tracking section recording no violations.
+
+Commands run and results:
+
+- `grep -q 'Constitution Check' … && ! grep -q 'NEEDS CLARIFICATION' …` → exit 0, so P3's
+  Verify condition holds. It ran verbatim: no command substitution and no pipe, which is
+  what P1's `[ "$(grep -c …)" … ]` tripped over.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `golangci-lint run` → **still cannot run**; `which golangci-lint` exits 1, as in P1 and
+  P2. This iteration changed no Go, so lint's answer is the committed baseline's.
+- `git status --short` → `?? specs/020-prompt-route-safety/plan.md` only.
+
+Things the next iteration would otherwise rediscover:
+
+- **plan.md deliberately contains no literal `NEEDS CLARIFICATION`**, not even in prose
+  about the phrase, so G1's grep proxy stays clean for this file. The template's own
+  placeholders (`… or NEEDS CLARIFICATION` on nine Technical Context lines) were all
+  replaced with real values rather than deleted, which is what P2 did for spec.md too.
+  **research.md line 186 is still the one and only match in this directory** — P2's entry
+  above says what G1 must do about it, and that is unchanged by this iteration.
+- **The code facts P3 read, so P4 and the T-tasks need not re-read them.** `Manager.Prompt`
+  is at `internal/session/manager.go:1194` and today runs: ID-empty →
+  `ErrSessionNotFound`, `StateDead` → `ErrSessionDead`, empty text → `ErrEmptyPrompt`,
+  `lockSession`, `m.paste`, `SendKeys(enterKey)`. `m.paste` is at `manager.go:1253` and is
+  bracketed only when `m.specOf(s).BracketedPaste`; its own comment says `Type` is
+  bracketed for every harness and must not route through it, "because Claude's
+  BracketedPaste is false" — **T006 changes that premise for `Prompt` only, so leave that
+  comment's claim about `Type` alone and do not reroute `Type`.**
+- `promptSession` is at `internal/httpapi/sessions.go:772`, `paneDialogState` at `:828`,
+  `refusePrompt` at `:849` (two branches today: `ErrEmptyPrompt` → `rejectBadRequest`,
+  everything else → `failInternal(errPromptUndelivered)`). `promptRequest` is at `:264`
+  with one field; `promptResponse` at `:283` with `id`, `delivered`, `parked_on,omitempty`,
+  `suspicious_dialog,omitempty`.
+- **Where T003's and T004's refusals go.** `paneDialogState` runs a pane *capture* before
+  `Manager.Prompt` whenever `req.Text != ""`, so both new 400s must be decided **before**
+  that call, not merely before `Prompt` — otherwise an invalid body still costs a pane
+  read. plan.md's Design section says so.
+- `audit.Record` is at `internal/audit/audit.go:390` (Action, Caller, SessionID, Decision,
+  Reason, Remote). `RequestAudit` is at `internal/httpapi/middleware.go:100` with `rec`,
+  `emitted`, `SetSessionID` (`:120`), `Deny` (`:133`), `allow` (`:152`). The `emitted`
+  field's comment states the ordering rule T002 inherits: a handler that emits early must
+  say everything first, because an amendment after the emit reaches nothing.
+- **The fake hook T008 should copy is `QuitAfterInterrupts`** (`internal/tmuxctl/fake.go:386`),
+  not `SetPaneCommand` (`:761`) alone. `livenessOf` (`:249`) derives liveness from
+  `OptionBinary` split on `|` against `paneCommand`, and `List` (`:618`) is where it is
+  called — so `ExitAfterPaste` only needs to set `paneCommand` to a non-matching value
+  after the next paste, and the liveness follows.
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -257,3 +316,18 @@ Things the next iteration would otherwise rediscover:
   **T-task** iteration cannot rely on that: its failing-before evidence is only meaningful
   against a tree whose previous task is committed. Granting the loop permission to execute
   safe-commit is the fix.
+- **P3's commit step could not run either — third iteration in a row, same cause.**
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace -m … -- <3 paths>` was
+  refused by the sandbox as a command outside `/workspace` needing an approval this
+  non-interactive session cannot obtain. Nothing was staged and no plain `git commit` was
+  substituted, for P1's reason. The tree carries
+  `specs/020-prompt-route-safety/plan.md` (new) plus the `- [x]` on P3 and the P3 entry
+  above. **This is now a standing condition of the loop's host, not a per-iteration
+  accident** — P1's three paths were swept up by `0366fa0` and P2's by `8a05811`, so a
+  sweep is what commits these. The remaining Markdown tasks (P4, P5) can live with that.
+  **T001 is where it stops being survivable**: the failing-before procedure needs to run
+  the Verify command against a tree whose previous task is committed, and it cannot prove
+  "fails before, passes after" on a tree where three prior tasks' files are untracked and
+  a sweep may land between its two runs. Grant the loop permission to execute
+  safe-commit — or run it outside the sandbox for the accumulated paths — before T001 is
+  taken.
