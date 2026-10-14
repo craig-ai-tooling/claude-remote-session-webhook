@@ -91,7 +91,11 @@ func TestEmitWritesTheDocumentedFields(t *testing.T) {
 
 // slog's JSON handler emits "level" and "msg" of its own accord. A record
 // carrying keys the spec does not name is a record whose shape drifted.
-func TestEmitWritesNoKeyBeyondTheDocumentedSeven(t *testing.T) {
+//
+// Eight since spec 020 FR-015 added request_id, which is why the record below
+// sets every field: a key set asserted from a record that left one field empty
+// would pass while that field's key was misspelled.
+func TestEmitWritesNoKeyBeyondTheDocumentedEight(t *testing.T) {
 	t.Parallel()
 
 	got := decode(t, emit(t, audit.Record{
@@ -101,9 +105,10 @@ func TestEmitWritesNoKeyBeyondTheDocumentedSeven(t *testing.T) {
 		Decision:  audit.Allow,
 		Reason:    "verified gone",
 		Remote:    "127.0.0.1:54321",
+		RequestID: "abc-123",
 	}))
 
-	want := []string{"action", "caller", "decision", "reason", "remote", "session_id", "time"}
+	want := []string{"action", "caller", "decision", "reason", "remote", "request_id", "session_id", "time"}
 	if keys := keysOf(got); !reflect.DeepEqual(keys, want) {
 		t.Errorf("keys = %v, want %v", keys, want)
 	}
@@ -111,6 +116,51 @@ func TestEmitWritesNoKeyBeyondTheDocumentedSeven(t *testing.T) {
 		if _, ok := got[unwanted]; ok {
 			t.Errorf("record carries slog's %q key: %v", unwanted, got)
 		}
+	}
+}
+
+// The caller's own correlator (spec 020 FR-015). Present, it is written under
+// request_id; absent, the key appears nowhere — a record carrying an empty
+// correlator would say a caller named one when none did.
+func TestEmitWritesTheRequestID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		requestID string
+		want      any // the request_id value, or nil for "no such key"
+	}{
+		{name: "present", requestID: "abc-123", want: "abc-123"},
+		{name: "absent", requestID: "", want: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := decode(t, emit(t, audit.Record{
+				Action:    audit.ActionSessionPrompt,
+				Caller:    "operator",
+				SessionID: testSessionID,
+				Decision:  audit.Allow,
+				Reason:    "delivered",
+				Remote:    "127.0.0.1:54321",
+				RequestID: tc.requestID,
+			}))
+
+			value, ok := got["request_id"]
+			if tc.want == nil {
+				if ok {
+					t.Errorf("record carries request_id = %v, want the key absent: %v", value, got)
+				}
+				return
+			}
+			if !ok {
+				t.Fatalf("record carries no request_id, want %q: %v", tc.want, got)
+			}
+			if value != tc.want {
+				t.Errorf("request_id = %v, want %v", value, tc.want)
+			}
+		})
 	}
 }
 
@@ -501,7 +551,7 @@ func TestRecordCannotCarryFreeFormContent(t *testing.T) {
 	t.Parallel()
 
 	rt := reflect.TypeOf(audit.Record{})
-	want := []string{"Action", "Caller", "SessionID", "Decision", "Reason", "Remote"}
+	want := []string{"Action", "Caller", "SessionID", "Decision", "Reason", "Remote", "RequestID"}
 	if rt.NumField() != len(want) {
 		t.Fatalf("Record has %d fields, want %d (%v) — a new field needs a check against FR-042", rt.NumField(), len(want), want)
 	}

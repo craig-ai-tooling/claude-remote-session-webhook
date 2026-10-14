@@ -473,6 +473,79 @@ Things the next iteration would otherwise rediscover:
   audit record, absent means absent, and no length and no hash anywhere
   (`specs/001-crswd-daemon-core/contracts/http-api.md:256-348`, per P5).
 
+### T001 — `audit.Record.RequestID` (10/14/26)
+
+The milestone's first Go change. Two files, both allowlisted: `internal/audit/audit.go` and
+`internal/audit/audit_test.go`. `internal/audit/leak_test.go` was **read and not touched** —
+`grep -n 'NumField\|keysOf\|audit.Record{' internal/audit/leak_test.go` prints nothing, so the
+suite has no reflective assertion over the record's shape and no canary had to move.
+
+What changed in `audit.go`:
+
+- `keyRequestID = "request_id"` added **last** in the key block, with a comment saying why it is
+  last (the seven above are milestone 1's and their order is the spec's).
+- `RequestID string` added as the **last** field of `Record`, with the doc comment FR-018 asks
+  for: the caller's own correlator, the one caller-chosen value the trail may carry, bounded to
+  1–32 of `[a-z0-9-]` **by the handler that accepts it**, and explicitly *not* validated here,
+  because a second check in this package would be a second rule free to disagree.
+- In `Emit`, `if rec.RequestID != "" { r.AddAttrs(slog.String(keyRequestID, rec.RequestID)) }`
+  immediately after the `Remote` block, so the attribute order stays data-model.md's with the
+  new field last.
+
+Failing-before evidence (PROMPT.md's procedure, test written first):
+
+- `go test ./internal/audit/` against the unchanged code →
+  `internal/audit/audit_test.go:142:5: unknown field RequestID in struct literal of type
+  audit.Record`, `FAIL … [build failed]`. That is the only shape this task's evidence can take,
+  as tasks.md says.
+- The same command after the change → `ok … 2.446s`, exit 0.
+- **No row was added to "Failing-before evidence" above.** T001 does not prove a requirement on
+  its own; req 6's row belongs to T003, per that table's own preamble.
+
+The two existing tests tasks.md named were **extended, not relaxed**:
+
+- `TestEmitWritesNoKeyBeyondTheDocumentedSeven` → **renamed** `…DocumentedEight`, because the
+  old name became false the moment the eighth key existed (tasks.md: "rename it only if the name
+  is now false"). Its `want` gains `"request_id"` in sorted position, and its fixture now sets
+  **every** field — a key-set assertion driven by a record that left the new field empty would
+  pass while the key was misspelled.
+- `TestRecordCannotCarryFreeFormContent` → `want` gains `"RequestID"` as the seventh entry. Its
+  every-field-is-a-string check is untouched, which is the half of FR-018 that makes the
+  amendment safe.
+- New: `TestEmitWritesTheRequestID`, table-driven with `t.Parallel()` on the outer and each
+  subtest — a present value (the decoded line carries `request_id` with that value) and an empty
+  one (the key is absent, asserted as absent rather than as `""`).
+
+Commands run and results:
+
+- `go test ./internal/audit/` → exit 0 (the task's Verify).
+- `go test ./...` → every package `ok`, nothing else printed. Run beyond the task's gate because
+  this is the first Go change; nothing outside `internal/audit` asserts the record's key set.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **could not run.** See the finding
+  below; this is the iteration the standing finding warned about, and it is recorded as a gap in
+  this task's own gate rather than as an inherited green baseline.
+- `git status --short` → ` M internal/audit/audit.go` and ` M internal/audit/audit_test.go`, both
+  on the allowlist.
+
+Things the next iteration would otherwise rediscover:
+
+- **T002 is next and nothing blocks it.** `RequestAudit` is at
+  `internal/httpapi/middleware.go:100`; `SetSessionID` at `:120` is the shape to copy (nil-safe,
+  one line); the `emitted` field's comment at `:111` states the ordering rule. The model test is
+  `TestAHandlerCanAmendTheOneRecord` at `internal/httpapi/middleware_test.go:753`.
+- **The renamed test's old name is still quoted in two documents**, by design: tasks.md:94 and
+  this notebook's P4 and G1 entries say `TestEmitWritesNoKeyBeyondTheDocumentedSeven`. Those are
+  records of what the plan said, not stale code references; the test in the tree is
+  `TestEmitWritesNoKeyBeyondTheDocumentedEight`. Do not "fix" tasks.md over it.
+- **`Record` now has seven fields**, so the next task that adds one hits
+  `TestRecordCannotCarryFreeFormContent`'s `NumField` check with `want` of length 7. That is the
+  check doing its job; extend the list, never the tolerance.
+- **The attribute order in `Emit` is load-bearing and asserted only indirectly.** The key-set
+  test sorts, so nothing in the suite fails if `request_id` moves ahead of `remote`. The rule
+  lives in `Emit`'s comment ("field order of data-model.md's table") — keep new fields last.
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -580,3 +653,43 @@ Things the next iteration would otherwise rediscover:
   (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`, which the
   loop itself cannot run) before T001, or T001 will have to record the gap as an honest
   failure of its own gate rather than inherit a green baseline.
+- **T001 ran with the lint step unmet, and this is that honest record.** Both halves of the
+  warning above came true, and neither was resolved before T001 was taken:
+  - **`golangci-lint run` did not run on the changed Go.** `which golangci-lint` exits 1 for the
+    seventh iteration, and the install the SessionStart hook suggests is refused by this sandbox
+    even with `GOBIN` pointed at `/tmp` — `GOBIN=/tmp/glbin go install …@v2.12.2` comes back
+    "This command requires approval", which a non-interactive session cannot obtain. So **step 9
+    of "Finish an iteration" was not satisfied for T001**, and the milestone's
+    VALIDATION_CONTRACT.md still requires it. What *was* satisfied: `gofmt -l .` silent,
+    `go build ./...`, `go vet ./...`, `-tags tmux`, `-tags quickstart`, the task's Verify, and
+    `go test ./...` entire. **Whoever lands this branch must run
+    `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` outside the loop before the PR.** The
+    change itself is three additions — a `const`, a documented `string` field, and one
+    `if x != "" { … }` in `Emit` — with no new import, no shadowing, no ignored error and no
+    unused identifier, so there is nothing here a linter is likely to object to; that is a
+    reason to expect it green, not evidence that it is.
+  - **T001 was not marked `- [!]` over it**, deliberately. "If the task is unclear or cannot be
+    finished" is for an ambiguity or a precondition the *task* needs; the task finished and is
+    proven by its own Verify plus the whole suite. A `- [!]` halts every later iteration
+    permanently, and halting the milestone over a binary absent from the host — which the loop
+    cannot install and which the notebook has flagged for an outside fix since P1 — would trade
+    a recorded gap for a dead branch. If the next iteration disagrees, the lever is
+    IMPLEMENTATION_PLAN.md and a human, not a `- [!]` from inside the loop.
+  - **The failing-before evidence survived intact**, which P3's finding doubted it could: the
+    tree was clean at the start of this iteration (`git status --short` printed nothing, so the
+    sweep had landed G1's research.md edit), both Verify runs happened inside one iteration with
+    no sweep between them, and the compile error and its line are quoted in the T001 entry
+    above.
+- **T001's commit step could not run either — seventh iteration in a row, same cause.**
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh` is outside `/workspace` and this
+  non-interactive session cannot obtain the approval the sandbox demands; the `$PWD` form is
+  refused earlier still, as unanalysable shell. Nothing was staged and no plain `git commit` was
+  substituted, for P1's reason. The tree carries `internal/audit/audit.go` and
+  `internal/audit/audit_test.go` (both modified) plus the `- [x]` on T001 and the T001 entry
+  above. P1's paths were swept by `0366fa0`, P2's by `8a05811`, P3's by `a4dc0c1`, P4's by
+  `0688536`, P5's by `6a3520b`, G1's by `cf6d8e7`.
+  **For T002 onwards the risk is concrete rather than theoretical**: T002's failing-before test
+  is a compile error in `internal/httpapi`, and if a sweep lands between its two Verify runs the
+  evidence is about a tree that no longer exists. It survived for T001 only because the sweep
+  happened to land before the iteration rather than inside it. Grant the loop permission to
+  execute safe-commit, or run it outside the sandbox after each iteration.

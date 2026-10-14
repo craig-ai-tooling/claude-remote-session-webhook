@@ -34,6 +34,11 @@ const (
 	keyDecision  = "decision"
 	keyReason    = "reason"
 	keyRemote    = "remote"
+
+	// The one key spec 020 FR-015 adds, and the only one whose value a caller
+	// chose. It is last in the set for the same reason RequestID is last on the
+	// struct: the seven above are milestone 1's and their order is the spec's.
+	keyRequestID = "request_id"
 )
 
 // Action names the operation being recorded. The constants are the actions
@@ -411,6 +416,18 @@ type Record struct {
 	// Remote is the peer address, omitted for actions with no request behind
 	// them such as the reaper and startup adoption.
 	Remote string
+
+	// RequestID is the caller's own correlator, so a client can find its own
+	// delivery on a trail it shares with every other caller (spec 020 FR-015).
+	// It is the one caller-chosen value a record may carry, which is why
+	// spec 020 FR-018 amends FR-042 for this field and no other: the handler
+	// that accepts it holds it to 1 to 32 characters of [a-z0-9-], and that
+	// bound cannot hold prompt text, a sentence, a path or a credential.
+	//
+	// Nothing here validates it. The bound belongs at the boundary, and a
+	// second check in this package would be a second rule free to disagree
+	// with the first.
+	RequestID string
 }
 
 // Logger writes records to one sink. Safe for concurrent use: slog's handler
@@ -494,6 +511,9 @@ func (l *Logger) Emit(rec Record) error {
 	}
 	if rec.Remote != "" {
 		r.AddAttrs(slog.String(keyRemote, rec.Remote))
+	}
+	if rec.RequestID != "" {
+		r.AddAttrs(slog.String(keyRequestID, rec.RequestID))
 	}
 
 	// The action is named so a failed write is diagnosable; nothing else from
