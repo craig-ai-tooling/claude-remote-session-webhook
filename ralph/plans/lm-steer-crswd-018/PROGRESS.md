@@ -423,6 +423,56 @@ Things the next iteration would otherwise rediscover:
   substitution and P4's `[ "$(…)" ]`. F1's Verify uses a pipe (`grep -oE … | sort -u | wc -l`)
   and will hit the same wall; count the `| req <n> |` rows with a single `grep -c` instead.
 
+### G1 — implement gate (10/14/26)
+
+Reworded one sentence in `specs/020-prompt-route-safety/research.md` (D8's closing
+paragraph, was lines 185–186), the only file this iteration touched. Markdown only, no Go
+changed. It said "A deferred MAY with a recorded reason is not an open question: **this is
+not a NEEDS CLARIFICATION**, and nothing downstream waits on it." It now says the same
+thing without the literal phrase — the deferral is not an open question under the
+constitution's principle II, the requirement *is* answered ("not built, for these two
+reasons"), and there is nothing for an iteration to stop and ask about. D8's two pieces of
+evidence (probe checks 8, 3 and 9) are untouched; no decision was reopened and no
+requirement was invented.
+
+This is what P2's and P5's notebook entries said G1 must do: the only match in the
+directory was prose asserting that D8's deferral *is not* an open question, so G1's grep
+proxy was failing on a sentence that agreed with it. Marking G1 `- [!]` over that wording
+would have halted the milestone for a false positive.
+
+Commands run and results:
+
+- `! grep -rq 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` → exit 0, so G1's
+  Verify condition holds. **This one ran verbatim**: no command substitution, no pipe, no
+  backtick — the three things this sandbox refuses (P1, P4, P5). `grep -rn 'NEEDS
+  CLARIFICATION' specs/020-prompt-route-safety/` now prints nothing, where before this
+  iteration it printed `research.md:186`.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `golangci-lint run` → **still cannot run**; `which golangci-lint` exits 1, as in P1–P5.
+  This iteration changed no Go, so lint's answer is the committed baseline's.
+- `git status --short` → ` M specs/020-prompt-route-safety/research.md` only.
+
+Things the next iteration would otherwise rediscover:
+
+- **The spec phase and its gate are both done. T001 is the next task**, and it is the first
+  Go change in the milestone. Everything it needs is already in this notebook: P4's entry
+  names the two existing `internal/audit` tests T001 breaks for correct reasons
+  (`TestEmitWritesNoKeyBeyondTheDocumentedSeven` at `internal/audit/audit_test.go:94`, whose
+  `want` list gains `request_id`; `TestRecordCannotCarryFreeFormContent` at `:500`, whose
+  `want` gains `"RequestID"` as the seventh field) and says both must be **extended, not
+  relaxed**. The key constants are at `internal/audit/audit.go:30-36`, `Record` at `:390`,
+  `Emit`'s attribute block at `:468`.
+- **The two unresolved plan gaps are still unresolved**, and neither blocks T001: P4's entry
+  records that T006 and T007 need an edit in `internal/session/harness_test.go`, which is
+  **not** on "Files touched". Whoever takes T006 or T007 with the allowlist unchanged must
+  follow "If the task is unclear or cannot be finished" rather than touch an unlisted file.
+  That decision belongs to a session amending IMPLEMENTATION_PLAN.md, not to a T-task.
+- **`request_id`'s wire shape is settled in the contract**, not to be re-derived: 1–32 of
+  `[a-z0-9-]`, echoed as a sibling of `delivered` in the 202, written as `request_id` on the
+  audit record, absent means absent, and no length and no hash anywhere
+  (`specs/001-crswd-daemon-core/contracts/http-api.md:256-348`, per P5).
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -506,3 +556,27 @@ Things the next iteration would otherwise rediscover:
   twice against a tree whose previous task is committed, and a sweep landing between those two
   runs destroys the evidence. Grant the loop permission to execute safe-commit — or run it
   outside the sandbox for the accumulated paths — before T001 is taken.
+- **G1's commit step could not run either — sixth iteration in a row, same cause.**
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace -m … -- <3 paths>` is outside
+  `/workspace` and this non-interactive session cannot obtain the approval the sandbox demands;
+  the `$PWD` form is refused earlier still, as unanalysable shell. Nothing was staged and no
+  plain `git commit` was substituted, for P1's reason. The tree carries
+  `specs/020-prompt-route-safety/research.md` (modified) plus the `- [x]` on G1 and the G1
+  entry above. P1's paths were swept by `0366fa0`, P2's by `8a05811`, P3's by `a4dc0c1`,
+  P4's by `0688536`, P5's by `6a3520b`.
+  **This is the last iteration for which the sweep arrangement is harmless. T001 is next and
+  it is the first Go change**, so the next iteration is the one P3's finding has been warning
+  about since: the failing-before procedure must run T001's Verify command twice — once
+  against the unchanged code to see it fail, once after the change to see it pass — and a
+  sweep commit landing between those two runs rewrites the tree the evidence is about. Grant
+  the loop permission to execute safe-commit, or run it outside the sandbox for the
+  accumulated paths, **before T001 is taken**.
+- **`golangci-lint` is still absent, and from T001 on that is no longer survivable either.**
+  `which golangci-lint` exits 1 for the sixth iteration. Every iteration so far changed only
+  Markdown, so "lint's answer is the committed baseline's" was honest each time. T001 changes
+  `internal/audit/audit.go` and its test, so that sentence stops being available: step 9 of
+  "Finish an iteration" and VALIDATION_CONTRACT.md both require `golangci-lint run` to exit
+  0 on the changed code. Install the pin outside the sandbox
+  (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`, which the
+  loop itself cannot run) before T001, or T001 will have to record the gap as an honest
+  failure of its own gate rather than inherit a green baseline.

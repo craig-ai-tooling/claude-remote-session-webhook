@@ -182,8 +182,10 @@ Evidence, all from the probe:
   So it does not answer the question the liveness gate (D2) answers, and a gate built on
   it would pass a session that cannot take a prompt.
 
-A deferred MAY with a recorded reason is not an open question: **this is not a
-NEEDS CLARIFICATION**, and nothing downstream waits on it.
+A deferred MAY with a recorded reason is **not an open question** under the
+constitution's principle II, and nothing downstream waits on it. The requirement is
+answered — the answer is "not built, for these two reasons" — so there is nothing here
+for an iteration to stop and ask about.
 
 ## D9 — Out of scope
 
