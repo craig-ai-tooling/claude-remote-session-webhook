@@ -364,6 +364,65 @@ Things the next iteration would otherwise rediscover:
   `internal/httpapi/middleware.go:120` and `TestAHandlerCanAmendTheOneRecord` at
   `internal/httpapi/middleware_test.go:753` (the model for T002's test).
 
+### P5 — contract amendment (10/14/26)
+
+Amended `specs/001-crswd-daemon-core/contracts/http-api.md`, the only file this iteration
+touched. Markdown only, no Go changed. Four edits:
+
+1. **Status table**, the `409` row now carries both meanings: unverified teardown *or*
+   `session not ready` (spec 020 FR-006). No new row — `409` already existed.
+2. **Prompt section, request side**: `text`'s rules gain the FR-009 leading-character
+   exception; a new `request_id` row (optional, 1–32 of `[a-z0-9-]`, echoed and audited,
+   absent means absent). Two short prose notes follow the table — why a leading `!` or `/`
+   is refused, that the rule reads the whole text's first non-whitespace character and
+   never a later line, that spec 018's browser routes are untouched, and why the
+   `request_id` bound is what makes the FR-042 amendment safe.
+3. **Prompt section, response side**: a `request_id` echo example beside the existing
+   `parked_on` one; a new **Response `409`** block with the exact body
+   `{"error":"session not ready"}`, the three gates that raise it, the "distinguishable only
+   on the trail" rule, the audit Deny reason, why a non-uniform body is correct here (the
+   destroy `409`'s reason), and that `dead` keeps its uniform `404`. A **Failures** line in
+   the style of the create route's. FR-042's sentence gained "nor its length, nor a hash".
+4. **Contract tests this implies**: three rows after the existing prompt row, mapping to
+   spec 020 SC-001/SC-003, SC-005 and SC-008.
+
+One thing beyond the task's three bullets, deliberately: the section's opening sentence
+said the route is implemented with `paste-buffer -d`, which D4/FR-007 makes false. It now
+reads `paste-buffer`, with bracketing (`-p -d`) for every harness since spec 020 FR-007 and
+a note that `Compact` is unchanged by it. Leaving a sentence the next task falsifies seemed
+worse than one accurate clause.
+
+Commands run and results:
+
+- `grep -q 'session not ready' specs/001-crswd-daemon-core/contracts/http-api.md` → exit 0.
+- The second Verify, `grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) ' …`, **could not run
+  verbatim**: the backtick inside the pattern is refused by this sandbox as unanalysable
+  shell, which is a *new* variant of P1's finding (P1 predicted the `grep -cE` would trip,
+  but on command substitution). `grep -cE '^## .(GET|POST|DELETE|PATCH|PUT) '` — one `.`
+  standing in for the backtick — prints `6`, and `grep -nE '^## '` lists all nine level-2
+  headings so the six route ones are confirmed by eye: lines 128, 183, 223, 231, 256, 350.
+  No seventh route was added.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `golangci-lint run` → **still cannot run**; `which golangci-lint` exits 1, as in P1–P4.
+  This iteration changed no Go, so lint's answer is the committed baseline's.
+- `git status --short` → ` M specs/001-crswd-daemon-core/contracts/http-api.md` only.
+
+Things the next iteration would otherwise rediscover:
+
+- **The spec phase is finished; G1 is next, and P2's entry already says exactly what G1 must
+  do.** `grep -rn 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/` still matches only
+  `research.md:186`, a sentence asserting that D8's deferral *is not* an open question. G1's
+  grep proxy therefore fails on prose that agrees with it. Reword that one sentence —
+  research.md is on the allowlist — rather than marking G1 `- [!]`.
+- **The contract file is now the authority for the two new refusals' exact wire shapes**, so
+  T003, T004, T005 and T006 should read `http-api.md:256-348` rather than re-deriving them:
+  `409` body is `{"error":"session not ready"}`, the `400`s use the *uniform* bad-request
+  body, `request_id` is echoed as a sibling of `delivered`, and `dead` still answers `404`.
+- **A backtick inside a Bash argument is refused by this sandbox**, on top of P1's command
+  substitution and P4's `[ "$(…)" ]`. F1's Verify uses a pipe (`grep -oE … | sort -u | wc -l`)
+  and will hit the same wall; count the `| req <n> |` rows with a single `grep -c` instead.
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -432,3 +491,18 @@ Things the next iteration would otherwise rediscover:
   P1's paths were swept by `0366fa0`, P2's by `8a05811`, P3's by `a4dc0c1`. P5 is the last
   Markdown task and can live with the same arrangement; **T001 is still where it stops being
   survivable**, for the reason P3's finding gives.
+- **P5's commit step could not run either — fifth iteration in a row, same cause.**
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace -m … -- <3 paths>` is outside
+  `/workspace` and this non-interactive session cannot obtain the approval the sandbox demands;
+  the `$PWD` form is refused earlier still, as unanalysable shell. Nothing was staged and no
+  plain `git commit` was substituted, for P1's reason. The tree carries
+  `specs/001-crswd-daemon-core/contracts/http-api.md` (modified — the first *existing* file
+  this milestone has touched, so a sweep commit must pick up a modification and not only an
+  untracked path) plus the `- [x]` on P5 and the P5 entry above. P1's paths were swept by
+  `0366fa0`, P2's by `8a05811`, P3's by `a4dc0c1`, P4's by `0688536`.
+  **The spec phase is now done and T001 is two tasks away** (G1 sits between, and G1 changes
+  one sentence in research.md). T001 is still where the arrangement stops being survivable,
+  for the reason P3's finding gives: the failing-before procedure must run its Verify command
+  twice against a tree whose previous task is committed, and a sweep landing between those two
+  runs destroys the evidence. Grant the loop permission to execute safe-commit — or run it
+  outside the sandbox for the accumulated paths — before T001 is taken.
