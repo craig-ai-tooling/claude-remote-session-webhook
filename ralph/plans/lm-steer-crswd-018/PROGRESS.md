@@ -121,8 +121,80 @@ first check too), req 2 by T005, req 3 by T006, req 4 by T004, req 5 by T010, re
 
 ## Iterations
 
-(none yet)
+### P1 — research.md (10/14/26)
+
+Wrote `specs/020-prompt-route-safety/research.md`: one `## D<n>` section for each of D1
+to D9 from IMPLEMENTATION_PLAN.md, plus a "Not verified" section. Markdown only, no Go
+changed.
+
+Commands run and results:
+
+- `grep -c '^## D[0-9]' specs/020-prompt-route-safety/research.md` → `9`, so the task's
+  Verify condition (≥ 9) holds. **The Verify command as written could not be run
+  verbatim**: this sandbox refuses command substitution and pipes in Bash, so
+  `[ "$(grep -c …)" -ge 9 ]` is rejected before it runs. The single `grep -c` is the same
+  measurement. A later iteration with the same sandbox should expect this for P4's and
+  F1's Verify commands too, and for `grep -cE` in P5.
+- `gofmt -l .` → no output.
+- `go build ./...` → exit 0.
+- `go vet ./...` → exit 0.
+- `go vet -tags tmux ./...` → exit 0.
+- `go vet -tags quickstart ./cmd/crswd` → exit 0.
+- `golangci-lint run` → **could not run**; see the finding below.
+- `test ! -e go.sum` → exit 0.
+- `git status --short` → `?? specs/020-prompt-route-safety/` only.
+
+Things the next iteration would otherwise rediscover:
+
+- **D4 amends spec 018 FR-006 as well as D5 does.** 018 FR-006 reads in full: "The API
+  door's `POST /sessions/{id}/prompt` MUST be unchanged: plain paste, then Enter.
+  Bracketed paste is for the interactive route only" (`specs/018-interactive-input/spec.md:165`).
+  So moving the API route to `PasteBracketed` contradicts it, not only the leading-`!`/`/`
+  refusal. research.md records both; P2 must write both amendments into spec.md.
+- **FR-025 ("listing conversations MUST NOT open a transcript") is spec 012's**, at
+  `specs/012-session-revival/spec.md:237`, not spec 013's — `docs/security.md:660` and
+  spec 019's research both call it "spec 013 FR-025". research.md cites it without
+  claiming a number of its own. Do not "fix" either file in this milestone; neither is in
+  Files touched.
+- **`LivenessUnknown` reads as alive, and the rule is written on the type**, not only in a
+  spec: `internal/tmuxctl/controller.go:312-332` says every caller must read it as alive
+  and that it is the zero value deliberately. `internal/session/supervisor.go:153-156` is
+  the existing caller that does. T007's "LivenessUnknown delivers" case is therefore
+  consistent with the supervisor, not an exception to it.
+- Spec 001 FR-042, which D7 amends, is at `specs/001-crswd-daemon-core/spec.md:444`.
+- `specs/019-codex-runtime/research.md` is the style to copy for the remaining spec
+  documents in this directory.
 
 ## Findings
 
-(none yet)
+- **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
+  `which golangci-lint` exits 1; the SessionStart hook says the same and suggests
+  `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`, which this
+  sandbox refuses (as it refuses reading the two source documents under
+  `~/code/ai-lawnmower/`). PROGRESS's planning facts recorded golangci-lint 2.12.2 as
+  present, so this is a difference between the planning host and the loop's host rather
+  than a change to the repo. For P1 the gap costs nothing — the iteration changed no Go,
+  so lint's answer is the committed baseline's, which was green at 30941f3 — but **a
+  T-task cannot honestly tick that step**, and the milestone's VALIDATION_CONTRACT.md
+  requires `golangci-lint run` to exit 0. Either the binary gets installed outside the
+  loop or the first T-task iteration will have to record the same gap.
+- **The commit step for P1 could not run, so P1's three files are on disk and uncommitted.**
+  `~/code/ai-lawnmower/loop/safe-commit.sh` exists and is executable (`test -x` exits 0),
+  but this sandbox will not execute anything outside `/workspace` without an approval
+  this non-interactive session cannot obtain — the same restriction that blocks reading
+  the two design documents and `go install`. No substitute was used: a plain
+  `git commit` would skip whatever safe-commit enforces, and that script is unreadable
+  from here, so swapping it out would be a guess. The tree therefore carries
+  `specs/020-prompt-route-safety/research.md` (new), and the `- [x]` on P1 plus this
+  entry in the notebook. **Nothing was staged.** Either run safe-commit outside the
+  sandbox for these three paths, or grant the loop permission to execute it, before
+  the next iteration — a later iteration reading a dirty tree will see P1 ticked and
+  will not redo it, but F1's and the validation contract's checks run against a
+  committed tree.
+- The two source documents the plan cites (`~/code/ai-lawnmower/docs/mcp-session-steering-design.md`
+  section (g), and `~/code/ai-lawnmower/ralph/plans/lm-steer-design/results.md`) are
+  **unreadable from the loop** — outside the allowed working directory. research.md is
+  therefore written from the decisions and probe-check summaries already copied into
+  IMPLEMENTATION_PLAN.md and this notebook, which is what "Decisions already made (copy
+  these into research.md; do not reopen them)" asks for. No probe check was cited beyond
+  the ones those two files restate (checks 1, 3, 8, 9, 13).
