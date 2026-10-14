@@ -121,8 +121,113 @@ first check too), req 2 by T005, req 3 by T006, req 4 by T004, req 5 by T010, re
 
 ## Iterations
 
-(none yet)
+### P1 — research.md (10/14/26)
+
+**Changed.** Created `specs/020-prompt-route-safety/research.md`, the only file this
+iteration touched besides this notebook and the plan's checkbox. One `## D<n>` section
+per decision D1 to D9 from IMPLEMENTATION_PLAN.md, each carrying the evidence it cites,
+plus three sections the verify command does not ask for and the next tasks need: "Where
+the evidence comes from" (which of Probe / Design / Code each claim leans on), "The
+route as it stands" (the measured baseline the hardening is written against), and "Not
+verified".
+
+**Commands run.**
+
+| Command | Result |
+|---|---|
+| `grep -c '^## D[0-9]' specs/020-prompt-route-safety/research.md` | `9` — the task's verify (`-ge 9`) exits 0 |
+| `grep -rn 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/` | no output, so G1's verify and the validation contract's "no open question" both pass |
+| `gofmt -l .` | prints nothing |
+| `go build ./...` | exit 0 |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` | **could not run — see finding F2** |
+| `test ! -e go.sum` | exit 0 |
+| `git status --short` | `?? specs/020-prompt-route-safety/` only |
+
+**What the next iteration would otherwise rediscover.**
+
+- **Do not write the words N-E-E-D-S C-L-A-R-I-F-I-C-A-T-I-O-N into any file under
+  `specs/020-prompt-route-safety/`, not even to say the spec has none.** G1's verify and
+  the validation contract both `grep -r` that directory for the phrase, so a sentence
+  denying it fails the gate as loudly as a real one. D8 in research.md had to be
+  reworded for exactly this. If a genuine open question ever appears, it belongs in
+  *this* notebook under NEEDS CLARIFICATION and in a `- [!]` box, which is what the
+  PROMPT already says.
+- **Line references verified in tree at `30941f3`**, so P2 to P5 and T001+ need not
+  re-grep for them: `promptSession` `internal/httpapi/sessions.go:772`, `refusePrompt`
+  `:849` (`ErrEmptyPrompt`→400, everything else→500, no 409 today), `promptRequest`
+  `:264-270` (one field, emptiness and body size are "the whole of its validation"),
+  `Manager.Prompt` `internal/session/manager.go:1194-1224`, `m.paste` `:1253`,
+  `claimRestart`/`releaseRestart` `:2674-2688`, `lockSession`
+  `internal/session/input.go:171`, `ValidateTyped` `:75-92`, `Manager.Type` `:101`
+  (calls `ValidateTyped` at `:105`, `PasteBracketed` at `:117`), `newBufferName`
+  `internal/tmuxctl/exec.go:186-195`, `Exec` liveness `:548`, `Liveness` constants
+  `internal/tmuxctl/controller.go:312-341`, `PasteBracketed` on the interface `:51`,
+  fake `livenessOf` `internal/tmuxctl/fake.go:251` and `nextBuffer` `:280`,
+  `audit.Record` `internal/audit/audit.go:390-414`, `StateFailed`
+  `internal/session/session.go:86` set at `internal/session/supervisor.go:311-314`,
+  `LivenessUnknown` treated as healthy at `internal/session/supervisor.go:153-156`.
+- **The contract's six route headings are at `specs/001-crswd-daemon-core/contracts/http-api.md`
+  lines 128, 183, 223, 231, 256 (the prompt route) and 304.** P5 edits the 256 block and
+  must not add a seventh `## ` heading of that shape.
+- **`~/code/ai-lawnmower/` is not readable from the loop's sandbox** — both the design
+  doc and the probe results are outside `/workspace` and the read is refused. Every
+  probe fact this milestone needs is already transcribed into this notebook, which is
+  what research.md cites. Do not plan a task that has to open either file.
+- **Requirement 5 is half built already.** `lockSession` is taken by `Prompt` today and
+  `Exec.paste` already draws a fresh buffer name per call, so T010 adds the restart
+  claim and *proves* the other two rather than building them.
 
 ## Findings
 
-(none yet)
+### F1 — bracketing the API door's paste meets text nothing validates (opened by P1)
+
+**What.** D4 makes `Manager.Prompt` use `PasteBracketed` for every harness. The API
+door's prompt text is validated for emptiness and the body-size bound and nothing else
+(`internal/httpapi/sessions.go:264-270`: "that is the whole of its validation
+(FR-030)"). The C0-control refusal that `docs/security.md` §2 describes —
+"inside a bracketed paste `ESC[201~` would end the paste" — is `session.ValidateTyped`
+(`internal/session/input.go:75-92`), and it is called by `Manager.Type` (`:105`) and
+**not** by `Manager.Prompt`.
+
+**So.** Under today's plain paste those bytes are inert. Under D4 a caller that sends
+`\x1b[201~` mid-text ends the paste early, and the remainder reaches the pane as
+keystrokes rather than as pasted text — on a route whose session runs unsandboxed.
+
+**Not resolved here, and deliberately not invented away.** D4 as decided adds no
+refusal and P1 does not get to add one. **P2 must decide it in spec.md**: either the
+API door's prompt text goes through `ValidateTyped` (the mechanism exists, one call
+away, and T006 is where it would land) or the exposure is accepted in writing with the
+reason. If P2 cannot decide it from the plan, that is a real open question and P2 is
+the task that should stop on it.
+
+**What is known.** No measured client sends a control byte: every block under "Payload
+fixtures" above is printable text plus newlines, so either answer keeps lawnmower
+working. research.md D4 carries this under "A consequence this decision does not close".
+
+### F2 — `golangci-lint` is absent from this host, so the lint gate could not run
+
+**What.** The PROMPT's finish step 9 and the plan's pre-commit step 6 both require
+`GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` to exit 0. The binary is not
+installed here (`which golangci-lint` finds nothing; only `/usr/local/go/bin/go`,
+`gofmt` and `/usr/bin/tmux` are present), and the session-start hook says so too. The
+install the hook suggests, `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2`,
+needs the network and is refused in this sandbox. Note this **contradicts** "Tools on
+this host: … golangci-lint 2.12.2" under "Facts measured while planning" — that fact
+was measured on the planning host, not on the loop's.
+
+**Why P1 was committed anyway rather than marked `- [!]`.** P1 changed Markdown only
+(the PROMPT: "Spec tasks (P1 to P5) change Markdown only, no Go"), so there is no Go
+for the linter to have an opinion about and the lint result is byte-identical to the
+baseline at `30941f3`, which CI already ran. Marking `- [!]` stops every later
+iteration as well, which would halt the milestone over a dev tool unrelated to the
+change. The gate is recorded as **not run**, not as passed.
+
+**What the next iterations must do.** P2 to P5 are Markdown-only and inherit the same
+reasoning. **T001 onward change Go, and for those the gate is real**: an iteration that
+cannot run the linter on a Go change should not claim the pre-commit list passed. If it
+is still missing then, that iteration should install it if the sandbox allows, and
+otherwise mark its task `- [!]` and say so here. CI runs `golangci-lint run`
+regardless, so nothing merges unlinted.
