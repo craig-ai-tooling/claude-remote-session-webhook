@@ -180,9 +180,106 @@ verified".
   `Exec.paste` already draws a fresh buffer name per call, so T010 adds the restart
   claim and *proves* the other two rather than building them.
 
+### P2 — spec.md (10/14/26)
+
+**Changed.** Created `specs/020-prompt-route-safety/spec.md`, the only file this
+iteration touched besides this notebook and the plan's checkbox. Six user stories
+(P1 for the three safety ones, P2 for the leading-character rule and the restart
+claim, P3 for `request_id`), an Edge Cases list, FR-001 to FR-021, Key Entities,
+SC-001 to SC-008 and Assumptions. Requirements 1 to 6 are FR-001 to FR-014;
+requirement 7 is FR-020 under "Out of scope"; the two amendments are FR-018
+(spec 018 FR-006) and FR-019 (spec 001 FR-042).
+
+**F1 is decided — the API door's prompt gains the control-character refusal.**
+This was the one thing P1 left for P2, and spec.md settles it as FR-007 rather
+than accepting the exposure. What was decided, and the two bounds on it that are
+*not* obvious and that T006 must honour:
+
+- **The rule is the character rule only**: not valid UTF-8, or any byte in
+  `0x00–0x1F` other than `0x09`/`0x0A`, or `0x7F` → `400`, uniform bad-request
+  body, before any tmux command. It must be **the same predicate** that
+  `session.ValidateTyped` applies, not a second copy of it.
+- **The length bound is deliberately NOT adopted.** `ValidateTyped` also enforces
+  `MaxTypeBytes` = 16384 (`internal/session/input.go:59`), while this route's
+  bound today is `CRSW_MAX_BODY_BYTES`, default **65536**
+  (`internal/config/config.go:302`). Calling `ValidateTyped` wholesale from
+  `Manager.Prompt` would therefore *tighten a live route's limit by 4x* for no
+  requirement — a client break. So T006 needs the character half factored out, or
+  an equivalent that leaves the length to the body bound. Do not just add
+  `ValidateTyped(text)` to `Prompt` and call it done.
+- **No CRLF normalisation on this door.** Spec 018's route rewrites `\r\n` before
+  validating because a textarea produces it; the API door delivers caller bytes
+  byte-for-byte (`internal/httpapi/sessions.go:264-270`), so a bare `\r` is
+  refused, not rewritten. No measured caller sends one.
+- Why refuse rather than accept the exposure: `docs/security.md` §2 is binding and
+  constitution I makes it a gate, and FR-006's bracketing is what makes
+  `\x1b[201~` live on this route. Closing it in the same change that opens it is
+  cheaper than documenting it. Reachability was checked: Go's JSON decoder refuses
+  a *raw* control byte inside a string, but a body may spell ESC as its
+  six-character JSON escape (backslash, `u`, `001b`), which decodes to a real ESC
+  byte in the text. So the hole is reachable by a well-formed body today.
+  (Spelled out in words because the Write tool turns that escape into a literal
+  ESC byte in the file — the milestone-1-3 archive note is about the same trap.)
+
+**Two more facts measured this iteration, both load-bearing for the T-tasks.**
+
+- **`Manager.Prompt` has exactly one caller**, `internal/httpapi/sessions.go:796`
+  (`grep -rn '\.Prompt(' --include=*.go | grep -v _test.go` returns that one
+  line). So a rule placed in `Manager.Prompt` is API-door-only *by construction*,
+  which is how D5's and FR-007's "API door only" are satisfied without a flag or a
+  second entry point. The browser type route goes through `Manager.Type`, and
+  `Compact` through `Manager.Compact`.
+- `refusePrompt` (`sessions.go:849`) today has two branches only —
+  `ErrEmptyPrompt` → 400, everything else → `failInternal`. T005 adds the 409 and
+  T004/T006 need the 400 branch to cover `ErrInputInvalid` as well, or a
+  control-character refusal returned from the manager becomes a 500.
+
+**Commands run.**
+
+| Command | Result |
+|---|---|
+| `grep -q 'session not ready' … && grep -q request_id … && ! grep -q 'NEEDS CLARIFICATION' …` | exit 0 — the task's verify |
+| `! grep -rq 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` | exit 0, so G1's gate and the validation contract still pass with spec.md present |
+| `gofmt -l .` | prints nothing |
+| `go build ./...` | exit 0 |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` | **could not run — finding F2, unchanged; `which golangci-lint` still finds nothing** |
+| `test ! -e go.sum` | exit 0 |
+| `git status --short` | `?? specs/020-prompt-route-safety/spec.md` only |
+
+**What the next iteration would otherwise rediscover.**
+
+- **P3 to P5 inherit F2's reasoning** (Markdown only, lint byte-identical to the
+  baseline). T001 onward change Go and the gate is real for them.
+- **P3's plan.md gets its Constitution Check from the gates already named here**:
+  principle I is FR-005/FR-007/FR-008 (refuse at the boundary, uniform answers),
+  VI is FR-001/FR-003/FR-004 (bounded blast radius — a prompt never reaches a
+  shell), IV is why `Compact`, the browser route and the length bound are all left
+  alone, and III is SC-001 to SC-008. No principle needs a justification for
+  widening, because nothing here widens: every requirement is a refusal except
+  `request_id`.
+- **P4's tasks.md must put FR-007 inside T006** (F1 named T006 as where it lands),
+  and T006's entry has to say the length bound is not adopted — otherwise the
+  obvious implementation is the wrong one, per the bullet above.
+- **P5 edits the contract's prompt block at line 256** and must not add a seventh
+  `## ` route heading. FR-012's field, FR-005's 409 and FR-008's 400 all land
+  there.
+- **The FR numbers are now fixed**, so tasks.md and plan.md can cite them: reqs 1
+  to 6 → FR-001 to FR-014, req 7 → FR-020, amendments → FR-018 (018 FR-006) and
+  FR-019 (001 FR-042), the docs change → FR-017.
+
 ## Findings
 
-### F1 — bracketing the API door's paste meets text nothing validates (opened by P1)
+### F1 — bracketing the API door's paste meets text nothing validates (opened by P1, decided by P2)
+
+**Resolved by P2 as FR-007 in spec.md**: the API door's prompt gains the
+control-character and UTF-8 refusal, as the same predicate `ValidateTyped`
+applies, and **not** its 16384-byte length bound. See the P2 iteration entry above
+for the two bounds T006 must honour. The original statement of the finding
+follows, unchanged.
+
 
 **What.** D4 makes `Manager.Prompt` use `PasteBracketed` for every harness. The API
 door's prompt text is validated for emptiness and the body-size bound and nothing else
