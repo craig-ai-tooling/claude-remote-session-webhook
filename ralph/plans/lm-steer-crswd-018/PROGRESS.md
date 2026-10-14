@@ -272,6 +272,98 @@ Things the next iteration would otherwise rediscover:
   called — so `ExitAfterPaste` only needs to set `paneCommand` to a non-matching value
   after the next paste, and the liveness follows.
 
+### P4 — tasks.md (10/14/26)
+
+Wrote `specs/020-prompt-route-safety/tasks.md`: a preamble (tests required, what to read
+first, the eight-command gate, six global guardrails, how to read an entry), a Phase 0 note
+pointing at P1–P5 and G1, then T001 to T013 grouped into seven phases that follow the spec's
+user stories in plan.md's dependency order — Phase 1 correlation (US6: T001–T003), Phase 2 the
+first character (US4: T004), Phase 3 readiness (US2: T005), Phase 4 delivery (US3: T006),
+Phase 5 liveness (US1: T007–T009), Phase 6 the lock and the claim (US5: T010), Phase 7 proof
+and documentation (T011–T013). Each entry is a `- [ ] T0NN <title>` line carrying the
+notebook's title verbatim, with sub-bullets for Files, what it implements, the Change, the
+**Failing-before test** (name, assertions, and how it fails against the unchanged code), Also
+update, **Verify**, Depends and Guardrails. Closes with the dependency table, a requirement-
+coverage table mapping design requirements 1–7 to tasks, FRs and the failing-before row that
+proves each, and Notes. Markdown only, no Go changed.
+
+Commands run and results:
+
+- `grep -cE '^- \[ \] T0(0[1-9]|1[0-3]) ' specs/020-prompt-route-safety/tasks.md` → `13`, so
+  P4's Verify condition (`-eq 13`) holds. **The Verify command as written could not be run
+  verbatim**, exactly as P1 predicted: `[ "$(grep -cE …)" -eq 13 ]` is refused by this sandbox
+  as "shell syntax that cannot be statically analyzed" before it runs. The single `grep -cE` is
+  the same measurement. `grep -oE '^- \[ \] T[0-9]+'` prints T001…T013 once each, so the count
+  is thirteen distinct IDs and not a duplicate.
+- `grep -rn 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/` → still exactly one match,
+  `research.md:186`, unchanged by this iteration. tasks.md deliberately avoids the literal
+  phrase, as spec.md and plan.md do.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `golangci-lint run` → **still cannot run**; `which golangci-lint` exits 1, as in P1, P2 and
+  P3. This iteration changed no Go, so lint's answer is the committed baseline's.
+- `git status --short` → `?? specs/020-prompt-route-safety/tasks.md` only.
+
+Things the next iteration would otherwise rediscover:
+
+- **Two T-tasks need an assertion in `internal/session/harness_test.go`, which is NOT on the
+  allowlist.** This was found by reading the code while writing tasks.md and is the one real
+  gap in the plan. Both cases are recorded in their task entries:
+  - `TestPromptClaudeUnchanged` (`internal/session/harness_test.go:237`) asserts that a Claude
+    prompt uses **no** bracketed paste and no `-p` — the direct negation of FR-007. **T006
+    cannot exit 0 without that assertion changing.**
+  - `TestPromptCodexIsBracketed` (`:214`) creates a Codex session on the fake. `Fake.New` sets
+    `paneCommand` to `fakeAliveCommand` (`"claude"`, `internal/tmuxctl/fake.go:340`) while the
+    session's `@crswd-binary` is Codex's process set, so `livenessOf` (`fake.go:249`) reads
+    **stopped** and **T007's gate refuses the prompt that test expects to deliver.** The fix is
+    one `SetPaneCommand(s.TmuxName(), "codex")` in `codexFixture` (`:192`).
+  The options, for whoever resolves this: add `internal/session/harness_test.go` to "Files
+  touched" in IMPLEMENTATION_PLAN.md (one path, two edits, both of which an FR requires), or
+  decide something else deliberately. P4 did **not** change the allowlist — that is a plan
+  decision, not a spec-document one. A T006 or T007 iteration that finds the gap unresolved
+  must follow "If the task is unclear or cannot be finished" rather than edit an unlisted file
+  or delete a test to make the suite pass.
+- **T001 breaks two existing `internal/audit` tests for correct reasons, and both must be
+  extended rather than relaxed**: `TestEmitWritesNoKeyBeyondTheDocumentedSeven`
+  (`internal/audit/audit_test.go:94`) — its `want` list gains `request_id` — and
+  `TestRecordCannotCarryFreeFormContent` (`:500`) — `want` gains `"RequestID"` as the seventh
+  field, and its every-field-is-a-string check is the half of FR-018 that makes the amendment
+  safe. The key constants are at `audit.go:30-36`; `Emit`'s attribute block is at `:468`.
+- **T006 breaks five more assertions, all in allowlisted files**, each because the prompt's op
+  changes from `OpPaste` to `OpPasteBracketed`: `internal/httpapi/sessions_test.go:1071-1073`
+  and `:1222`, `internal/audit/leak_test.go:955` and `:1358` (both `FailOp(OpPaste, …)` for a
+  prompt that must still answer 500), and `internal/session/manager_test.go:1239`.
+  `TestCompactUsesBufferPath` (`manager_test.go:1258`) and `TestCompactClaudeUnchanged`
+  (`harness_test.go:277`) must stay green **unedited** — that is D4's "Compact unchanged".
+- **No payload in the tree starts with `!` or `/`, so T004 breaks nothing.** Checked:
+  `hostilePrompts` (`internal/httpapi/sessions_test.go:1029`) starts with `;`, `f`, `a`; the
+  leak suite's `promptText` starts with `markPrompt` = `CANARY-PROMPT`
+  (`internal/audit/leak_test.go:83`, `:128`); `dashPayloads` starts with `echo`
+  (`cmd/crswd/quickstart_dashboard_test.go:489`).
+- **T004's browser-door test must go in `internal/httpapi/sessions_test.go`.** The existing
+  type-route tests live in `internal/httpapi/input_test.go`, which is **not** on the allowlist;
+  read `TestTypeDeliversAndAnswersNoContent` (`input_test.go:87`) for the fixture shape and
+  write the new test beside the prompt tests instead.
+- **T009's `C-u` is a daemon constant beside `enterKey` (`internal/session/manager.go:39`) and
+  `interruptKey` (`:80`).** Do **not** add it to `internal/session/input.go`'s key table
+  (`:35`, `:43`) — that table is the browser's closed key set, and widening it would put a new
+  key on the session page's bar.
+- **`ErrSessionNotReady` has to be declared in `internal/session/manager.go`.** Its siblings
+  live in the `var (…)` block at `internal/session/session.go:633`, and `session.go` is not on
+  the allowlist. Declare it beside `Manager.Prompt` and say why in its comment.
+- **The liveness helper T007 adds reads `Controller.List` and matches `SessionInfo.Name`
+  against `s.TmuxName()`.** `SessionInfo.Claude` is the field
+  (`internal/tmuxctl/controller.go:303-316`); `LivenessUnknown` is the zero value deliberately
+  and must be read as alive (`:322-332`), which `internal/session/supervisor.go:153-156`
+  already does.
+- **`ExitAfterPaste` copies `QuitAfterInterrupts` (`internal/tmuxctl/fake.go:386`)**, consumed
+  in `Fake.Paste` (`:405`) and `Fake.PasteBracketed` (`:427`) after the two calls are recorded.
+- `Manager.Prompt` is at `internal/session/manager.go:1194`; `claimRestart` at `:2674` and
+  `releaseRestart` at `:2688`; `promptSession` at `internal/httpapi/sessions.go:772`,
+  `paneDialogState` at `:828`, `refusePrompt` at `:849`; `RequestAudit.SetSessionID` at
+  `internal/httpapi/middleware.go:120` and `TestAHandlerCanAmendTheOneRecord` at
+  `internal/httpapi/middleware_test.go:753` (the model for T002's test).
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -331,3 +423,12 @@ Things the next iteration would otherwise rediscover:
   a sweep may land between its two runs. Grant the loop permission to execute
   safe-commit — or run it outside the sandbox for the accumulated paths — before T001 is
   taken.
+- **P4's commit step could not run either — fourth iteration in a row, same cause.**
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace -m … -- <3 paths>` is outside
+  `/workspace` and this non-interactive session cannot obtain the approval the sandbox demands;
+  the `$PWD` form is refused earlier still, as unanalysable shell. Nothing was staged and no
+  plain `git commit` was substituted, for P1's reason. The tree carries
+  `specs/020-prompt-route-safety/tasks.md` (new) plus the `- [x]` on P4 and the P4 entry above.
+  P1's paths were swept by `0366fa0`, P2's by `8a05811`, P3's by `a4dc0c1`. P5 is the last
+  Markdown task and can live with the same arrangement; **T001 is still where it stops being
+  survivable**, for the reason P3's finding gives.
