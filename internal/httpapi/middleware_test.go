@@ -785,6 +785,58 @@ func TestAHandlerCanAmendTheOneRecord(t *testing.T) {
 	}
 }
 
+// TestAHandlerCanAmendTheOneRecordWithARequestID covers spec 020 FR-015: the
+// prompt route's caller may send a correlator, and the trail is where it has to
+// land for the caller to find its own request again. An absent one leaves the
+// record exactly as it is today — the amendment to 001 FR-042 is one bounded
+// field, not a key that appears empty on every record in the trail.
+func TestAHandlerCanAmendTheOneRecordWithARequestID(t *testing.T) {
+	t.Parallel()
+
+	const sessionID = "4b7d2e9a1c0f58361d8a7b2c3e4f5061"
+
+	cases := []struct {
+		name  string
+		given string
+		want  any // nil means the key must be absent, not empty.
+	}{
+		{name: "a value the handler validated", given: "abc-123", want: "abc-123"},
+		{name: "none sent", given: "", want: nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newAuditedServer(t)
+			probe := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				ra := AuditFrom(r.Context())
+				ra.SetSessionID(sessionID)
+				ra.SetRequestID(tc.given)
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/sessions/"+sessionID+"/prompt", nil)
+			signRequest(t, req, nil, testTime)
+			s.authenticate(audit.ActionSessionPrompt, probe).ServeHTTP(httptest.NewRecorder(), req)
+
+			got := s.only(t)
+			if _, ok := got["request_id"]; !ok && tc.want != nil {
+				t.Fatalf("the record carries no request_id; want %q", tc.want)
+			}
+			if got["request_id"] != tc.want {
+				t.Errorf("request_id = %v; want %v", got["request_id"], tc.want)
+			}
+			if got["session_id"] != sessionID {
+				t.Errorf("session_id = %v; want %q — the correlator must not displace what the daemon knows",
+					got["session_id"], sessionID)
+			}
+			if got["action"] != string(audit.ActionSessionPrompt) {
+				t.Errorf("action = %v; want %q", got["action"], audit.ActionSessionPrompt)
+			}
+		})
+	}
+}
+
 // TestAuditFromIsSafeOutsideTheMiddleware keeps a handler under direct unit test
 // from having to nil-check before it can record anything.
 func TestAuditFromIsSafeOutsideTheMiddleware(t *testing.T) {
@@ -795,6 +847,7 @@ func TestAuditFromIsSafeOutsideTheMiddleware(t *testing.T) {
 		t.Fatalf("AuditFrom(background) = %v; want nil", ra)
 	}
 	ra.SetSessionID("abc")
+	ra.SetRequestID("abc-123")
 	ra.Deny("nothing to record")
 }
 

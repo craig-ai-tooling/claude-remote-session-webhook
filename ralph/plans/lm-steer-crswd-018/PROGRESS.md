@@ -546,6 +546,90 @@ Things the next iteration would otherwise rediscover:
   test sorts, so nothing in the suite fails if `request_id` moves ahead of `remote`. The rule
   lives in `Emit`'s comment ("field order of data-model.md's table") — keep new fields last.
 
+### T002 — `RequestAudit.SetRequestID` (10/14/26)
+
+Two files, both allowlisted: `internal/httpapi/middleware.go` and
+`internal/httpapi/middleware_test.go`. `promptSession` was **not** touched — that is T003,
+and keeping the setter and its caller in separate iterations is what keeps each
+failing-before test honest (tasks.md's guardrail on this task).
+
+What changed in `middleware.go`:
+
+- `SetRequestID(id string)` added immediately **before** `Deny` and after `SetSessionID`,
+  nil-safe in the one-line shape every other method on the type uses
+  (`if a == nil { return }`, then one assignment). It sets `a.rec.RequestID`.
+- Its doc comment carries the three rules a caller must not get wrong: it is the only
+  method on `RequestAudit` that is *given* caller-supplied bytes, which 001 FR-042
+  otherwise forbids; the 1-to-32-of-`[a-z0-9-]` bound is the **handler's** (FR-014) and is
+  deliberately not repeated here or in `internal/audit`, because a second validator is a
+  second rule free to disagree; and the `emitted` field's ordering rule applies to this
+  amendment as to every other.
+
+Failing-before evidence (PROMPT.md's procedure, test written first):
+
+- `go test ./internal/httpapi/ -run RequestID` against the unchanged code →
+  `internal/httpapi/middleware_test.go:815:8: ra.SetRequestID undefined (type *RequestAudit
+  has no field or method SetRequestID)` and the same at `:850:5`, then
+  `FAIL … [build failed]`. Exactly the shape tasks.md predicted.
+- The same command after the change → `ok … 0.006s`, exit 0. Re-run with `-v` to prove the
+  filter actually selected something rather than passing on zero tests: both subtests ran
+  and passed.
+- **No row was added to "Failing-before evidence" above.** T002 does not prove a
+  requirement on its own; req 6's row belongs to T003, per that table's own preamble.
+
+Tests:
+
+- New `TestAHandlerCanAmendTheOneRecordWithARequestID`, modelled on
+  `TestAHandlerCanAmendTheOneRecord` (`middleware_test.go:753`), table-driven with
+  `t.Parallel()` on the outer and each subtest. Two rows: `"abc-123"` → the one record
+  carries `request_id` with that value; `""` → the key is **absent**, asserted as absent
+  (`_, ok := got["request_id"]` against a `want` of `nil`) rather than as `""`, which is
+  what keeps the FR-042 amendment one bounded field instead of an empty key on every
+  record. Both rows also assert `session_id` and `action` survive, so a correlator cannot
+  displace what the daemon itself knows. It drives `audit.ActionSessionPrompt`, the route
+  the field exists for.
+- `TestAuditFromIsSafeOutsideTheMiddleware` (`:790`) gained one line,
+  `ra.SetRequestID("abc-123")`, because that test is the standing proof of the comment on
+  `AuditFrom` ("every method on *RequestAudit is nil-safe"), and a new method absent from
+  it makes that sentence partly unverified. Note `-run RequestID` does **not** select this
+  test; `go test ./internal/httpapi/` does.
+
+Commands run and results:
+
+- `go test ./internal/httpapi/ -run RequestID` → exit 0 (the task's Verify).
+- `go test ./internal/httpapi/` → `ok … 7.228s`. Run beyond the task's gate because the new
+  method sits on a type the whole package's middleware tests exercise.
+- `go test ./...` → every package `ok`, nothing else printed.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **could not run**, second Go
+  iteration in a row. See the finding below.
+- `git status --short` → ` M internal/httpapi/middleware.go` and
+  ` M internal/httpapi/middleware_test.go`, both on the allowlist.
+
+Things the next iteration would otherwise rediscover:
+
+- **T003 is next and nothing blocks it.** Everything it needs is already located: `promptRequest`
+  at `internal/httpapi/sessions.go:264` (one field today), `promptResponse` at `:283`,
+  `promptSession` at `:772`, `paneDialogState` at `:828`, `refusePrompt` at `:849`, and
+  `newPromptFixture` at `internal/httpapi/sessions_test.go:883`. The validator and its sentinel
+  go in `sessions.go`; the setter it calls now exists.
+- **The order of the two new 400s in `promptSession` matters and is settled**: the
+  `request_id` check runs immediately after `decode` and **before** `paneDialogState`, because
+  that helper captures the pane whenever `req.Text != ""` — an invalid body must not cost the
+  host even a pane read (P3's entry, plan.md's Design section, tasks.md T003).
+- **`request_id`'s wire shape is settled in the contract and must not be re-derived**: 1–32 of
+  `[a-z0-9-]`, echoed as a sibling of `delivered` in the 202, written as `request_id` on the
+  audit record, absent means absent, no length and no hash anywhere
+  (`specs/001-crswd-daemon-core/contracts/http-api.md:256-348`).
+- **An absent field is valid; an empty one is not.** FR-014 says 1 to 32, so `""` sent
+  explicitly is a `400` while no field at all is fine. T002's own table already draws that
+  line on the audit side; T003 has to draw it on the request side too.
+- **The two unresolved plan gaps are still unresolved**, and neither blocks T003: T006 and T007
+  need an edit in `internal/session/harness_test.go`, which is **not** on "Files touched" (P4's
+  entry has the detail). Whoever takes T006 or T007 with the allowlist unchanged must follow
+  "If the task is unclear or cannot be finished" rather than touch an unlisted file.
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -693,3 +777,31 @@ Things the next iteration would otherwise rediscover:
   evidence is about a tree that no longer exists. It survived for T001 only because the sweep
   happened to land before the iteration rather than inside it. Grant the loop permission to
   execute safe-commit, or run it outside the sandbox after each iteration.
+- **T002 ran with the lint step unmet as well, and this is that record.** `which golangci-lint`
+  exits 1 for the eighth iteration, and `GOBIN=/tmp/glbin go install …@v2.12.2` comes back
+  "This command requires approval" again, which a non-interactive session cannot obtain. So
+  **step 9 of "Finish an iteration" was not satisfied for T002 either**, and
+  VALIDATION_CONTRACT.md still requires it. What *was* satisfied: `gofmt -l .` silent,
+  `go build ./...`, `go vet ./...`, `-tags tmux`, `-tags quickstart`, the task's Verify, the
+  whole `internal/httpapi` suite, and `go test ./...` entire. **Whoever lands this branch must
+  run `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` outside the loop before the PR**, and
+  it now covers two tasks' Go rather than one. T002's change is one nil-safe five-line method
+  and a table-driven test — no new import, no shadowing, no ignored error, no unused identifier
+  — so there is nothing here a linter is likely to object to; that is a reason to expect it
+  green, not evidence that it is. T002 was not marked `- [!]` over it, for the reason T001's
+  entry gives: the lever for a host-level absence is IMPLEMENTATION_PLAN.md and a human, not a
+  `- [!]` that halts every later iteration permanently.
+- **T002's failing-before evidence survived intact**, as T001's did. The tree was clean at the
+  start of this iteration (`git status --short` printed nothing, so the sweep `bba417b` had
+  landed T001's two files), and both Verify runs happened inside one iteration with no sweep
+  between them. The compile error and both its lines are quoted in the T002 entry above.
+- **T002's commit step could not run either — eighth iteration in a row, same cause.**
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh` is outside `/workspace` and this
+  non-interactive session cannot obtain the approval the sandbox demands; the `$PWD` form is
+  refused earlier still, as unanalysable shell. Nothing was staged and no plain `git commit` was
+  substituted, for P1's reason. The tree carries `internal/httpapi/middleware.go` and
+  `internal/httpapi/middleware_test.go` (both modified) plus the `- [x]` on T002 and the T002
+  entry above. P1's paths were swept by `0366fa0`, P2's by `8a05811`, P3's by `a4dc0c1`, P4's by
+  `0688536`, P5's by `6a3520b`, G1's by `cf6d8e7`, T001's by `bba417b`. The sweep has landed
+  cleanly between every pair of iterations so far, which is why the evidence has survived twice;
+  it is still luck rather than a guarantee.

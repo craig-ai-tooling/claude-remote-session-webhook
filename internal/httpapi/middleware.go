@@ -124,6 +124,25 @@ func (a *RequestAudit) SetSessionID(id string) {
 	a.rec.SessionID = id
 }
 
+// SetRequestID records the correlator the caller sent, so a caller holding a 202
+// can find its own request on the trail (spec 020 FR-015).
+//
+// It is the one method here that is *given* caller-supplied bytes, which 001
+// FR-042 otherwise forbids on a record, so it may be called only with a value
+// the handler has already held to FR-014's bound — 1 to 32 of [a-z0-9-]. The
+// check belongs at the boundary and is deliberately not repeated here or in
+// internal/audit: a second validator is a second rule, free to disagree with the
+// first about what reaches the trail.
+//
+// The ordering rule the emitted field states applies to this as to every other
+// amendment: a handler that emits early must say this first.
+func (a *RequestAudit) SetRequestID(id string) {
+	if a == nil {
+		return
+	}
+	a.rec.RequestID = id
+}
+
 // Deny turns the record into a refusal with a server-authored reason. It is what
 // an ownership or token failure calls (T023) — the client still gets the uniform
 // 404, and this is where the truth of it is kept.
