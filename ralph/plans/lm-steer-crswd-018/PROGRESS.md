@@ -165,6 +165,54 @@ Things the next iteration would otherwise rediscover:
 - `specs/019-codex-runtime/research.md` is the style to copy for the remaining spec
   documents in this directory.
 
+### P2 — spec.md (10/14/26)
+
+Wrote `specs/020-prompt-route-safety/spec.md` from `.specify/templates/spec-template.md`,
+in spec 019's style. Markdown only, no Go changed. Contents: six user stories (one per
+design requirement 1 to 6, prioritised P1/P1/P1/P2/P2/P3), Edge Cases, FR-001 to FR-021,
+an Out of scope entry for requirement 7, SC-001 to SC-011, and Assumptions.
+
+Commands run and results:
+
+- `grep -q 'session not ready' … && grep -q request_id … && ! grep -q 'NEEDS CLARIFICATION' …`
+  → exit 0, so P2's Verify condition holds. This one **did** run verbatim: it has no
+  command substitution and no pipe, which is what P1's `[ "$(grep -c …)" … ]` tripped over.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd` → all exit 0. `test ! -e go.sum` → exit 0.
+- `golangci-lint run` → **still cannot run**; `which golangci-lint` exits 1, as in P1. This
+  iteration changed no Go, so lint's answer is the committed baseline's.
+- `git status --short` → `?? specs/020-prompt-route-safety/spec.md` only.
+
+Things the next iteration would otherwise rediscover:
+
+- **P1's files are committed after all.** The tree was clean at the start of this iteration
+  and `git log` shows `0366fa0 ralph: iteration 1 (sweep uncommitted changes)` on top of
+  `30941f3`. So P1's "nothing was staged" finding was resolved outside the loop by a sweep
+  commit; a later iteration should not try to re-commit research.md.
+- **G1's Verify command fails today, and the cause is research.md, not an open question.**
+  `grep -rn 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/` matches exactly one line —
+  `research.md:186`, the sentence in D8 reading "**this is not a NEEDS CLARIFICATION**,
+  and nothing downstream waits on it." That is prose saying a deferral is *not* an open
+  question, so G1's intent ("confirm the spec has no open question") is satisfied while its
+  grep proxy is not. spec.md was written to avoid the phrase entirely for this reason.
+  The G1 iteration should reword that one sentence in research.md — which is in "Files
+  touched" — to say the same thing without the literal phrase (e.g. "a deferred MAY with a
+  recorded reason is not an open question"), then re-run the Verify. Marking G1 `- [!]` over
+  a false positive would halt the milestone for a wording choice. Do not add the phrase to
+  plan.md (P3) or tasks.md (P4).
+- **The FR numbers to cite downstream.** P4's tasks map onto them as: T001–T003 → FR-014 to
+  FR-016 and FR-018; T004 → FR-009 to FR-011; T005 → FR-004 to FR-006; T006 → FR-007,
+  FR-008, FR-017; T007 and T009 → FR-001 to FR-003; T008 → the fake's `ExitAfterPaste`,
+  asserted by SC-002; T010 → FR-012, FR-013; T011 → SC-009; T012 → SC-010; T013 → the
+  `docs/security.md` subsection. FR-019 is P5's contract amendment.
+- **The two amendments are FR-017 (spec 018 FR-006, amended twice over — bracketed paste
+  *and* the leading-character refusal) and FR-018 (spec 001 FR-042, for `request_id`
+  only).** P3's Constitution Check should cite FR-018 against principle I rather than
+  re-argue it: the bound in FR-014 is the whole justification.
+- Spec 018 FR-006 is at `specs/018-interactive-input/spec.md:165`; spec 001 FR-042 at
+  `specs/001-crswd-daemon-core/spec.md:444`. Both were read this iteration and are quoted
+  verbatim in spec.md's FR-017 and FR-018.
+
 ## Findings
 
 - **`golangci-lint` is not installed on this host and cannot be installed from the loop.**
@@ -198,3 +246,14 @@ Things the next iteration would otherwise rediscover:
   IMPLEMENTATION_PLAN.md and this notebook, which is what "Decisions already made (copy
   these into research.md; do not reopen them)" asks for. No probe check was cited beyond
   the ones those two files restate (checks 1, 3, 8, 9, 13).
+- **P2's commit step could not run either, for the same reason, so P2's three paths are on
+  disk and uncommitted.** `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh` is outside
+  `/workspace` and this non-interactive session cannot obtain the approval the sandbox
+  demands for it; the `$PWD` form is refused earlier still, as unanalysable shell. Nothing
+  was staged and no plain `git commit` was substituted, for P1's reason. The tree carries
+  `specs/020-prompt-route-safety/spec.md` (new) plus the `- [x]` on P2 and the P2 entry
+  above. P1's identical finding was resolved by a sweep commit (`0366fa0`) outside the
+  loop, so the standing arrangement appears to be that a sweep picks these up — but a
+  **T-task** iteration cannot rely on that: its failing-before evidence is only meaningful
+  against a tree whose previous task is committed. Granting the loop permission to execute
+  safe-commit is the fix.
