@@ -315,6 +315,106 @@ P5 are the next two Markdown tasks; G1 greps the directory recursively.
   treats `present && info.Claude != tmuxctl.LivenessStopped` as healthy — so
   unknown *and* absent both pass there. T007 should read the same way.
 
+### Iteration 4 — P4 (tasks.md)
+
+**Changed.** Created `specs/020-prompt-route-safety/tasks.md`, in the house style of
+`specs/018-interactive-input/tasks.md`: front matter, inputs, "Every task ends green",
+"Conventions every task follows", a "Failing-before evidence" table naming which task
+adds which requirement's row, a 13-line task checklist, then one `### T0nn —` section
+per task with **Files / Implements / Interface / Approach / Edge cases / Mirror /
+Failing-before test / Other tests / Verify / Depends on / Guardrails**, a dependency
+diagram, and a closing "What no task in this list may do". Titles are copied verbatim
+from IMPLEMENTATION_PLAN.md; the FR→task→test mapping is copied from plan.md's
+"Requirement → FR → task → test" table rather than re-derived. No decision reopened,
+no requirement added. **No task for the `ESC[201~` marker**, as Iterations 2 and 3
+both instructed.
+
+**Commands run.**
+
+- `grep -cE '^- \[ \] T0(0[1-9]|1[0-3]) ' specs/020-prompt-route-safety/tasks.md` →
+  `13`, so the task's Verify (`-eq 13`) holds. The bracketed `[ … -eq 13 ]` form still
+  will not run in this environment (Findings), so the count was measured, as P1 did.
+- `grep -rc 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` → `0` for all four
+  files, so G1's recursive grep still passes.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd`, `test ! -e go.sum` → all exit 0.
+- `git status --short` → ` M ralph/plans/…/IMPLEMENTATION_PLAN.md`,
+  ` M ralph/plans/…/PROGRESS.md`, `?? specs/020-prompt-route-safety/tasks.md`.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run.**
+  `golangci-lint version` still exits 127 here. P4 changed Markdown only, so no Go
+  file was touched and the Go linter cannot have regressed.
+
+**For the next iteration — what the code reading for P4 established, so T001 to T013
+do not have to rediscover it.** Every anchor below was read, not guessed.
+
+- **Existing tests a T-task must *update*, each of which would otherwise pass against
+  the old behaviour and silently stop testing anything:**
+  - T001: `TestRecordCannotCarryFreeFormContent` (`internal/audit/audit_test.go:500`)
+    restates `Record`'s field list and asserts the count — append `"RequestID"`.
+    `TestEmitWritesNoKeyBeyondTheDocumentedSeven` (`:94`) needs **no** change; its
+    record carries no `RequestID`.
+  - T006: `TestPromptNamesNoPromptTextInItsError` (`internal/session/manager_test.go:1234`)
+    and `internal/audit/leak_test.go:1358` both arm `FailOp(tmuxctl.OpPaste, …)`. After
+    the switch to `PasteBracketed` the paste no longer fails: the first test asserts
+    nothing and the leak suite's "a prompt the host refused" case stops being a 500.
+    Both must become `OpPasteBracketed`. `leakRun.pasted` (`leak_test.go:1504`) already
+    reads both ops.
+  - T006: the exact-argv expectations are in three places —
+    `TestPromptPastesThenSubmits` (`manager_test.go:1149`),
+    `TestAPromptIsDeliveredByteForByte` (`internal/httpapi/sessions_test.go:1046`),
+    and `TestCompactUsesBufferPath` (`manager_test.go:1258`, which must stay as it is).
+    The bracketed argv is `tmux paste-buffer -p -d -b <buffer> -t <pane>`.
+  - T007 and T009: each liveness read records one `OpList`, so those same exact-call
+    lists grow by two in total. Expect `capture-pane, List, load-buffer, paste-buffer,
+    List, send-keys` on the httpapi path.
+- **`guardDelivery` (`internal/session/input.go:215`) is shared by `Type` and
+  `PressKey`.** T005's `StateFailed` refusal goes inside `Prompt`, not there; FR-013
+  leaves the browser door alone.
+- **`Continue` claims the restart *before* it locks (`manager.go:2760`), `Prompt` will
+  lock before it claims.** That inversion cannot deadlock because `claimRestart` is
+  non-blocking — a `Prompt` holding the lock is refused and returns. Keep the comment
+  T010 asks for; this is the kind of correct thing a later reader would "fix".
+- **The fake already models the gate's input.** `fakeAliveCommand = "claude"`
+  (`internal/tmuxctl/fake.go:240`) is the default pane command for a created or seeded
+  session, `livenessOf` (`:249`) is the comparison, and `Manager.Create` writes
+  `@crswd-binary` as `paneProcesses(template)` (`manager.go:2274`), which for the
+  Claude harness is just `claude` (only Codex sets `PaneProcesses`). So the default
+  fixtures read *running* and existing Prompt tests keep passing; a fake session with
+  no `@crswd-binary` reads *unknown* and also passes.
+- **`ExitAfterPaste` has a mirror to copy**: `QuitAfterInterrupts`
+  (`internal/tmuxctl/fake.go:390`), including the "seed if absent" behaviour and the
+  `"bash"` it leaves as the pane command.
+- **tmux inserts the paste brackets only when the pane's application has requested
+  bracketed-paste mode (DECSET 2004).** This is why T006 does **not** break the
+  `quickstart` shim suite (`cmd/crswd/quickstart_test.go:1465` onwards drives a
+  line-oriented shim and is *not* in the allowlist) and why T012's `cat` case receives
+  the bytes unwrapped. Spec 018's own tmux test had to `printf '\033[?2004h'` first.
+- **`internal/httpapi/input_test.go` is NOT in the allowlist.** T004's "the type route
+  still delivers `/compact`" test therefore goes in `sessions_test.go` and *uses*
+  `newTyper` / `typed` / `ops` from that file (same package, read-only).
+- **The 409 has a complete three-part mirror**: `ErrOrphanedSession`
+  (`manager.go:139`) → `bodyTeardownUnverified` (`internal/httpapi/sessions.go:32`) →
+  `failTeardownUnverified` (`:745`). T005 copies its shape exactly.
+- **A 400 gate gets its audit deny for free** from `rejectBadRequest`
+  (`internal/httpapi/decode.go:160`), whose reason must be an error authored in this
+  repo; the uniform body is `bodyBadRequest` (`decode.go:21`).
+- **`promptFixture.post` signs the timestamp and body**, so T011's four posts need four
+  distinct instants or the second is refused as a replay
+  (`internal/httpapi/sessions_test.go:899`).
+- **T012 must not redefine** `newModeFixture`, `modeSocketFor`, `waitForPane` or
+  `containsLine` — `internal/session/mode_test.go` already declares them in the
+  `tmux`-tagged build of this package, and `capNotUnderTest` comes from
+  `manager_test.go`.
+- **T013's insertion point**: `docs/security.md` has `### 5. Dependencies` at line 395
+  and `## Configuration, and the page that shows it` at line 410. The new subsection
+  goes between them, numbered 6 so §1–§5 references elsewhere keep their meaning.
+- Next task is **P5** (amend `specs/001-crswd-daemon-core/contracts/http-api.md`).
+  Markdown only. Its anchors are already recorded in Iteration 2: the prompt section is
+  lines 256–301, the status table is at line 111 (where `409` reads only "Teardown
+  could not be verified"), and the six route headings are at lines 128, 183, 223, 231,
+  256 and 304. P5's second Verify counts `^## \`(GET|POST|DELETE|PATCH|PUT) ` and must
+  print **6** — a seventh heading is the failure it exists to catch.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed
