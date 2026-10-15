@@ -68,7 +68,7 @@ already taken here.
 
 ### Spec (Spec Kit lane; no Go changes)
 
-- [ ] P1 Write research.md in `specs/020-prompt-route-safety/`: one `## D<n>` section per decision D1 to D9 above, each with the evidence it cites. Verify: `[ "$(grep -c '^## D[0-9]' specs/020-prompt-route-safety/research.md)" -ge 9 ]` exits 0.
+- [x] P1 Write research.md in `specs/020-prompt-route-safety/`: one `## D<n>` section per decision D1 to D9 above, each with the evidence it cites. Verify: `[ "$(grep -c '^## D[0-9]' specs/020-prompt-route-safety/research.md)" -ge 9 ]` exits 0.
 - [ ] P2 Write spec.md in `specs/020-prompt-route-safety/` from the spec template: FRs for reqs 1 to 6, req 7 under Out of scope, amendments to 001 FR-042 and 018 FR-006. Verify: `grep -q 'session not ready' specs/020-prompt-route-safety/spec.md && grep -q request_id specs/020-prompt-route-safety/spec.md && ! grep -q 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/spec.md`.
 - [ ] P3 Write plan.md in `specs/020-prompt-route-safety/` from `.specify/templates/plan-template.md`, with a Constitution Check against `.specify/memory/constitution.md` and this file's allowlist as its file list. Verify: `grep -q 'Constitution Check' specs/020-prompt-route-safety/plan.md && ! grep -q 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/plan.md`.
 - [ ] P4 Write tasks.md in `specs/020-prompt-route-safety/`: entries T001 to T013 with the same titles as below, each naming files, the failing-before test and its Verify command. Verify: `[ "$(grep -cE '^- \[ \] T0(0[1-9]|1[0-3]) ' specs/020-prompt-route-safety/tasks.md)" -eq 13 ]` exits 0.

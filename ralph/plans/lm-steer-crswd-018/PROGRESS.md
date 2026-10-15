@@ -121,8 +121,58 @@ first check too), req 2 by T005, req 3 by T006, req 4 by T004, req 5 by T010, re
 
 ## Iterations
 
-(none yet)
+### Iteration 1 — P1 (research.md)
+
+**Changed.** Created `specs/020-prompt-route-safety/research.md`, the first file in that
+directory. Nine sections, `## D1` to `## D9`, one per decision in IMPLEMENTATION_PLAN.md
+"Decisions already made", each carrying the evidence that decision cites: probe checks
+13, 1, 8, 3 and 9; the spec 018 R1 and spec 019 M3/M4 paste measurements already in this
+repo; the lawnmower builder grep of 10/14/26; and the file anchors from "Facts measured
+while planning" above. No decision reopened, no requirement added.
+
+**Commands run.**
+
+- `grep -c '^## D[0-9]' specs/020-prompt-route-safety/research.md` → `9`, so the task's
+  Verify (`-ge 9`) holds. See the note below on why the bracketed form itself was not run.
+- `gofmt -l .` → no output.
+- `go build ./...` → exit 0.
+- `go vet ./...` → exit 0.
+- `go vet -tags tmux ./...` → exit 0.
+- `go vet -tags quickstart ./cmd/crswd` → exit 0.
+- `test ! -e go.sum` → exit 0.
+- `git status --short` → `?? specs/020-prompt-route-safety/` only.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run.** See Findings.
+
+**For the next iteration.**
+
+- The external sources (`~/code/ai-lawnmower/docs/mcp-session-steering-design.md` and
+  `.../lm-steer-design/results.md`) are **not readable from this loop environment** — the
+  tooling is confined to `/workspace`. Do not plan on opening them. Everything needed is
+  already copied into IMPLEMENTATION_PLAN.md "Decisions already made", the "Facts measured
+  while planning" section above, and now research.md.
+- Anchors confirmed by reading, for the T-tasks: `Manager.Prompt` at
+  `internal/session/manager.go:1194` (empty-ID, `StateDead`, empty-text refusals, then
+  `lockSession`, `m.paste`, `SendKeys` enterKey); `Manager.paste` at
+  `internal/session/manager.go:1253` (bracketed only when `specOf(s).BracketedPaste`);
+  `claimRestart` / `releaseRestart` at `internal/session/manager.go:2663` and `2688`;
+  the three `Liveness` constants at `internal/tmuxctl/controller.go:312`–`332`.
+- The next task is P2 (spec.md). It is Markdown only; the template is
+  `.specify/templates/spec-template.md` and the sibling specs 018 and 019 show the house
+  style.
 
 ## Findings
 
-(none yet)
+- **`golangci-lint` is not installed in the loop's environment and cannot be installed
+  there.** `golangci-lint version` exits 127, and the SessionStart hook says so too; the
+  `go install …@v2.12.2` it suggests needs an approval this headless run cannot give.
+  PROGRESS.md's planning note ("golangci-lint 2.12.2" on this host) was measured on the
+  planning host, which is not this container. Pre-commit step 6 was therefore skipped for
+  P1, which changes **Markdown only** — no Go file was touched, so the Go linter cannot
+  have regressed. A T-task that changes Go will need this resolved, or its lint result
+  recorded as unverified in the same words.
+- **Compound shell forms are refused by this environment's command analyzer.** The
+  bracketed Verify (`[ "$(grep -c …)" -ge 9 ]`) could not be executed as written — command
+  substitution inside a test, `sh -c`, and `cmd; echo $?` were each declined. The
+  underlying fact was measured instead: the count is exactly 9. Later tasks whose Verify
+  is a plain `go test …` are unaffected; P4's and P5's `grep -c` forms will meet the same
+  limit, so measure the count and record it.
