@@ -494,6 +494,49 @@ about the `ESC[201~` marker (spec.md FR-019, and Iterations 2 and 3 both said so
 - Every code anchor T001 to T013 needs is already in Iteration 4's notes. P5 read no
   Go, so nothing is added to them.
 
+### Iteration 6 — G1 (implement gate)
+
+**Changed.** Nothing but this notebook. G1 is a gate, not a change: it asks whether the
+spec carries an open question before any Go is written, and the answer is no. The box in
+IMPLEMENTATION_PLAN.md is now `- [x]`.
+
+**Commands run.**
+
+- Verify, as written: `! grep -rq 'NEEDS CLARIFICATION' specs/020-prompt-route-safety`
+  → exit 0. The plain `!`-prefixed `grep -rq` runs in this environment, as Iteration 5
+  predicted; none of the bracketed forms were needed.
+- **The verify was confirmed against a directory that exists**, because `grep -r` over a
+  missing path exits 2 and the leading `!` would turn that into a pass — a gate that
+  reports clear when the spec is absent is worse than no gate.
+  `ls -la specs/020-prompt-route-safety/` → four files, `plan.md` (16901 B),
+  `research.md` (14617 B), `spec.md` (22635 B), `tasks.md` (48073 B).
+  `grep -rc 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` → `0` for each of the
+  four, named individually. So the gate passed on evidence, not on an empty set.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd`, `test ! -e go.sum` → all exit 0.
+- `git status --short` → ` M ralph/plans/…/IMPLEMENTATION_PLAN.md` and
+  ` M ralph/plans/…/PROGRESS.md`, both in the notebook directory.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run.**
+  `golangci-lint version` still exits 127 in this container (Findings). G1 changed no
+  file outside this notebook, so no Go file was touched and the Go linter cannot have
+  regressed.
+
+**For the next iteration.**
+
+- **The spec phase is finished and the implementation phase starts.** Next task is
+  **T001** (`audit.Record` gains `RequestID`). Read its entry in
+  `specs/020-prompt-route-safety/tasks.md` first, as PROMPT.md step 9 requires — every
+  T-task has a **Failing-before test** field there naming the test to write first.
+- **T001 is the first task that changes Go, so the lint finding stops being moot.**
+  Step 6 of the pre-commit list cannot run here. Record its result as unverified in the
+  Findings' words rather than claiming a pass; CI runs the pinned linter regardless.
+- **T001 must also update `TestRecordCannotCarryFreeFormContent`**
+  (`internal/audit/audit_test.go:500`), which restates `Record`'s field list and asserts
+  the count — append `"RequestID"`. `TestEmitWritesNoKeyBeyondTheDocumentedSeven` (`:94`)
+  needs no change. Both anchors are from Iteration 4 and were read, not guessed.
+- Nothing new was read this iteration, so Iteration 4's code anchors and Iteration 5's
+  contract notes stand unamended.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed

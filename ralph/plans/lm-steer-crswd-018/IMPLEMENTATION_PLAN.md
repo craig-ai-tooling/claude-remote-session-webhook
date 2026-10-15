@@ -73,7 +73,7 @@ already taken here.
 - [x] P3 Write plan.md in `specs/020-prompt-route-safety/` from `.specify/templates/plan-template.md`, with a Constitution Check against `.specify/memory/constitution.md` and this file's allowlist as its file list. Verify: `grep -q 'Constitution Check' specs/020-prompt-route-safety/plan.md && ! grep -q 'NEEDS CLARIFICATION' specs/020-prompt-route-safety/plan.md`.
 - [x] P4 Write tasks.md in `specs/020-prompt-route-safety/`: entries T001 to T013 with the same titles as below, each naming files, the failing-before test and its Verify command. Verify: `[ "$(grep -cE '^- \[ \] T0(0[1-9]|1[0-3]) ' specs/020-prompt-route-safety/tasks.md)" -eq 13 ]` exits 0.
 - [x] P5 Amend `specs/001-crswd-daemon-core/contracts/http-api.md`: prompt section gains `request_id`, the 409 not-ready and the 400 leading-`!`/`/` rule; status table 409 row covers not-ready. Verify: `grep -q 'session not ready' specs/001-crswd-daemon-core/contracts/http-api.md` and `grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) ' specs/001-crswd-daemon-core/contracts/http-api.md` prints 6.
-- [ ] G1 Implement gate: confirm the spec has no open question before any Go change. Verify: `! grep -rq 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` exits 0. If it fails, mark this task `- [!]` and stop.
+- [x] G1 Implement gate: confirm the spec has no open question before any Go change. Verify: `! grep -rq 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` exits 0. If it fails, mark this task `- [!]` and stop.
 
 ### Implementation (each T-task: failing-before test first)
 
