@@ -235,6 +235,86 @@ FR map, for the T-tasks that implement them:
   Constitution Check against `.specify/memory/constitution.md` and the
   IMPLEMENTATION_PLAN.md allowlist as its file list. Markdown only.
 
+### Iteration 3 — P3 (plan.md)
+
+**Changed.** Created `specs/020-prompt-route-safety/plan.md` from
+`.specify/templates/plan-template.md`, in the house style of
+`specs/018-interactive-input/plan.md` and `specs/019-codex-runtime/plan.md`:
+Summary, Technical Context, a Constitution Check table over all seven principles,
+a Design section per package, a requirement→FR→task→test map, Project Structure
+(documentation and source), Cross-spec notes, Risks and Complexity Tracking (no
+violation, so nothing justified). The source file list **is** the
+IMPLEMENTATION_PLAN.md "Files touched" allowlist, in that file's order, each line
+annotated NEW/MOD and with the task that touches it. No decision reopened, no
+requirement added.
+
+**Also changed, one phrase in `specs/020-prompt-route-safety/research.md` (D8).**
+It read "It is **not** a `NEEDS CLARIFICATION`", which is prose *about* the
+phrase — and G1's Verify is `! grep -rq 'NEEDS CLARIFICATION'
+specs/020-prompt-route-safety`, a grep over the whole directory. Left alone, G1
+would have failed on a quotation and the loop would have had to mark it `- [!]`
+and stop the milestone over a wording artifact. The sentence now reads "It is
+**not** an open question in the constitution's sense: principle II is about …",
+which says the same thing. P1's own Verify still holds (`grep -c '^## D[0-9]'` →
+`9`). My first draft of plan.md contained the same quotation in the principle II
+row and failed its own Verify; it is reworded there too.
+
+**For a later iteration writing Markdown: do not write that phrase as a
+quotation anywhere under `specs/020-prompt-route-safety/`.** P4 (tasks.md) and
+P5 are the next two Markdown tasks; G1 greps the directory recursively.
+
+**Commands run.**
+
+- Verify, as written: `grep -q 'Constitution Check' … && ! grep -q 'NEEDS
+  CLARIFICATION' …` → exit 1 on the first draft (the quotation above), exit 0
+  after the rewording. The plain `&&` chain runs in this environment, as in P2.
+- `grep -rc 'NEEDS CLARIFICATION' specs/020-prompt-route-safety` → `0` for all
+  three files, so G1's recursive grep passes as of this commit.
+- `grep -c '^## D[0-9]' specs/020-prompt-route-safety/research.md` → `9`.
+- `gofmt -l .` → no output.
+- `go build ./...` → exit 0.
+- `go vet ./...` → exit 0.
+- `go vet -tags tmux ./...` → exit 0.
+- `go vet -tags quickstart ./cmd/crswd` → exit 0.
+- `test ! -e go.sum` → exit 0.
+- `git status --short` → ` M specs/020-prompt-route-safety/research.md` and
+  `?? specs/020-prompt-route-safety/plan.md`, both in the allowlist.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run.**
+  `golangci-lint version` still exits 127 in this container (Findings). P3
+  changed Markdown only, so no Go file was touched and the Go linter cannot have
+  regressed.
+
+**For the next iteration.**
+
+- Next task is **P4 (tasks.md)**, T001 to T013 with the titles already in
+  IMPLEMENTATION_PLAN.md. plan.md's "Requirement → FR → task → test" table maps
+  every T-task to the FRs it implements and the test that must fail first — copy
+  from it rather than re-deriving. Its Verify counts
+  `^- \[ \] T0(0[1-9]|1[0-3]) ` and wants exactly 13; the bracketed `[ … -eq 13 ]`
+  form will not run here (Findings), so measure the count with `grep -cE` and
+  record it.
+- **P4 must not add a task for the `ESC[201~` marker.** spec.md FR-019 and
+  plan.md's Risks both place it out of this milestone; a validation task for it
+  would be inventing a requirement (Iteration 2 said the same).
+- Code anchors confirmed by reading while writing this plan, for T001 to T010:
+  `Manager.Prompt` at `internal/session/manager.go:1194` (empty ID, `StateDead`,
+  empty text, `lockSession:1209`, `m.paste:1217`, `SendKeys` enterKey`:1220`);
+  `Manager.paste` at `:1253`; `claimRestart` at `:2674`, `releaseRestart` at
+  `:2688`, and the existing claim-then-defer pattern at `:2760`–`2763`;
+  `promptRequest` at `internal/httpapi/sessions.go:264`, `promptResponse` at
+  `:283` (`ParkedOn` and `SuspiciousDialog` already show the `omitempty`
+  additive-field pattern `request_id` should copy); `promptSession` at `:772`;
+  `refusePrompt` at `:849`; `audit.Record` at `internal/audit/audit.go:390`;
+  `RequestAudit.SetSessionID` at `internal/httpapi/middleware.go:120` and `Deny`
+  at `:133`; `Fake.SetPaneCommand` at `internal/tmuxctl/fake.go:761`;
+  `Controller.List` at `internal/tmuxctl/controller.go:97`, `SessionInfo.Claude`
+  at `:316`, `LivenessStopped` at `:341`.
+- **The liveness read has a pattern to copy rather than invent**:
+  `Supervisor.Sweep` (`internal/session/supervisor.go:117`) takes one
+  `m.tmux.List(ctx)`, indexes the rows by `info.Name`, and `judge` at `:156`
+  treats `present && info.Claude != tmuxctl.LivenessStopped` as healthy — so
+  unknown *and* absent both pass there. T007 should read the same way.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed

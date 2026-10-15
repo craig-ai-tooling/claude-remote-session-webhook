@@ -225,9 +225,9 @@ is idle.
   which is worse than no gate — it is a check that lies, and the liveness gate in D2
   already covers the state that matters here.
 
-**Decision.** Out of scope, listed as such in spec.md with that reason. It is **not** a
-`NEEDS CLARIFICATION`: constitution principle II is about an ambiguity that would be
-guessed at, and this is a MAY that was evaluated against probe evidence and declined.
+**Decision.** Out of scope, listed as such in spec.md with that reason. It is **not** an
+open question in the constitution's sense: principle II is about an ambiguity that would
+be guessed at, and this is a MAY that was evaluated against probe evidence and declined.
 Reopening it needs the spec 017 question in probe check 8 answered first.
 
 ## D9 — What this milestone does not do
