@@ -785,6 +785,59 @@ func TestAHandlerCanAmendTheOneRecord(t *testing.T) {
 	}
 }
 
+// TestAHandlerCanAmendTheOneRecordWithARequestID is the amendment spec 020
+// FR-018 makes to FR-042: the trail carries no caller-supplied bytes, and this
+// one field is the exception, because the handler has already held it to 1 to 32
+// characters of [a-z0-9-] (FR-002, FR-017) before it gets here.
+//
+// Still one record, and it keeps its own action and session: a correlation handle
+// that renamed the operation would be a handle that rewrote the trail.
+func TestAHandlerCanAmendTheOneRecordWithARequestID(t *testing.T) {
+	t.Parallel()
+
+	const sessionID = "4c7b2de90a1f3486b5d0c9e8f7a61b23"
+
+	tests := []struct {
+		name      string
+		requestID string
+		want      any // the request_id the record should carry; nil means no key at all
+	}{
+		{name: "a handle the caller chose", requestID: "opp-lease-7", want: "opp-lease-7"},
+		{name: "the 32-character maximum", requestID: "0123456789abcdef0123456789abcdef", want: "0123456789abcdef0123456789abcdef"},
+		{name: "none given", requestID: "", want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newAuditedServer(t)
+			probe := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				ra := AuditFrom(r.Context())
+				ra.SetSessionID(sessionID)
+				ra.SetRequestID(tc.requestID)
+			})
+
+			req := httptest.NewRequest(http.MethodPost, "/sessions/"+sessionID+"/prompt", nil)
+			signRequest(t, req, nil, testTime)
+			s.authenticate(audit.ActionSessionPrompt, probe).ServeHTTP(httptest.NewRecorder(), req)
+
+			got := s.only(t)
+			if got["request_id"] != tc.want {
+				t.Errorf("request_id = %v; want %v", got["request_id"], tc.want)
+			}
+			if got["session_id"] != sessionID {
+				t.Errorf("session_id = %v; want %q — the handle must not displace the session",
+					got["session_id"], sessionID)
+			}
+			if got["action"] != string(audit.ActionSessionPrompt) {
+				t.Errorf("action = %v; want %q — amending must not rename the operation",
+					got["action"], audit.ActionSessionPrompt)
+			}
+		})
+	}
+}
+
 // TestAuditFromIsSafeOutsideTheMiddleware keeps a handler under direct unit test
 // from having to nil-check before it can record anything.
 func TestAuditFromIsSafeOutsideTheMiddleware(t *testing.T) {
@@ -795,6 +848,7 @@ func TestAuditFromIsSafeOutsideTheMiddleware(t *testing.T) {
 		t.Fatalf("AuditFrom(background) = %v; want nil", ra)
 	}
 	ra.SetSessionID("abc")
+	ra.SetRequestID("opp-lease-7")
 	ra.Deny("nothing to record")
 }
 

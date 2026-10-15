@@ -118,7 +118,7 @@ Content-Type: application/json
 | `400` | Malformed body, unknown field, failed field validation |
 | `401` | Any layer-2 authentication failure, **including an oversize body** (uniform) |
 | `404` | Unknown session, another owner's session, wrong bearer token, **no such route** (uniform) |
-| `409` | Teardown could not be verified — the session may still be alive |
+| `409` | Teardown could not be verified — the session may still be alive; or the session is not ready to receive a prompt (spec 020) |
 | `429` | Concurrent-session cap reached, or create rate limit exceeded |
 | `500` | Internal failure; body carries no detail |
 | `503` | This host is signed out of Claude, so a created session would open on the sign-in screen rather than work |
@@ -256,8 +256,10 @@ know a live unsandboxed shell may have survived.
 ## `POST /sessions/{id}/prompt` — send a prompt
 
 Delivers text into the session verbatim. Implemented with `load-buffer` from stdin plus
-`paste-buffer -d`, never `send-keys -l` — see [research D4](../research.md); a prompt
-that is exactly `;` or ends in `;` is silently mangled by `send-keys`.
+`paste-buffer`, never `send-keys -l` — see [research D4](../research.md); a prompt
+that is exactly `;` or ends in `;` is silently mangled by `send-keys`. Since spec 020
+FR-009 the paste is **bracketed** (`paste-buffer -p -d`) for every harness, not only the
+interactive route's; it was `paste-buffer -d` here until then.
 
 **Request**
 
@@ -267,7 +269,8 @@ that is exactly `;` or ends in `;` is silently mangled by `send-keys`.
 
 | Field | Rules |
 |---|---|
-| `text` | Required, non-empty, within the body limit. **Not otherwise validated or escaped** — it is data, delivered byte-for-byte (FR-030, SC-012) |
+| `text` | Required, non-empty, within the body limit. **Not otherwise validated or escaped, past its first character** — it is data, delivered byte-for-byte (FR-030, SC-012). The one exception is the leading-character refusal below (spec 020 FR-012) |
+| `request_id` | Optional (spec 020 FR-017). 1 to 32 characters of `[a-z0-9-]`; a correlation handle the caller chose, which this daemon neither issues nor deduplicates. Echoed in the `202` and written as `request_id` on the request's one audit record. Absent means absent in both — a client written against this contract before spec 020 sees byte-for-byte the response it always did |
 
 **Response `202`**
 
@@ -297,7 +300,50 @@ delivery into a refusal over a heuristic's own precondition failing.
 {"id":"9f2c1ab47e0d4f6a8b3c5d7e1f0a2b4c","delivered":true,"parked_on":"rc-menu"}
 ```
 
-The prompt text never appears in any audit record or log line (FR-042).
+A `request_id` the caller sent comes back on the same object, and only then:
+
+```json
+{"id":"9f2c1ab47e0d4f6a8b3c5d7e1f0a2b4c","delivered":true,"request_id":"lm-answer-7f3a"}
+```
+
+**Failures (spec 020)**: `400` a leading `!` or `/`, or a malformed `request_id` ·
+`409` the session is not ready · `404` unknown, not-owned, or wrong-token ·
+`500` the host refused the delivery.
+
+Each of the three below is decided **before any tmux command runs**, so a prompt refused
+by one of them has delivered nothing:
+
+- **`400`**, with the uniform `{"error":"bad request"}` body, when the first character
+  of `text` that is not space, tab, carriage return or line feed is `!` or `/`. Those
+  two make the text a command to the harness rather than a message to the assistant —
+  Claude Code reads a leading `/` as a slash command and a leading `!` as a bash escape,
+  and this route's callers all begin with a letter. The rule is about that one character
+  and nothing else: a `!` or `/` anywhere later in the text — and every other
+  metacharacter — is still delivered byte-for-byte as FR-030 requires. A prompt that is
+  only whitespace has no such character and is delivered, as it always was. The session
+  page's own type route is **not** on this rule and still sends `/compact`: an operator
+  pressing a key in a panel this daemon drew may legitimately send a slash command.
+- **`400`**, same uniform body, when `request_id` is present and is not 1 to 32
+  characters of `[a-z0-9-]`. The body is still decoded with unknown fields rejected,
+  so no other new field is accepted either.
+- **`409`** `{"error":"session not ready"}`, when the session cannot take a prompt
+  now: its harness is gone (the pane's current command no longer matches the session's
+  recorded binary), the session is in state `failed`, or a revive or continue holds the
+  session's restart claim. **The three are deliberately indistinguishable** — same
+  status, same body, same audited reason — so a caller learns that it should not
+  deliver and nothing else. A session in state `dead` is unchanged and still answers as
+  it did before spec 020.
+
+A `409` is also the answer when the harness was running at the paste and gone before the
+Enter. The bytes reached the pane in that one case; the daemon sends `C-u` and no Enter,
+so nothing was submitted, and the caller is told the delivery did not happen rather than
+being handed a `202` it would believe.
+
+The prompt text never appears in any audit record or log line (FR-042). `request_id` is
+the one caller-chosen value admitted onto a record, and spec 020 FR-002 amends FR-042 for
+that field alone: its character class and its bound are what make it a handle rather than
+free text. No prompt text, no length of it, no hash of it, and no prefix of it reaches an
+error, a log line or a record.
 
 ---
 
@@ -341,6 +387,10 @@ Each maps to a success criterion and must fail if the behaviour is removed.
 | `work_dir` traversal, absolute escape, symlink escape | `400`, no session created | FR-028 |
 | `name` containing `:` or `.` | `400` | FR-027 |
 | Prompt `";"`, `"foo;"`, `"$(id)"`, embedded newline | Delivered byte-for-byte; nothing executed | SC-012 |
+| Prompt beginning `!` or `/`, after any leading whitespace | `400`, no tmux command; the same text with a `/` on a later line is delivered | 020 FR-012 |
+| Prompt into a session whose harness is stopped, is `failed`, or whose restart claim is held | `409` `{"error":"session not ready"}`, byte-identical across all three | 020 FR-008 |
+| `request_id` of 33 characters, or holding `_` or an uppercase letter | `400`, no tmux command | 020 FR-017 |
+| `request_id` valid, then absent | Echoed in the `202` and on the record; absent from both when absent | 020 FR-018 |
 | Destroy when the fake reports survival | `409`, record retained, audited | FR-019 |
 | Token presented after `expires_at` | `404` | FR-015 |
 | Full audit capture, all routes | No prompt, pane, token, or secret; one record per request | SC-013 |
