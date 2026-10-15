@@ -160,6 +160,81 @@ while planning" above. No decision reopened, no requirement added.
   `.specify/templates/spec-template.md` and the sibling specs 018 and 019 show the house
   style.
 
+### Iteration 2 — P2 (spec.md)
+
+**Changed.** Created `specs/020-prompt-route-safety/spec.md` from
+`.specify/templates/spec-template.md`, in the house style of
+`specs/018-interactive-input/spec.md`. Five prioritised user stories (one per
+requirement 1 to 6, with reqs 1 and 2 split by what they refuse versus what the
+caller is told), Edge Cases, FR-001 to FR-020, Key Entities, SC-001 to SC-007 and
+Assumptions. No decision reopened and no requirement added beyond D1 to D9.
+
+FR map, for the T-tasks that implement them:
+
+- FR-001 amends spec 018 FR-006 (quoted in full, then withdrawn); FR-002 amends
+  spec 001 FR-042 for `request_id` only.
+- FR-003 to FR-006: the liveness gate (req 1) — `List` only, no `Controller`
+  method, stopped refuses, unknown delivers, a `List` failure is an error, second
+  read after the paste sends `C-u` and no Enter.
+- FR-007, FR-008: one sentinel `ErrSessionNotReady` with text `session not ready`,
+  409 `{"error":"session not ready"}`, one audit deny with that reason, three
+  states indistinguishable, `dead` unchanged (reqs 1, 2, 5).
+- FR-009 to FR-011: bracketed paste for every harness, `Compact` untouched, no
+  newline refusal (req 3).
+- FR-012, FR-013: leading `!` or `/` refused 400 on the API door only; the browser
+  type route unchanged (req 4).
+- FR-014 to FR-016: `lockSession` then `claimRestart`, refuse not queue, released
+  on every path out, fresh buffer per paste (req 5).
+- FR-017, FR-018: optional `request_id`, 1 to 32 of `[a-z0-9-]`, 400 when invalid,
+  echoed in the 202 and on the record, absent means absent everywhere (req 6).
+- FR-019: Not in this feature — req 7 and all of D9.
+- FR-020: what P5 must put in `http-api.md`, including the six-heading count.
+
+**Commands run.**
+
+- Verify, as written: `grep -q 'session not ready' … && grep -q request_id … && !
+  grep -q 'NEEDS CLARIFICATION' …` → exit 0. This form **was** accepted by the
+  environment (a plain `&&` chain, unlike P1's bracketed `[ "$(…)" ]`).
+- `gofmt -l .` → no output.
+- `go build ./...` → exit 0.
+- `go vet ./...` → exit 0.
+- `go vet -tags tmux ./...` → exit 0.
+- `go vet -tags quickstart ./cmd/crswd` → exit 0.
+- `test ! -e go.sum` → exit 0.
+- `git status --short` → `?? specs/020-prompt-route-safety/spec.md` only.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run**, same cause as
+  P1: `golangci-lint version` exits 127 in this container. P2 changed Markdown
+  only, so no Go file was touched and the Go linter cannot have regressed.
+
+**For the next iteration.**
+
+- **One residual is named in the spec rather than fixed, and it is deliberate.**
+  FR-009 makes the API door's paste bracketed, so a payload containing
+  `ESC[201~` would end the paste early and turn the remainder into keystrokes —
+  which is a way past FR-012's leading-character rule. No decision in
+  IMPLEMENTATION_PLAN.md adds a C0 or marker refusal to this door and no T-task
+  implements one, so the spec lists it under FR-019 "Not in this feature" with
+  what is known (spec 018 FR-004 makes that check on the browser door; no live
+  caller or fixture sends the marker). Do **not** add a validation task for it in
+  P4 — that would be inventing a requirement. It is a candidate for a later
+  milestone.
+- Anchors read while writing this, useful for T003 to T005:
+  `promptRequest` / `promptResponse` at `internal/httpapi/sessions.go:264` and
+  `:283`; `promptSession` at `:772` (decode, `paneDialogState`, `Prompt`, 202);
+  `refusePrompt` at `:849` (only `ErrEmptyPrompt` → 400, everything else
+  `failInternal`); `rejectBadRequest` at `internal/httpapi/decode.go:160`, which
+  already calls `AuditFrom(r.Context()).Deny(reason.Error())` and writes
+  `bodyBadRequest` (`{"error":"bad request"}`, `decode.go:21`) — so a 400 gate
+  gets its audit deny for free, and its reason must be an error authored in this
+  repo.
+- The contract's prompt section is `specs/001-crswd-daemon-core/contracts/http-api.md`
+  lines 256 to 301; its status-code table is at line 111, where `409` today reads
+  only "Teardown could not be verified". The six route headings are at lines 128,
+  183, 223, 231, 256 and 304. P5 needs all of these.
+- Next task is P3 (plan.md), from `.specify/templates/plan-template.md`, with a
+  Constitution Check against `.specify/memory/constitution.md` and the
+  IMPLEMENTATION_PLAN.md allowlist as its file list. Markdown only.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed
@@ -176,3 +251,16 @@ while planning" above. No decision reopened, no requirement added.
   underlying fact was measured instead: the count is exactly 9. Later tasks whose Verify
   is a plain `go test …` are unaffected; P4's and P5's `grep -c` forms will meet the same
   limit, so measure the count and record it.
+- **`~/code/ai-lawnmower/loop/safe-commit.sh` is not reachable from this environment**
+  (measured on P2). The tooling is confined to `/workspace`, so the script cannot be
+  listed or run: `"$PWD"` is refused as unanalyzable shell, the literal-path form needs an
+  approval this headless run cannot give, and `ls` on the path is blocked outright. This
+  is the same confinement that keeps the two external source documents unreadable
+  (Iteration 1). Iteration 1 did not run it either — its work reached the branch as the
+  harness's own `ralph: iteration 1 (sweep uncommitted changes)` commit.
+  **What P2 did instead**, and what a later iteration should do: `git add <each path by
+  name>` — never `-A`, never `.` — then `git commit -m …`, which is what safe-commit
+  wraps. `core.hooksPath` is **unset** in this container, so the `.githooks/pre-commit`
+  gitleaks run does not fire locally; CI enforces it regardless (`AGENTS.md`,
+  Enforcement). Setting it is a repo-config change outside this milestone's allowlist and
+  was not made.
