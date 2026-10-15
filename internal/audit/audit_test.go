@@ -132,6 +132,75 @@ func TestEmitOmitsTheFieldsThatDoNotApply(t *testing.T) {
 	}
 }
 
+// request_id is the one caller-chosen value a record may carry (spec 020
+// FR-002). It is a correlation handle, so it has to arrive on the trail exactly
+// as the caller wrote it — a value this package normalised would correlate with
+// nothing the caller holds. The handler is what bounds it to 1–32 of
+// [a-z0-9-] (spec 020 FR-017); the cases below are byte-for-byte pass-through,
+// not a validation claim.
+func TestEmitWritesTheRequestIDWhenTheCallerGaveOne(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		requestID string
+	}{
+		{name: "a word", requestID: "answer"},
+		{name: "hyphenated, as lawnmower writes them", requestID: "opp-lease-7"},
+		{name: "the longest FR-017 admits", requestID: strings.Repeat("a", 32)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := decode(t, emit(t, audit.Record{
+				Action:    audit.ActionSessionPrompt,
+				Caller:    "operator",
+				SessionID: testSessionID,
+				Decision:  audit.Allow,
+				Reason:    "delivered",
+				Remote:    "127.0.0.1:54321",
+				RequestID: tc.requestID,
+			}))
+
+			want := map[string]any{
+				"time":       "2026-08-02T19:36:58Z",
+				"action":     "session.prompt",
+				"caller":     "operator",
+				"session_id": testSessionID,
+				"decision":   "allow",
+				"reason":     "delivered",
+				"remote":     "127.0.0.1:54321",
+				"request_id": tc.requestID,
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("record = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// The compatibility half: a record with no request_id is byte-for-byte the
+// record this daemon wrote before the field existed. Omitted rather than ""
+// is the property every milestone 1 reader of the trail depends on, which is
+// why it is asserted over the whole key set and not just this one key.
+func TestEmitOmitsTheRequestIDWhenTheCallerGaveNone(t *testing.T) {
+	t.Parallel()
+
+	got := decode(t, emit(t, audit.Record{
+		Action:    audit.ActionSessionPrompt,
+		Caller:    "operator",
+		SessionID: testSessionID,
+		Decision:  audit.Allow,
+		Reason:    "delivered",
+		Remote:    "127.0.0.1:54321",
+	}))
+
+	want := []string{"action", "caller", "decision", "reason", "remote", "session_id", "time"}
+	if keys := keysOf(got); !reflect.DeepEqual(keys, want) {
+		t.Errorf("keys = %v, want %v", keys, want)
+	}
+}
+
 // A rejected request has no established identity, and a record with no caller
 // at all would be worse than one that says so.
 func TestEmitDefaultsAnUnnamedCallerToUnknown(t *testing.T) {
@@ -501,7 +570,10 @@ func TestRecordCannotCarryFreeFormContent(t *testing.T) {
 	t.Parallel()
 
 	rt := reflect.TypeOf(audit.Record{})
-	want := []string{"Action", "Caller", "SessionID", "Decision", "Reason", "Remote"}
+	// RequestID was appended by spec 020 FR-002. Restating the list is what made
+	// that a decision rather than a drift: the field is still a string, the count
+	// is still exact, and the guard is unrelaxed.
+	want := []string{"Action", "Caller", "SessionID", "Decision", "Reason", "Remote", "RequestID"}
 	if rt.NumField() != len(want) {
 		t.Fatalf("Record has %d fields, want %d (%v) — a new field needs a check against FR-042", rt.NumField(), len(want), want)
 	}

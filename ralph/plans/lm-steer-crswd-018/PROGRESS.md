@@ -537,6 +537,108 @@ IMPLEMENTATION_PLAN.md is now `- [x]`.
 - Nothing new was read this iteration, so Iteration 4's code anchors and Iteration 5's
   contract notes stand unamended.
 
+### Iteration 7 — T001 (`audit.Record` gains `RequestID`)
+
+**Changed.** `internal/audit/audit.go` and `internal/audit/audit_test.go`. Three edits to
+the package, exactly the interface tasks.md T001 specifies:
+
+- `keyRequestID = "request_id"` after `keyRemote` in the key block.
+- `Record.RequestID string` **last**, after `Remote`, with the comment saying why one
+  caller-chosen value is admissible here: it is a closed class, bounded to 1–32 of
+  `[a-z0-9-]` by the handler before the field is ever set (FR-017), nothing in this
+  package re-checks it, and prompt text stays forbidden in every form — not the text,
+  not its length, not a hash. The "last, not beside `SessionID`" reason is recorded too,
+  so a later reader does not tidy it into spec 001's documented six-field order.
+- In `Emit`, after the `Remote` block, `if rec.RequestID != "" { … }`.
+
+**Failing-before, as PROMPT.md requires.**
+`TestEmitWritesTheRequestIDWhenTheCallerGaveOne` was written first and run first:
+`go test ./internal/audit/` → `internal/audit/audit_test.go:162:5: unknown field
+RequestID in struct literal of type audit.Record`, `FAIL … [build failed]`. After the
+three edits the same command → `ok`. **No row was added to the "Failing-before
+evidence" table**: that table is one row per requirement, and req 6 is T003's to prove
+(see its own note above). T001 is the record half only.
+
+Tests, matching tasks.md's list:
+
+1. `TestEmitWritesTheRequestIDWhenTheCallerGaveOne` — table-driven, `t.Parallel()` on
+   both levels, three values (a word, lawnmower's hyphenated `opp-lease-7`, and the
+   32-character maximum FR-017 admits). Asserts the whole decoded map, so it proves
+   `request_id` arrives **byte-for-byte alongside** the seven documented keys rather
+   than merely being present. A table rather than one case because pass-through is the
+   claim; this package validates nothing.
+2. `TestEmitOmitsTheRequestIDWhenTheCallerGaveNone` — asserts the exact seven-key set,
+   not just this key's absence, which is the contract-compatibility property: a
+   milestone 1 record stays byte-identical.
+3. `TestRecordCannotCarryFreeFormContent` (`audit_test.go:500`) **updated** —
+   `"RequestID"` appended to the restated `want` list, with a comment saying the guard
+   is unrelaxed (still a string, count still exact). Without this the task's Verify
+   fails on the field count, which is the point of restating the list.
+4. `TestEmitWritesNoKeyBeyondTheDocumentedSeven` (`:94`) left alone, as instructed — its
+   record carries no `RequestID`.
+
+**tasks.md's T001 "Other tests" item 4 — the `leak_test.go` edit — is deferred to T003,
+and this was measured rather than reasoned.** Item 4 says to send a `request_id`
+alongside the text in the allowed prompt at `leak_test.go:1277`. Done now it cannot
+pass: `promptRequest` (`internal/httpapi/sessions.go:264`) still has only `Text`, and
+`decodeBody` sets `DisallowUnknownFields` (`internal/httpapi/decode.go:101`), so the
+field is an unknown one. Probed by making exactly that edit and running the Verify:
+
+```
+--- FAIL: TestNoOperationLeaksSecretMaterialIntoTheTrailOrTheLogs (0.42s)
+    leak_test.go:1543: POST /sessions/{id}/prompt answered 400; want 202
+--- FAIL: TestTheLeakSuiteReallyDrivesTheDaemon (0.09s)
+    leak_test.go:1569: POST /sessions/{id}/prompt answered 400; want 202
+```
+
+The probe was then reverted, so `internal/audit/leak_test.go` is **unchanged by this
+commit** and is not in its path list. It is an ordering defect in tasks.md (whose T001
+says "Depends on: nothing"), not an ambiguity: IMPLEMENTATION_PLAN.md is the authority
+on requirements and its T001 names only `internal/audit/audit.go` and
+`internal/audit/audit_test.go`, both of which are done and whose Verify exits 0. So the
+milestone was not blocked over a fixture's ordering.
+
+**T003 must therefore do item 4 as well**, once `request_id` is on `promptRequest`: send
+a valid, unmarked `request_id` with the allowed prompt at `leak_test.go:1277`, leave the
+refused prompt at `:1308` without one, and keep the sweep's claim unchanged — that is
+what drives both halves of SC-005 (with the field present, the run still leaks no prompt
+text, no length and no hash of it).
+
+**Commands run.**
+
+- Failing-before: `go test ./internal/audit/` → build failure at `audit_test.go:162:5`
+  (quoted above).
+- Verify, as written: `go test ./internal/audit/` → `ok … 3.129s`, exit 0.
+- `go test ./...` → every package `ok`; only `deploy/k8s/gen` and `web` report no test
+  files. Run because `audit.Record` is constructed across packages and a new field could
+  have broken a composite literal elsewhere; none is positional.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd`, `test ! -e go.sum` → all exit 0.
+- `git status --short` → ` M internal/audit/audit.go`, ` M internal/audit/audit_test.go`,
+  ` M ralph/plans/…/IMPLEMENTATION_PLAN.md`, ` M ralph/plans/…/PROGRESS.md`.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run; this task's lint
+  result is unverified.** `golangci-lint version` exits 127 in this container
+  (Findings), and unlike P1–P5 and G1 this task *did* change Go, so the "no Go file was
+  touched" argument no longer applies and is not being reused. CI runs the pinned
+  v2.12.2 regardless (`AGENTS.md`, Enforcement). Every T-task from here on is in the
+  same position.
+
+**For the next iteration.**
+
+- Next task is **T002** (`RequestAudit.SetRequestID` in `internal/httpapi/middleware.go`).
+  tasks.md gives the method body verbatim and names the failing-before test
+  `TestAHandlerCanAmendTheOneRecordWithARequestID` in `middleware_test.go`; its Verify is
+  `go test ./internal/httpapi/ -run RequestID`. Note that a `-run` filter matching
+  **nothing** also exits 0, so confirm the new test actually ran (`-v`, or count the
+  `--- PASS` lines) rather than trusting the exit code — the failing-before step is what
+  rules that out here, but only if it is run before the method exists.
+- `Record`'s field order is now Action, Caller, SessionID, Decision, Reason, Remote,
+  RequestID. Anything restating it must match (only `TestRecordCannotCarryFreeFormContent`
+  does today).
+- Iteration 4's code anchors still hold; T001 read `audit.go`, `audit_test.go`,
+  `leak_test.go`, `httpapi/sessions.go` (the `promptRequest`/`promptResponse` block) and
+  `httpapi/decode.go`, and found every anchor where Iteration 4 said it was.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed
