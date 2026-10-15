@@ -415,6 +415,85 @@ do not have to rediscover it.** Every anchor below was read, not guessed.
   256 and 304. P5's second Verify counts `^## \`(GET|POST|DELETE|PATCH|PUT) ` and must
   print **6** — a seventh heading is the failure it exists to catch.
 
+### Iteration 5 — P5 (amend http-api.md)
+
+**Changed.** `specs/001-crswd-daemon-core/contracts/http-api.md` only, Markdown.
+Everything FR-020 names is now in it:
+
+- **Status table (line 121).** The `409` row reads "Teardown could not be verified —
+  the session may still be alive; or the session is not ready to receive a prompt
+  (spec 020)". The teardown half is untouched; a destroy's `409` and its body are
+  unchanged.
+- **Field table on the prompt route.** A `request_id` row: optional, 1 to 32 of
+  `[a-z0-9-]`, neither issued nor deduplicated by the daemon, echoed in the 202 and
+  written on the one audit record, and absent means absent in both. The `text` row now
+  reads "Not otherwise validated or escaped, **past its first character**" and points
+  at the leading-character refusal — left as it was, the contract would have asserted
+  "not otherwise validated" on the same route whose first character FR-012 refuses.
+- **A `request_id` echo example**, next to the existing `parked_on` one, so the
+  additive-field shape is shown rather than described.
+- **A "Failures (spec 020)" block**: the one-line `·`-separated summary every other
+  route section uses, then one bullet each for the leading-`!`/`/` 400, the malformed
+  `request_id` 400 and the not-ready 409 — stating that all three decide before any
+  tmux command runs, that the 409's three states are indistinguishable by status, body
+  and reason, that `dead` is unchanged, and that the type route still sends `/compact`.
+- **The post-paste case is stated as a caller-facing fact** (FR-005): a 409 can also
+  arrive after the bytes reached the pane, in which case the daemon sends `C-u` and no
+  Enter. A contract that said only "refused prompts deliver nothing" would be wrong
+  about exactly that case, and a caller reading a 409 needs to know nothing was
+  submitted.
+- **FR-042's line amended in place**: prompt text still never appears anywhere, and
+  `request_id` is named as the one caller-chosen value admitted onto a record, per
+  spec 020 FR-002.
+- **Four rows in "Contract tests this implies"**, one per new behaviour, keyed
+  `020 FR-012`, `020 FR-008`, `020 FR-017`, `020 FR-018` — the `Covers` column held
+  only spec 001 identifiers before, so the new rows name their spec. These four are
+  the same assertions T003, T004 and T005 already own in tasks.md; no new requirement.
+- **Also amended, one sentence of the route's opening paragraph.** It said the route is
+  "Implemented with `load-buffer` from stdin plus `paste-buffer -d`"; FR-009 makes that
+  `paste-buffer -p -d`. Leaving it would have left the contract naming the wrong tmux
+  invocation for the route this milestone changes. The old form is named, so a reader
+  of a milestone-1 client knows what moved.
+
+**Not changed, deliberately.** The header's "Six operations, no others (FR-006)" and
+the six route headings — a seventh is what P5's second Verify exists to catch. Nothing
+about the `ESC[201~` marker (spec.md FR-019, and Iterations 2 and 3 both said so).
+
+**Commands run.**
+
+- Verify part 1: `grep -c 'session not ready' specs/001-crswd-daemon-core/contracts/http-api.md`
+  → `2` (the 409 bullet and its JSON body), so the `grep -q` form holds.
+- Verify part 2: the heading count must be 6. The pattern as written in
+  IMPLEMENTATION_PLAN.md contains a backtick and **the environment refused it**
+  (`grep -cE '^## \`(GET|POST|…) '` → "requires approval"). Measured with the backtick
+  replaced by `.`: `grep -cE '^## .(GET|POST|DELETE|PATCH|PUT) ' …` → **6**, and
+  `grep -nE '^## ' …` lists exactly those six route headings plus Authentication,
+  Common rules and Contract tests. Same limit as P1/P4's bracketed forms (Findings).
+- `grep -rc 'NEEDS CLARIFICATION' specs/020-prompt-route-safety specs/001-crswd-daemon-core/contracts/http-api.md`
+  → `0` for all five files, so **G1's recursive grep passes as of this commit**.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd`, `test ! -e go.sum` → all exit 0.
+- `git status --short` → ` M ralph/plans/…/IMPLEMENTATION_PLAN.md`,
+  ` M ralph/plans/…/PROGRESS.md`, ` M specs/001-crswd-daemon-core/contracts/http-api.md`.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run.**
+  `golangci-lint version` still exits 127 here. P5 changed Markdown only, so no Go file
+  was touched and the Go linter cannot have regressed.
+
+**For the next iteration.**
+
+- Next task is **G1**, the implement gate: `! grep -rq 'NEEDS CLARIFICATION'
+  specs/020-prompt-route-safety`. Measured `0` above, so it passes; run it as written
+  (a plain `!`-prefixed `grep -rq` has not been refused here, unlike the bracketed
+  forms) and tick it. **Do not start T001 in the same iteration** — one task per
+  iteration.
+- **The contract is now ahead of the code, and that is the expected state** for the
+  rest of this milestone: http-api.md describes the 409, the two 400s and the bracketed
+  paste before T003 to T009 implement them. Nothing asserts the contract against the
+  code, so no test turns red from this commit; T003's and T005's own tests are what
+  close the gap.
+- Every code anchor T001 to T013 needs is already in Iteration 4's notes. P5 read no
+  Go, so nothing is added to them.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed
