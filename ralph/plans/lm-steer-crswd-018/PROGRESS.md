@@ -639,6 +639,86 @@ text, no length and no hash of it).
   `leak_test.go`, `httpapi/sessions.go` (the `promptRequest`/`promptResponse` block) and
   `httpapi/decode.go`, and found every anchor where Iteration 4 said it was.
 
+### Iteration 8 — T002 (`RequestAudit.SetRequestID`)
+
+**Changed.** `internal/httpapi/middleware.go` and `internal/httpapi/middleware_test.go`,
+exactly the two files tasks.md T002 names.
+
+- `SetRequestID` added **directly after `SetSessionID`** (`middleware.go:115`–`125`),
+  with the body tasks.md gives verbatim: nil-check, then `a.rec.RequestID = id`. No
+  second record, no value taken from the path or the resolver.
+- The comment says what makes this method different from its mirror rather than
+  restating what it does: this value *is* caller-supplied, which FR-042 otherwise
+  forbids outright, and what makes it admissible is that the handler has already held
+  it to 1–32 of `[a-z0-9-]` (FR-002, FR-017) before calling here. It also says
+  **nothing in this method re-checks it**, so a later caller knows the check is theirs
+  — the same shape of warning `SetSessionID`'s comment carries about the path `{id}`.
+
+**Failing-before, as PROMPT.md requires.**
+`TestAHandlerCanAmendTheOneRecordWithARequestID` was written first and run first:
+`go test ./internal/httpapi/ -run RequestID` → `middleware_test.go:818:8:
+ra.SetRequestID undefined (type *RequestAudit has no field or method SetRequestID)`
+(and `:851:5` from the nil-safety call), `FAIL … [build failed]`. After the method was
+added, the same command → `ok`, with three `--- PASS` subtests. **No row was added to
+the "Failing-before evidence" table**: req 6 is T003's to prove, as Iteration 7 said;
+T001 was the record half, T002 is the carrier half, and neither is reachable by a
+caller yet.
+
+Tests, matching tasks.md's list:
+
+1. `TestAHandlerCanAmendTheOneRecordWithARequestID`, copied from
+   `TestAHandlerCanAmendTheOneRecord` (`middleware_test.go:753`) and made
+   table-driven, `t.Parallel()` on both levels. Three cases: a handle in lawnmower's
+   hyphenated shape, the 32-character maximum FR-017 admits, and **none given** —
+   which is where T001's `omitempty` is asserted from this side (`want` is `nil`, so
+   the key is absent from the decoded record rather than present and empty). Each case
+   also asserts `session_id` and `action` survive, because a correlation handle that
+   displaced either would be a handle that rewrote the trail.
+2. `TestAuditFromIsSafeOutsideTheMiddleware` (`:790`) **extended** with
+   `ra.SetRequestID("opp-lease-7")` on the nil receiver, so the nil-safety is asserted
+   rather than assumed. Note this test's name does **not** match `-run RequestID`, so
+   the task's Verify does not reach it; `go test ./internal/httpapi/` does, and was run.
+
+**Commands run.**
+
+- Failing-before: `go test ./internal/httpapi/ -run RequestID` → build failure at
+  `middleware_test.go:818:8` (quoted above).
+- Verify, as written: `go test ./internal/httpapi/ -run RequestID` → `ok … 0.005s`,
+  exit 0. Run with `-v` and the three `--- PASS` lines counted, per Iteration 7's
+  warning that a `-run` filter matching nothing also exits 0.
+- `go test ./internal/httpapi/` → `ok … 6.750s`, which is what covers the nil-receiver
+  test the filter misses.
+- `go test ./...` → every package `ok`; only `deploy/k8s/gen` and `web` report no test
+  files.
+- `gofmt -l .` → no output. `go build ./...`, `go vet ./...`, `go vet -tags tmux ./...`,
+  `go vet -tags quickstart ./cmd/crswd`, `test ! -e go.sum` → all exit 0.
+- `git status --short` → ` M internal/httpapi/middleware.go`,
+  ` M internal/httpapi/middleware_test.go`, plus this notebook's two files.
+- `GOLANGCI_LINT_CACHE=$(mktemp -d) golangci-lint run` → **not run; this task's lint
+  result is unverified.** `golangci-lint version` still exits 127 in this container
+  (Findings). This task changed Go, so the "no Go file was touched" argument from
+  P1–P5 and G1 does not apply and is not being reused. CI runs the pinned v2.12.2
+  regardless.
+
+**For the next iteration.**
+
+- Next task is **T003** (the prompt body gains optional `request_id`). Read its entry
+  in tasks.md — it is the first task with a caller-facing surface, and it is the one
+  that adds the **req 6** row to the "Failing-before evidence" table above.
+- **T003 also owes T001's deferred item 4**, measured in Iteration 7: once
+  `request_id` is on `promptRequest`, send a valid unmarked `request_id` with the
+  allowed prompt at `internal/audit/leak_test.go:1277`, leave the refused prompt at
+  `:1308` without one, and keep the sweep's claim unchanged. `internal/audit/leak_test.go`
+  **is** in the allowlist. Until that edit lands, `leak_test.go` is still untouched by
+  this milestone.
+- The carrier now exists but **has no production caller** — `SetRequestID` is called
+  only from a test. `docs/conventions.md` is explicit that a thing under test with no
+  production caller is how three defects shipped green here; T003's handler is what
+  closes that, and T003's own tests assert the caller rather than only the callee.
+- Nothing new was read beyond `middleware.go:88`–`169` and
+  `middleware_test.go:740`–`800`; every anchor was where Iteration 4 said it was, so
+  its code notes stand unamended.
+
 ## Findings
 
 - **`golangci-lint` is not installed in the loop's environment and cannot be installed

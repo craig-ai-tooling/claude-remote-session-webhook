@@ -78,7 +78,7 @@ already taken here.
 ### Implementation (each T-task: failing-before test first)
 
 - [x] T001 audit: `Record` gains `RequestID` written as `request_id`, omitted when empty, in `internal/audit/audit.go`. Test both cases in `internal/audit/audit_test.go`. Verify: `go test ./internal/audit/` exits 0.
-- [ ] T002 httpapi: `RequestAudit.SetRequestID` in `internal/httpapi/middleware.go` carries the value onto the request's one audit record. Test in `internal/httpapi/middleware_test.go`, name containing `RequestID`. Verify: `go test ./internal/httpapi/ -run RequestID` exits 0.
+- [x] T002 httpapi: `RequestAudit.SetRequestID` in `internal/httpapi/middleware.go` carries the value onto the request's one audit record. Test in `internal/httpapi/middleware_test.go`, name containing `RequestID`. Verify: `go test ./internal/httpapi/ -run RequestID` exits 0.
 - [ ] T003 httpapi: prompt body gains optional `request_id` (D7). Invalid is 400 with no tmux command; valid is echoed in the 202 and set on the audit record. Tests in `internal/httpapi/sessions_test.go`, names containing `RequestID`. Verify: `go test ./internal/httpapi/ -run 'RequestID|Prompt'` exits 0.
 - [ ] T004 httpapi: refuse a prompt whose first non-whitespace character is `!` or `/` with 400 and no tmux command (D5). Add a test that the browser type route still delivers `/compact`. Verify: `go test ./internal/httpapi/ -run 'Prompt|Type'` exits 0.
 - [ ] T005 session + httpapi: add `ErrSessionNotReady`; `Prompt` refuses a `failed` session with it before any tmux command; the handler maps it to 409 `{"error":"session not ready"}` (D3). Verify: `go test ./internal/session/ ./internal/httpapi/ -run Prompt` exits 0.
