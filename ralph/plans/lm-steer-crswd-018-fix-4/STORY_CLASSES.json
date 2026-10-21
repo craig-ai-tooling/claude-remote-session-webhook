@@ -1,0 +1,114 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-4",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "5689d99af71066064d561cd261a4aa65d8085b19",
+  "jev_model": null,
+  "classified_at": "2026-10-21T19:30:13Z",
+  "refused": "ipv4",
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "cc3ae707e06a24fb": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 quickstart: make `writeShim` in `cmd/crswd/quickstart_test.go` re-exec under ",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "2455ad208d124cae": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 session: add `ErrSessionNotReady` (D1) and the pre-paste liveness gate in `Ma",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "0fc19c1f400936b5": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 httpapi: map `ErrSessionNotReady` to 409 `{\"error\":\"session not ready\"}` with",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "3e4c68a0f1390ecf": {
+      "index": 3,
+      "mark": " ",
+      "label": "T4 tmux: new `internal/session/prompt_tmux_test.go` (`//go:build tmux`), `TestPr",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "c8afc6648624697f": {
+      "index": 4,
+      "mark": " ",
+      "label": "T5 docs: in `specs/001-crswd-daemon-core/contracts/http-api.md` add the 409 `{\"e",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "ba1dee43d3383405": {
+      "index": 5,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    }
+  }
+}
