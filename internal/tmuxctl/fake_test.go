@@ -378,6 +378,98 @@ func TestFakePasteBracketedPayloadNeverEntersArgv(t *testing.T) {
 	}
 }
 
+// The mid-prompt exit the post-paste re-check exists for: Claude is running when
+// the text is pasted and gone before the submit. No unit test can produce that
+// state by killing a real process, so the fake has to model it.
+func TestFakeExitAfterPaste(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		paste func(context.Context, *tmuxctl.Fake) error
+	}{
+		{"Paste", func(ctx context.Context, f *tmuxctl.Fake) error {
+			return f.Paste(ctx, fakeName, []byte("hello"))
+		}},
+		{"PasteBracketed", func(ctx context.Context, f *tmuxctl.Fake) error {
+			return f.PasteBracketed(ctx, fakeName, []byte("hello"))
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			f := tmuxctl.NewFake()
+			if err := f.New(ctx, fakeName, fakeWorkDir); err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if err := f.SetOption(ctx, fakeName, tmuxctl.OptionBinary, "claude"); err != nil {
+				t.Fatalf("SetOption: %v", err)
+			}
+			f.ExitAfterPaste(fakeName)
+
+			if got := fakeLiveness(t, f); got != tmuxctl.LivenessRunning {
+				t.Fatalf("before the paste: Claude = %q, want %q", got, tmuxctl.LivenessRunning)
+			}
+			if err := tt.paste(ctx, f); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+			if got := fakeLiveness(t, f); got != tmuxctl.LivenessStopped {
+				t.Errorf("after the paste: Claude = %q, want %q", got, tmuxctl.LivenessStopped)
+			}
+		})
+	}
+}
+
+// A paste tmux refused delivered nothing, so it cannot be the paste a process
+// exited during. The knob has to outlive it, or a test about a failing paste
+// would silently also be a test about a dead Claude.
+func TestFakeExitAfterPasteOutlivesARefusedPaste(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	f := tmuxctl.NewFake()
+	if err := f.New(ctx, fakeName, fakeWorkDir); err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := f.SetOption(ctx, fakeName, tmuxctl.OptionBinary, "claude"); err != nil {
+		t.Fatalf("SetOption: %v", err)
+	}
+	f.ExitAfterPaste(fakeName)
+
+	f.FailOp(tmuxctl.OpPaste, errors.New("no server running"))
+	if err := f.Paste(ctx, fakeName, []byte("hello")); err == nil {
+		t.Fatal("a failing Paste reported success")
+	}
+	if got := fakeLiveness(t, f); got != tmuxctl.LivenessRunning {
+		t.Fatalf("after the refused paste: Claude = %q, want %q", got, tmuxctl.LivenessRunning)
+	}
+
+	f.FailOp(tmuxctl.OpPaste, nil)
+	if err := f.Paste(ctx, fakeName, []byte("hello")); err != nil {
+		t.Fatalf("Paste: %v", err)
+	}
+	if got := fakeLiveness(t, f); got != tmuxctl.LivenessStopped {
+		t.Errorf("after the paste: Claude = %q, want %q", got, tmuxctl.LivenessStopped)
+	}
+}
+
+// fakeLiveness reads the liveness List reports for the one session the tests
+// above create.
+func fakeLiveness(t *testing.T, f *tmuxctl.Fake) tmuxctl.Liveness {
+	t.Helper()
+
+	sessions, err := f.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(sessions) != 1 {
+		t.Fatalf("List returned %d sessions, want 1", len(sessions))
+	}
+	return sessions[0].Claude
+}
+
 // The 409 path. tmux reports a successful kill and the session is still there;
 // reporting teardown on Kill's exit code alone would leave a live unsandboxed
 // shell with no owner.

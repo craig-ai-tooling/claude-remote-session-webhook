@@ -305,6 +305,10 @@ type fakeSession struct {
 	// interrupts, which is how a test says "Codex is still running".
 	quitAfter, interrupts int
 
+	// exitAfterPaste arms the pane's process to exit on the next successful
+	// paste. ExitAfterPaste says why it is worth modelling.
+	exitAfterPaste bool
+
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
 	// the fake holds what the host holds, so a test cannot pass against a daemon
@@ -400,6 +404,36 @@ func (f *Fake) QuitAfterInterrupts(name string, n int) {
 	s.interrupts = 0
 }
 
+// ExitAfterPaste makes the next successful Paste or PasteBracketed on name end
+// the pane's process: its command becomes the login shell, as it does when
+// Claude exits. It fires once, and it exists for the one race a prompt has —
+// text delivered to a session whose Claude died while it was being delivered,
+// where the Enter that would have followed runs the operator's prompt as a
+// shell command instead of sending it. It seeds the session if it does not
+// exist yet, as SetPane does.
+func (f *Fake) ExitAfterPaste(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.exitAfterPaste = true
+}
+
+// exitIfArmed ends the pane's process once, for a paste that actually reached
+// tmux: a paste the fake refused delivered nothing, so it cannot be the paste
+// the process exited during. The caller holds f.mu.
+func (s *fakeSession) exitIfArmed() {
+	if !s.exitAfterPaste {
+		return
+	}
+	s.exitAfterPaste = false
+	s.paneCommand = "bash"
+}
+
 // Paste records two calls, as the real controller runs two commands. The
 // payload is copied onto the load-buffer call's Stdin and never reaches Argv.
 func (f *Fake) Paste(_ context.Context, name string, payload []byte) error {
@@ -415,10 +449,12 @@ func (f *Fake) Paste(_ context.Context, name string, payload []byte) error {
 		f.record(OpPaste, argvDeleteBuffer(buffer), nil)
 		return err
 	}
-	if _, ok := f.sessions[name]; !ok {
+	s, ok := f.sessions[name]
+	if !ok {
 		f.record(OpPaste, argvDeleteBuffer(buffer), nil)
 		return errNoSession(name)
 	}
+	s.exitIfArmed()
 	return nil
 }
 
@@ -437,10 +473,12 @@ func (f *Fake) PasteBracketed(_ context.Context, name string, payload []byte) er
 		f.record(OpPasteBracketed, argvDeleteBuffer(buffer), nil)
 		return err
 	}
-	if _, ok := f.sessions[name]; !ok {
+	s, ok := f.sessions[name]
+	if !ok {
 		f.record(OpPasteBracketed, argvDeleteBuffer(buffer), nil)
 		return errNoSession(name)
 	}
+	s.exitIfArmed()
 	return nil
 }
 
