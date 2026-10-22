@@ -1,0 +1,13 @@
+{
+  "run_id": "1022-gzze",
+  "repo": "claude-remote-session-webhook",
+  "branch": "ralph/1022-gzze",
+  "image": "docker.io/nctiggy/ralph-runner:2.1.246-ci12",
+  "captured_at": "2026-10-22T17:18:24Z",
+  "files": [
+    {
+      "path": "-workspace/e5053ab5-2ed6-4f19-8b55-a74c1e4ce31a.jsonl",
+      "bytes": 376913
+    }
+  ]
+}
