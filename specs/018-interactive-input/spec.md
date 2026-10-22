@@ -168,7 +168,8 @@ Line 1 of the 3000 is readable.
 ### Gates
 
 - **FR-007**: Both POST routes MUST be registered with `handleAction`. That means
-  layer 1, then `Sec-Fetch-Site` same-origin with an absent header refused, then
+  layer 1, then `Sec-Fetch-Site` same-origin with an absent header refused unless
+  `Origin` names this host (003 research R1 amendment, 10/22/26), then
   the page token, then `MaxBytesReader`, all before the handler runs.
 - **FR-008**: Both POST routes MUST resolve the session with `Manager.View(id,
   operator.Owner)` and answer every lookup failure with `notFoundAction`, the
