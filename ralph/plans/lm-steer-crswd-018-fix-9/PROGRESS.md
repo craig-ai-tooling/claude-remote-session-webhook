@@ -142,3 +142,56 @@ against. T1 is the only task PROMPT.md's "Prove a new test fails" applies to.
   approval`, unavailable in a non-interactive session. Do not spend a third
   iteration's time on it — the block is the sandbox's, not the script's, and it
   needs a permission change outside this loop to lift.
+
+### Iteration 3 — T3 (operator-facing record, no Go)
+
+**What changed**
+
+- `docs/fixes-log.md`: appended one line dated `2026-10-22` as line 60, in the
+  file's existing `- YYYY-MM-DD — …` format. It states what was wrong (the API
+  prompt route pasted text whose first non-whitespace character was `/` or `!`
+  into the pane, where Claude Code reads a leading `/` as a slash command and a
+  leading `!` as a bash escape, and answered `202` `delivered: true`), what
+  changed (`promptSession` refuses with `400` `{"error":"bad request"}` after the
+  decode and before the dialog capture, so the refusal costs no tmux command; the
+  reason is the `errPromptLeadingCommand` sentinel, so the audit record carries no
+  prompt text), the bound (only the first non-whitespace character is read; a `/`
+  or `!` later is still delivered byte-for-byte), and that the browser type route
+  is deliberately not on the rule. It names the two guard tests and `spec 020
+  FR-012, FR-013`. No prompt text, length or hash appears in it.
+- No Go file touched, so no failing-before evidence applies: PROMPT.md's "Prove a
+  new test fails" is T1's only.
+
+**Commands run**
+
+| Command | Result |
+|---|---|
+| `grep -n 'leading' docs/fixes-log.md \| grep -q 2026-10-22` (T3 Verify) | exit 0 |
+| `grep -n 'leading' docs/fixes-log.md` | one line, `60:- 2026-10-22 — …`, mentioning both `!` and `/` (the VALIDATION_CONTRACT wording) |
+| `gofmt -l .` | printed nothing |
+| `go build ./...` | exit 0 |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `golangci-lint run` | **not run — `which golangci-lint` exits 1; still not installed in this loop container**, as in iterations 1 and 2 and as the session-start hook reports (pin `v2.12.2`). |
+| `test ! -e go.sum` | exit 0 |
+| `git status --short` | only `docs/fixes-log.md` and `ralph/plans/lm-steer-crswd-018-fix-9/IMPLEMENTATION_PLAN.md` (this notebook follows in the commit) |
+
+**For the next iteration**
+
+- Only F1 remains. It runs VALIDATION_CONTRACT.md end to end and records each
+  result here. Two of its commands have not been run in any iteration yet and are
+  worth budgeting for: `go test ./...` (the whole default suite, not just
+  `internal/httpapi`) and the two shape guards —
+  `grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) ' specs/001-crswd-daemon-core/contracts/http-api.md`
+  must print `6`, and the `git ls-tree -d` diff of `internal/` between `main` and
+  `HEAD` must print nothing. Neither needs an edit; F1 only records them.
+- The verbose greps in the contract's Behaviour section are the ones that matter —
+  a bare `go test ./internal/httpapi/ -run 'Prompt|Type'` pass proves nothing here,
+  which is the whole reason the contract names passing *cases*. Iteration 2 already
+  confirmed the three named tests/subtests run rather than being filtered out.
+- `command -v golangci-lint` is refused by the harness (`This command requires
+  approval`); `which golangci-lint` is permitted and answers the same question.
+- **`safe-commit.sh` was attempted again and is still unreachable**, for the third
+  iteration running, with the same two refusals. PROMPT.md's fallback committed
+  this iteration.
