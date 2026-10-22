@@ -125,3 +125,54 @@ procedure is scoped to T1.
   `git add <path>` + `git commit -m` fallback. Do not spend time retrying it.
 - T3 is a one-line append to `docs/fixes-log.md` — read the file's existing format first;
   nothing in `internal/` needs to move.
+
+### T3 — the operator-facing record (10/22/26)
+
+**Changed**
+
+- `docs/fixes-log.md`: appended one line, dated 2026-10-22, at the bottom (the file is
+  append-only, newest last). It says what was wrong — the API door's
+  `POST /sessions/{id}/prompt` typed a prompt whose **leading** non-whitespace character
+  was `/` or `!` straight into the pane, where Claude Code reads a leading `/` as a slash
+  command and a leading `!` as a bash escape — and what changed: `400` with
+  `{"error":"bad request"}` before any tmux command, leading spaces/tabs/CR/LF skipped to
+  find that character, a `/` or `!` past it still ordinary text, and the browser's type
+  route deliberately unchanged. Tagged `(lm-steer-crswd-018-fix-9)`, the milestone id, in
+  the `(#issue-or-PR)` slot — the same shape the `(lm-95)` and `(lm-crswd-onfailure)`
+  entries already use, since there is no issue or PR number for this fix.
+
+**Why one long line rather than a short one.** The file's format block asks for one line
+and says anything needing more than one line of explanation is not a quick fix. This is
+one line; the neighbouring entries from #150 onward are the same length, and the
+VALIDATION_CONTRACT additionally requires that line to carry both `!` and `/` and the
+word `leading`, which a terse version would not.
+
+**Commands run**
+
+| Command | Result |
+|---|---|
+| `grep -n 'leading' docs/fixes-log.md \| grep 2026-10-22` (the task's Verify) | exit 0, one line — `docs/fixes-log.md:60` |
+| `gofmt -l .` | prints nothing |
+| `go build ./...` | exit 0 |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `golangci-lint run` | **not installed**, exit 127 `command not found`, as in T1 and T2. Not run. |
+| `test ! -e go.sum` | exit 0 |
+| `git status --short` | only `docs/fixes-log.md`, which is in "Files touched" |
+
+**For the next iteration**
+
+- F1 is the last task. The VALIDATION_CONTRACT's fixes-log assertion is the looser
+  `grep -n 'leading' docs/fixes-log.md` plus a reading that the line is dated 2026-10-22
+  or later and mentions both `!` and `/` — the appended line satisfies all three, and
+  note the entry above it is *also* dated 2026-10-22 (the install.sh `rc` fix), so match
+  on the word `leading` rather than on the date alone.
+- Two of F1's assertions have not been run in this milestone yet: the API door's
+  six-route count in `specs/001-crswd-daemon-core/contracts/http-api.md`, and the
+  no-new-`internal/`-package diff of `git ls-tree -d` against `main`. Neither milestone
+  task touched those paths, so both are expected to hold.
+- `golangci-lint` is absent in this container; F1 should record "not installed" for it
+  rather than treat it as a failure — the contract says "exits 0 where installed".
+- `safe-commit.sh` is unreachable from this container (T1 and T2 both found this). T3
+  used the `git add <path>` + `git commit -m` fallback again.
