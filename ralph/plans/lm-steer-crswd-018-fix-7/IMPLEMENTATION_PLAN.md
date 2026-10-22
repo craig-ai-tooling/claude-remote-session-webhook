@@ -68,7 +68,7 @@ unconditionally.
 
 ## Tasks
 
-- [ ] T1 tmuxctl fake: add `ExitAfterPaste(name)`, which seeds the session if absent and makes the next successful `Paste` or `PasteBracketed` on it set the pane command to `"bash"`, once. Test in `internal/tmuxctl/fake_test.go`: `List` reads running before, stopped after. Verify: `go test ./internal/tmuxctl/ -run ExitAfterPaste` exits 0.
+- [x] T1 tmuxctl fake: add `ExitAfterPaste(name)`, which seeds the session if absent and makes the next successful `Paste` or `PasteBracketed` on it set the pane command to `"bash"`, once. Test in `internal/tmuxctl/fake_test.go`: `List` reads running before, stopped after. Verify: `go test ./internal/tmuxctl/ -run ExitAfterPaste` exits 0.
 - [ ] T2 session: add `ErrSessionNotReady` if absent (F1) and the post-paste re-check (F2, F3). New `TestPromptWithdrawsWhenClaudeExitsMidPrompt` in `manager_test.go` via `ExitAfterPaste`: calls end paste, paste, `OpList`, send-keys `C-u`; no Enter. Add `OpList` to the three exact-call tests. Verify: `go test ./...` exits 0.
 - [ ] T3 httpapi: map `ErrSessionNotReady` to 409 `{"error":"session not ready"}` plus audit Deny (F4). New `TestPromptAnswersNotReadyWhenClaudeExitsMidPrompt` in `sessions_test.go`: set `@crswd-binary`, `ExitAfterPaste`, post; assert exact body, `C-u` sent, no Enter, one deny record. Verify: `go test ./internal/httpapi/ -run Prompt` exits 0.
 - [ ] T4 docs: append one dated line to `docs/fixes-log.md` in its existing format: Claude exiting between paste and submit now gets `C-u`, no Enter, and a 409 `session not ready`. Verify: `grep -q 'C-u' docs/fixes-log.md` exits 0.
