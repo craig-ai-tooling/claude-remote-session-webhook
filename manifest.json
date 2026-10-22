@@ -3,8 +3,12 @@
   "repo": "claude-remote-session-webhook",
   "branch": "ralph/1022-tbfh",
   "image": "docker.io/nctiggy/ralph-runner:2.1.246-ci12",
-  "captured_at": "2026-10-22T13:18:09Z",
+  "captured_at": "2026-10-22T13:19:11Z",
   "files": [
+    {
+      "path": "-workspace/29e24a23-5d54-4c59-8929-d8c53b85ad52.jsonl",
+      "bytes": 190721
+    },
     {
       "path": "-workspace/494a70e9-42d6-4c1e-88e3-ff25fc224302.jsonl",
       "bytes": 645203
@@ -15,7 +19,7 @@
     },
     {
       "path": "-workspace/78fc48aa-4ef6-4ecf-9072-c99891a5f2a8.jsonl",
-      "bytes": 186102
+      "bytes": 192744
     },
     {
       "path": "-workspace/7af45117-e9e4-4274-b093-79237e63097e.jsonl",
@@ -28,6 +32,10 @@
     {
       "path": "-workspace/9cee0f5f-296c-4a7b-848f-eb1d487e6f2d.jsonl",
       "bytes": 175932
+    },
+    {
+      "path": "-workspace/e44b9350-b3b0-468a-b407-3765711c1968.jsonl",
+      "bytes": 192758
     }
   ]
 }
