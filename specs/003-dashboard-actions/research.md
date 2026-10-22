@@ -39,6 +39,20 @@ task that adds an `Origin` header check.
 requiring both (a third thing to keep in agreement, and FR-002c's requirement that each half be
 independently disableable gets muddier with three).
 
+### R1 amendment, 10/22/2026 — absent falls back to Origin
+
+R1 assumed a browser always sends `Sec-Fetch-Site`. It does not: Fetch Metadata goes only to a
+potentially trustworthy URL (HTTPS or localhost). On the password door served over plain
+`http://<LAN address>`, every action arrived without the header and was refused. Owner's decision
+(Craig, 10/22/26): *"Actions accept a missing Sec-Fetch-Site when Origin matches Host."*
+
+The rule is now: a present `Sec-Fetch-Site` is judged exactly as above. An absent one admits only
+when exactly one `Origin` header is present, is not `null`, is a bare `http(s)://host[:port]` with
+the connection's scheme, and names the request's `Host` (host case-insensitive, default ports
+normalised on both sides). Everything else refuses, through the same uniform refusal. This is
+FR-002a's original `Origin` evidence, used only where `Sec-Fetch-Site` cannot be. `X-Forwarded-Host`
+is not read. The page token (step 3) is unchanged.
+
 ---
 
 ## R2 — The page token must be stateless, and this is not a preference

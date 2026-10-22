@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,6 +133,10 @@ type actionRequest struct {
 	assertion string
 	site      string
 	token     string
+
+	// origin is sent as the Origin header when it is not empty. The gate reads
+	// it only when site is absent, the shape a browser sends over plain http.
+	origin string
 }
 
 func (d *actionDoor) post(a actionRequest) *httptest.ResponseRecorder {
@@ -147,6 +152,9 @@ func (d *actionDoor) post(a actionRequest) *httptest.ResponseRecorder {
 	}
 	if a.site != absent {
 		r.Header.Set(headerSecFetchSite, a.site)
+	}
+	if a.origin != "" {
+		r.Header.Set(headerOrigin, a.origin)
 	}
 
 	w := httptest.NewRecorder()
@@ -260,15 +268,16 @@ func TestActionGateOrder(t *testing.T) {
 	}
 }
 
-// refusalCause is one of the five ways contracts/actions.md requires the gate to
+// refusalCause is one of the ways contracts/actions.md requires the gate to
 // refuse, and the reason each must leave on the record.
 //
 // The reasons differ from each other on purpose. FR-026 wants an operator to be
 // able to read which check refused; FR-004 wants a caller to be unable to. Both
-// claims are made below against the same five requests.
+// claims are made below against the same requests.
 type refusalCause struct {
 	name   string
 	site   string
+	origin string
 	token  func(t *testing.T, k pageKey) string
 	reason error
 }
@@ -293,6 +302,23 @@ func refusalCauses() []refusalCause {
 			// daemon owes anyone.
 			name:   "the browser said nothing about where the request came from",
 			site:   absent,
+			token:  valid,
+			reason: errActionCrossSite,
+		},
+		{
+			// The plain-http shape, from somebody else's page: no Fetch Metadata,
+			// and an Origin that is not this host. It must be the same refusal as
+			// every other, or the fallback would tell a caller which check ran.
+			name:   "no Sec-Fetch-Site, and an Origin naming another host",
+			site:   absent,
+			origin: "http://attacker.example",
+			token:  valid,
+			reason: errActionCrossSite,
+		},
+		{
+			name:   "no Sec-Fetch-Site, and an opaque Origin",
+			site:   absent,
+			origin: "null",
 			token:  valid,
 			reason: errActionCrossSite,
 		},
@@ -322,7 +348,7 @@ func refusalCauses() []refusalCause {
 	}
 }
 
-// TestRefusalIsByteIdentical is FR-004: all five causes produce the same status,
+// TestRefusalIsByteIdentical is FR-004: every cause produces the same status,
 // the same headers, the same body and the same Content-Length, so a caller cannot
 // tell which check refused them — or that there is more than one to fail.
 //
@@ -347,7 +373,7 @@ func TestRefusalIsByteIdentical(t *testing.T) {
 
 	for _, c := range refusalCauses() {
 		d := newActionDoor(t, keys.validator(t))
-		w := d.post(actionRequest{assertion: assertion, site: c.site, token: c.token(t, d.pageKey)})
+		w := d.post(actionRequest{assertion: assertion, site: c.site, origin: c.origin, token: c.token(t, d.pageKey)})
 
 		if w.Code != wantActionStatus {
 			t.Errorf("%s: answered %d; want %d", c.name, w.Code, wantActionStatus)
@@ -1504,6 +1530,171 @@ func TestEitherHalfOfTheDefenceRefusesAlone(t *testing.T) {
 	}
 	if got, want := admitted.only(t)["action"], string(audit.ActionDashboardDestroy); got != want {
 		t.Errorf("action = %v; want %v — an admitted action is recorded as the action, not as a rejection", got, want)
+	}
+}
+
+// TestCrossSiteActionReadsOriginOnlyWhenTheHeaderIsAbsent is the plain-http
+// door: a browser sends no Fetch Metadata to a URL that is not potentially
+// trustworthy, so a same-origin form on http://<LAN address> arrives with no
+// Sec-Fetch-Site at all, and the gate falls back to Origin (owner's decision,
+// 10/22/26).
+//
+// **Must fail when** absent refuses regardless of Origin (the bug: every button on
+// the LAN door refused), or when the fallback admits anything but an Origin that
+// names this exact scheme, host and port, or when a present header stops being
+// the whole answer.
+func TestCrossSiteActionReadsOriginOnlyWhenTheHeaderIsAbsent(t *testing.T) {
+	t.Parallel()
+
+	const lan = "192.168.1.20:8765"
+
+	cases := []struct {
+		name    string
+		host    string
+		tls     bool
+		site    string
+		origins []string // nil sends no Origin header at all
+		refused bool
+	}{
+		// Admitted: the shapes a browser really sends from the daemon's own page.
+		{name: "absent, Origin is this host and port", host: lan, site: absent, origins: []string{"http://" + lan}},
+		{name: "absent, host differs only in case", host: "Crswd.LAN:8765", site: absent, origins: []string{"http://crswd.lan:8765"}},
+		{name: "absent, Origin omits the default port Host writes", host: "crswd.lan:80", site: absent, origins: []string{"http://crswd.lan"}},
+		{name: "absent, Origin writes the default port Host omits", host: "crswd.lan", site: absent, origins: []string{"http://crswd.lan:80"}},
+		{name: "absent, an IPv6 literal", host: "[fd00::20]:8765", site: absent, origins: []string{"http://[fd00::20]:8765"}},
+		{name: "absent, https on a TLS connection", host: "crswd.lan", tls: true, site: absent, origins: []string{"https://crswd.lan:443"}},
+
+		// Refused: absent, and the Origin is no evidence of this page.
+		{name: "absent, no Origin", host: lan, site: absent, refused: true},
+		{name: "absent, Origin null", host: lan, site: absent, origins: []string{"null"}, refused: true},
+		{name: "absent, Origin empty", host: lan, site: absent, origins: []string{""}, refused: true},
+		{name: "absent, Origin is another host", host: lan, site: absent, origins: []string{"http://attacker.example:8765"}, refused: true},
+		{name: "absent, Origin is this host as a prefix of another", host: lan, site: absent, origins: []string{"http://192.168.1.20.attacker.example:8765"}, refused: true},
+		{name: "absent, Origin is another port", host: lan, site: absent, origins: []string{"http://192.168.1.20:8766"}, refused: true},
+		{name: "absent, Origin has no port and Host is not on 80", host: lan, site: absent, origins: []string{"http://192.168.1.20"}, refused: true},
+		// The scheme is part of an origin. An https page on the same host and port is
+		// a different origin from this http listener, and a browser on an https page
+		// sends Sec-Fetch-Site, so no legitimate request has this shape.
+		{name: "absent, https Origin on a plain-http connection", host: lan, site: absent, origins: []string{"https://" + lan}, refused: true},
+		{name: "absent, http Origin on a TLS connection", host: "crswd.lan", tls: true, site: absent, origins: []string{"http://crswd.lan:443"}, refused: true},
+		{name: "absent, Origin is not http(s)", host: lan, site: absent, origins: []string{"ftp://" + lan}, refused: true},
+		{name: "absent, Origin carries a path", host: lan, site: absent, origins: []string{"http://" + lan + "/"}, refused: true},
+		{name: "absent, Origin carries userinfo", host: lan, site: absent, origins: []string{"http://x@" + lan}, refused: true},
+		{name: "absent, Origin carries a query", host: lan, site: absent, origins: []string{"http://" + lan + "?a"}, refused: true},
+		{name: "absent, Origin has no scheme", host: lan, site: absent, origins: []string{lan}, refused: true},
+		{name: "absent, Origin port is not a number", host: lan, site: absent, origins: []string{"http://192.168.1.20:port"}, refused: true},
+		{name: "absent, Origin does not parse", host: lan, site: absent, origins: []string{"http://%zz"}, refused: true},
+		{name: "absent, Origin has no host", host: "", site: absent, origins: []string{"http://"}, refused: true},
+		{name: "absent, two Origin headers", host: lan, site: absent, origins: []string{"http://" + lan, "http://" + lan}, refused: true},
+
+		// Present: the header is the whole answer, whatever Origin says.
+		{name: "cross-site, Origin is this host", host: lan, site: "cross-site", origins: []string{"http://" + lan}, refused: true},
+		{name: "same-site, Origin is this host", host: lan, site: "same-site", origins: []string{"http://" + lan}, refused: true},
+		{name: "none, Origin is this host", host: lan, site: "none", origins: []string{"http://" + lan}, refused: true},
+		{name: "cross-site, no Origin", host: lan, site: "cross-site", refused: true},
+		{name: "same-origin, Origin is another host", host: lan, site: secFetchSiteSameOrigin, origins: []string{"http://attacker.example"}},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := httptest.NewRequest(http.MethodPost, actionPath, nil)
+			r.Host = c.host
+			if !c.tls {
+				r.TLS = nil
+			} else if r.TLS == nil {
+				r.TLS = &tls.ConnectionState{}
+			}
+			if c.site != absent {
+				r.Header.Set(headerSecFetchSite, c.site)
+			}
+			if c.origins != nil {
+				r.Header[headerOrigin] = c.origins
+			}
+
+			if got := crossSiteAction(r); got != c.refused {
+				t.Errorf("crossSiteAction(Host %q, Sec-Fetch-Site %q, Origin %q, TLS %v) = %v; want %v",
+					c.host, c.site, c.origins, c.tls, got, c.refused)
+			}
+		})
+	}
+}
+
+// TestADestroyOverPlainHTTPIsJudgedByOrigin is the same rule at the route: the
+// registered destroy, behind layer 1 and the page token, with the request a
+// browser sends on the plain-http door — no Sec-Fetch-Site.
+//
+// **Must fail when** the matching-Origin row is refused (the bug), when any other
+// row reaches the handler, or when the fallback stands in for the page token:
+// the row with a matching Origin and no token must still be refused, by step 3.
+func TestADestroyOverPlainHTTPIsJudgedByOrigin(t *testing.T) {
+	t.Parallel()
+
+	const host = "192.168.1.20:8765"
+
+	rows := []struct {
+		name      string
+		origin    string // empty sends none
+		noToken   bool
+		refusedBy error // nil means the destroy goes through
+	}{
+		{name: "the dashboard's own page", origin: "http://" + host},
+		{name: "no Origin at all", refusedBy: errActionCrossSite},
+		{name: "an opaque Origin", origin: "null", refusedBy: errActionCrossSite},
+		{name: "another site's page", origin: "http://attacker.example", refusedBy: errActionCrossSite},
+		{name: "this host on another port", origin: "http://192.168.1.20:9999", refusedBy: errActionCrossSite},
+		{name: "the dashboard's own page, but no page token", origin: "http://" + host, noToken: true, refusedBy: errPageTokenMissing},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+
+			d := newDestroyer(t)
+			live := d.live(t)
+
+			form := d.confirmed(t)
+			if row.noToken {
+				form.Del(fieldPageToken)
+			}
+			r := httptest.NewRequest(http.MethodPost, "/dashboard/sessions/"+live.ID+"/destroy", strings.NewReader(form.Encode()))
+			r.Host = host
+			r.Header.Set(headerContentType, contentTypeForm)
+			r.Header.Set(headerAccessAssertion, d.keys.mint(t, d.keys.claims()))
+			if row.origin != "" {
+				r.Header.Set(headerOrigin, row.origin)
+			}
+			w := httptest.NewRecorder()
+			d.ServeHTTP(w, r)
+
+			if row.refusedBy == nil {
+				wantOutcome(t, w, wantDestroyedOutcome)
+				if recorded, running := d.standing(t, live); recorded || running {
+					t.Errorf("the record %v and the window %v survived an admitted destroy; want both gone", recorded, running)
+				}
+				if got, want := d.only(t)["action"], string(audit.ActionDashboardDestroy); got != want {
+					t.Errorf("action = %v; want %v", got, want)
+				}
+				return
+			}
+
+			if w.Code != wantActionStatus {
+				t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), wantActionStatus)
+			}
+			if got := w.Body.String(); got != wantActionBody {
+				t.Errorf("body\n%s\nwant the gate's uniform refusal\n%s", got, wantActionBody)
+			}
+			if recorded, running := d.standing(t, live); !recorded || !running {
+				t.Errorf("the refused destroy left the record %v and the window %v; want both untouched", recorded, running)
+			}
+			if got := d.kills(); got != 0 {
+				t.Errorf("the refused destroy asked the host to kill %d times; want 0", got)
+			}
+			if got, want := d.only(t)["reason"], row.refusedBy.Error(); got != want {
+				t.Errorf("reason = %v; want %v", got, want)
+			}
+		})
 	}
 }
 
