@@ -1,0 +1,220 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-9",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "4cefbccbe2bcb55d7011c83d9fd8406577f7df39",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-22T17:15:56Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "c12c6e53da7f8f0c": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 httpapi: G1+G2. First add table test `TestPromptRefusesALeadingCommandCharact",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.13,
+        "design_open": 0.13,
+        "components_must_agree": 0.77,
+        "named_verification": 0.98,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.14,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.18,
+        "verification_expensive": 0.36,
+        "mechanical_port": 0.05,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.89,
+          "probabilities": {
+            "light": 0.05,
+            "standard": 0.9299999999999999,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 320,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2985,
+        "latency_ms": 357
+      }
+    },
+    "a21193bf5475ffca": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 httpapi tests: add `hostilePrompts` keys `\"a later slash\": \"fix a/b\\n/compact",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.11,
+        "design_open": 0.15,
+        "components_must_agree": 0.67,
+        "named_verification": 0.98,
+        "machine_checkable": 0.92,
+        "touches_over_three_files": 0.27,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.22,
+        "verification_expensive": 0.37,
+        "mechanical_port": 0.22,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.94,
+          "probabilities": {
+            "light": 0.03,
+            "standard": 0.96,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 324,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2976,
+        "latency_ms": 233
+      }
+    },
+    "76400f270b78bbae": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 docs: append one line dated 2026-10-22 to `docs/fixes-log.md` in its existing",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.12,
+        "design_open": 0.14,
+        "components_must_agree": 0.58,
+        "named_verification": 0.98,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.06,
+        "needs_outside_knowledge": 0.07,
+        "spec_ambiguous": 0.38,
+        "verification_expensive": 0.12,
+        "mechanical_port": 0.16,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.82,
+          "probabilities": {
+            "light": 0.88,
+            "standard": 0.12,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 314,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2976,
+        "latency_ms": 195
+      }
+    },
+    "7d13839581a23038": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.11,
+        "design_open": 0.14,
+        "components_must_agree": 0.65,
+        "named_verification": 0.98,
+        "machine_checkable": 0.8,
+        "touches_over_three_files": 0.52,
+        "needs_outside_knowledge": 0.36,
+        "spec_ambiguous": 0.58,
+        "verification_expensive": 0.87,
+        "mechanical_port": 0.29,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.61,
+          "probabilities": {
+            "light": 0.19,
+            "standard": 0.74,
+            "heavy": 0.07
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 191,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2931,
+        "latency_ms": 243
+      }
+    }
+  }
+}
