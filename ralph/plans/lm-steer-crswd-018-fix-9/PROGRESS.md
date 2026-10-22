@@ -88,3 +88,57 @@ check (G2) was added second.
   approval can be given. `git add <path>` per path and `git commit -m …` were
   permitted and are what committed this iteration. A later iteration should try
   safe-commit first anyway; the block is the sandbox's, not the script's.
+
+### Iteration 2 — T2 (regression guards, no production code)
+
+**What changed**
+
+- `internal/httpapi/sessions_test.go`: added two rows to `hostilePrompts` —
+  `"a later slash": "fix a/b\n/compact"` and `"a later bang": "say hi!"` — with
+  a why-comment saying the T1 refusal reads only the first non-whitespace
+  character, so a `/` or `!` after it is ordinary text that must still arrive
+  byte-for-byte. `TestAPromptIsDeliveredByteForByte` picks both up and still
+  expects the four-call argv list beginning with `OpCapturePane`.
+- `internal/httpapi/input_test.go`: added `TestTypeStillDeliversASlashCommand`,
+  placed just above `TestTypeRefusesBadTextWithItsOutcome`. It types `/compact`
+  with `confirmYes`, asserts `204` and that the one non-empty `call.Stdin` on the
+  fake is exactly `/compact` — the same way `TestTypeNormalisesCRLF` reads the
+  pasted bytes. No production code changed, per G4.
+
+**Failing-before evidence: none, by design.** Both additions are regression
+guards (planning note above). They pass before and after T1 because the refusal
+is on the API prompt route only, so there is no old code they could fail
+against. T1 is the only task PROMPT.md's "Prove a new test fails" applies to.
+
+**Commands run**
+
+| Command | Result |
+|---|---|
+| `go test ./internal/httpapi/ -run 'Prompt\|Type'` | `ok … 1.120s`, exit 0 |
+| `go test ./internal/httpapi/ -run 'TestTypeStillDeliversASlashCommand\|TestAPromptIsDeliveredByteForByte' -v` | PASS; confirms the new test and the two new subtests `a_later_slash` / `a_later_bang` actually run rather than being filtered out |
+| `gofmt -l .` | printed nothing |
+| `go build ./...` | exit 0 |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `golangci-lint run` | **not run — `which golangci-lint` exits 1; still not installed in this loop container**, as in iteration 1 and as the session-start hook reports. |
+| `test ! -e go.sum` | exit 0 |
+| `git status --short` | only `internal/httpapi/input_test.go` and `internal/httpapi/sessions_test.go` |
+
+**For the next iteration**
+
+- T3 is a one-line append to `docs/fixes-log.md` and touches no Go. Read the
+  file's existing format first; its Verify is
+  `grep -n 'leading' docs/fixes-log.md | grep -q 2026-10-22`, so the line must
+  carry both the word `leading` and the date `2026-10-22`.
+- After T3 only F1 remains, which runs VALIDATION_CONTRACT.md end to end.
+- The `-v` run above is worth repeating for any future table-row addition here:
+  `hostilePrompts` is a map, so a mistyped key silently adds a row nobody reads
+  and `go test` still says `ok`.
+- **`safe-commit.sh` again could not be run; PROMPT.md's fallback committed this
+  iteration too.** Tried both forms iteration 1 tried, and got the same two
+  refusals from the harness: `"$PWD"` → `Contains shell syntax (string) that
+  cannot be statically analyzed`, and the literal path → `This command requires
+  approval`, unavailable in a non-interactive session. Do not spend a third
+  iteration's time on it — the block is the sandbox's, not the script's, and it
+  needs a permission change outside this loop to lift.

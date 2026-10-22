@@ -160,6 +160,33 @@ func TestTypeNormalisesCRLF(t *testing.T) {
 	}
 }
 
+// TestTypeStillDeliversASlashCommand guards decision D5's other half. The API
+// prompt route refuses text whose first non-whitespace character is "!" or "/",
+// and this route must not inherit that: a slash command is exactly what an
+// operator sits on the session page to send, and the refusal there is about a
+// caller that cannot see the pane it is typing into.
+func TestTypeStillDeliversASlashCommand(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+
+	w := ty.typed(t, live.ID, "/compact", confirmYes)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNoContent)
+	}
+	var payloads []string
+	for _, call := range ty.fixture.tmux.Calls() {
+		if len(call.Stdin) > 0 {
+			payloads = append(payloads, string(call.Stdin))
+		}
+	}
+	if len(payloads) != 1 || payloads[0] != "/compact" {
+		t.Fatalf("payloads = %q; want [%q]", payloads, "/compact")
+	}
+}
+
 func TestTypeRefusesBadTextWithItsOutcome(t *testing.T) {
 	t.Parallel()
 

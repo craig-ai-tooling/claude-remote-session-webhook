@@ -1032,6 +1032,11 @@ var hostilePrompts = map[string]string{
 	"two trailing semicolons":   "foo;;",
 	"a shell injection attempt": "a; echo PWNED; $(id) `whoami`",
 	"an embedded newline":       "first line\nsecond line",
+	// The refusal above this route's dialog check reads the *first*
+	// non-whitespace character and nothing else, so a "/" or a "!" anywhere
+	// after it is ordinary prompt text and must still arrive byte-for-byte.
+	"a later slash": "fix a/b\n/compact",
+	"a later bang":  "say hi!",
 }
 
 // TestAPromptIsDeliveredByteForByte is SC-012, and it is the reason this route
