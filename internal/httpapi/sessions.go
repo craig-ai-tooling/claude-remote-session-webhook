@@ -397,6 +397,15 @@ var (
 	// the record the resolver already stamped.
 	errPromptUndelivered = errors.New("the prompt could not be delivered to the session")
 
+	// errPromptLeadingCommand is why the API door refuses a prompt before any
+	// tmux command runs (FR-012): Claude Code reads a leading "/" as a slash
+	// command and a leading "!" as a bash escape, so text a caller meant as a
+	// question would instead have been an instruction to the tool itself — and
+	// on this daemon the bash escape is an unsandboxed shell. It names the
+	// character class and never the text, because a reason reaches the trail
+	// (FR-042) and prompt text is secret under docs/security.md §3.
+	errPromptLeadingCommand = errors.New("prompt text begins with a command character")
+
 	// errOutputNoSession is unreachable behind the layer-3 resolver, and fails
 	// closed for the reason errPromptNoSession does: a handler that fell back to
 	// the {id} in the path would be capturing a window on a caller's say-so.
@@ -778,6 +787,17 @@ func (s *Server) promptSession(w http.ResponseWriter, r *http.Request) {
 
 	req, ok := decode[promptRequest](s, w, r)
 	if !ok {
+		return
+	}
+
+	// Ahead of the dialog check below, because that check is a capture-pane and
+	// FR-012 says this refusal costs no tmux command. Only space, tab, CR and LF
+	// are skipped: any other leading byte is the first character, so a prompt
+	// cannot smuggle a slash command in behind one. The session page's type
+	// route is deliberately not on this rule (FR-013) — an operator who types
+	// "/compact" into the pane is asking for the slash command.
+	if trimmed := strings.TrimLeft(req.Text, " \t\r\n"); trimmed != "" && (trimmed[0] == '!' || trimmed[0] == '/') {
+		s.rejectBadRequest(w, r, errPromptLeadingCommand)
 		return
 	}
 

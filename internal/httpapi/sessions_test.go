@@ -1211,6 +1211,70 @@ func TestARefusedPromptCostsNoTmuxCommand(t *testing.T) {
 	}
 }
 
+// refusedLeadingCommands is FR-012's rule spelled as rows. The character that
+// decides it is the first one that is not space, tab, CR or LF, so each of the
+// two refused characters appears bare and again behind the whitespace the rule
+// skips — a caller that indented its prompt, or sent it after a blank line,
+// still sent a slash command.
+var refusedLeadingCommands = map[string]string{
+	"a slash command":           "/status",
+	"a bash escape":             "!ls",
+	"a slash behind two spaces": "  /x",
+	"a bang behind a newline":   "\n\t!x",
+	"a slash behind a bare CR":  "\r/x",
+}
+
+// TestPromptRefusesALeadingCommandCharacter is FR-012 on the API door. Claude
+// Code would read "/status" as its own slash command and "!ls" as a bash
+// escape, so a prompt shaped like either is refused as a bad request rather
+// than delivered and hoped about — this daemon's sessions run with tool
+// approval off, which makes the bash escape a shell on the host.
+//
+// The zero-tmux-calls assertion is the part that pins *where* the check runs:
+// the dialog check ahead of delivery is itself a capture-pane, so a refusal
+// decided after it would cost the host a command on a request the daemon was
+// never going to honour.
+func TestPromptRefusesALeadingCommandCharacter(t *testing.T) {
+	t.Parallel()
+
+	for name, text := range refusedLeadingCommands {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// A server of its own, so "nothing ran" and "exactly one record" are
+			// claims about this request alone.
+			f := newPromptFixture(t)
+			body, err := json.Marshal(promptRequest{Text: text})
+			if err != nil {
+				t.Fatalf("marshal the prompt body: %v", err)
+			}
+
+			answer, _ := f.post(t, body, testTime)
+			if answer.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d (%q); want %d", answer.Code, answer.Body, http.StatusBadRequest)
+			}
+			if got := answer.Body.String(); got != string(bodyBadRequest) {
+				t.Errorf("body = %q; want %q", got, bodyBadRequest)
+			}
+			if calls := f.fixture.tmux.Calls(); len(calls) != 0 {
+				t.Errorf("the refused prompt ran %v; a refusal must land before any tmux command", calls)
+			}
+
+			rec := f.only(t)
+			if rec["decision"] != string(audit.Deny) {
+				t.Errorf("decision = %v; want %q", rec["decision"], audit.Deny)
+			}
+			if rec["reason"] != errPromptLeadingCommand.Error() {
+				t.Errorf("reason = %v; want %q", rec["reason"], errPromptLeadingCommand.Error())
+			}
+			if rec["action"] != string(audit.ActionSessionPrompt) {
+				t.Errorf("action = %v; want %q — refusing must not rename the operation",
+					rec["action"], audit.ActionSessionPrompt)
+			}
+		})
+	}
+}
+
 // TestATmuxFailureDuringAPromptAnswersFiveHundredWithNoDetail covers both halves
 // of the delivery. A failed paste means the text never arrived; a failed Return
 // means it is sitting in the pane unsubmitted. Neither is a delivery, so neither
