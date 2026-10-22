@@ -458,3 +458,38 @@ func TestOriginAddressesAgreeWithTheDefault(t *testing.T) {
 		t.Fatalf("%s has no %q ingress rule; this test is not checking anything", cloudflaredPath, originPrefix)
 	}
 }
+
+// TestUnitPutsLocalBinOnPATH holds the fix for the fresh-install "auth:
+// unknown" pill. The systemd user manager reads no shell profile, so a unit with
+// no PATH of its own runs the daemon without ~/.local/bin, where Claude Code's
+// installer puts `claude`.
+//
+// **Must fail when** the unit assigns no PATH, or one that leaves out %h/.local/bin
+// or the system directories tmux lives in.
+func TestUnitPutsLocalBinOnPATH(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"the installer's directory":  "%h/.local/bin",
+		"where distro packages live": "/usr/bin",
+		"the traditional /usr/local": "/usr/local/bin",
+		"the base directory":         "/bin",
+	}
+
+	path, ok := unitEnvironment(t)["PATH"]
+	if !ok {
+		t.Fatalf("%s assigns no PATH; the daemon cannot find claude in ~/.local/bin", unitPath)
+	}
+	dirs := strings.Split(path, ":")
+	for name, want := range tests {
+		found := false
+		for _, dir := range dirs {
+			if dir == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: PATH=%q is missing %s (%s)", unitPath, path, want, name)
+		}
+	}
+}
