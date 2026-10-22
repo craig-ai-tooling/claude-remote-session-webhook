@@ -305,6 +305,13 @@ type fakeSession struct {
 	// interrupts, which is how a test says "Codex is still running".
 	quitAfter, interrupts int
 
+	// exitAfterPaste arms the next successful paste to end the pane's process,
+	// which is the race the post-paste re-check exists for: the text landed and
+	// the program that would have read it is gone. It disarms itself, so the
+	// state after it fires is an ordinary stopped session rather than one that
+	// dies again every time it is written to.
+	exitAfterPaste bool
+
 	// The window size a Resize left behind. Zero means nothing has resized this
 	// session, which Size reads as tmux's own default rather than as a size —
 	// the fake holds what the host holds, so a test cannot pass against a daemon
@@ -415,10 +422,12 @@ func (f *Fake) Paste(_ context.Context, name string, payload []byte) error {
 		f.record(OpPaste, argvDeleteBuffer(buffer), nil)
 		return err
 	}
-	if _, ok := f.sessions[name]; !ok {
+	s, ok := f.sessions[name]
+	if !ok {
 		f.record(OpPaste, argvDeleteBuffer(buffer), nil)
 		return errNoSession(name)
 	}
+	s.pasteLanded()
 	return nil
 }
 
@@ -437,11 +446,44 @@ func (f *Fake) PasteBracketed(_ context.Context, name string, payload []byte) er
 		f.record(OpPasteBracketed, argvDeleteBuffer(buffer), nil)
 		return err
 	}
-	if _, ok := f.sessions[name]; !ok {
+	s, ok := f.sessions[name]
+	if !ok {
 		f.record(OpPasteBracketed, argvDeleteBuffer(buffer), nil)
 		return errNoSession(name)
 	}
+	s.pasteLanded()
 	return nil
+}
+
+// pasteLanded is what a successful paste changes about the host: nothing, unless
+// a test armed the pane to exit on it. The caller holds f.mu.
+func (s *fakeSession) pasteLanded() {
+	if !s.exitAfterPaste {
+		return
+	}
+	s.exitAfterPaste = false
+	s.paneCommand = "bash"
+}
+
+// ExitAfterPaste makes the next successful Paste or PasteBracketed on name end
+// the pane's process: the command becomes the login shell, as it does when
+// Claude exits. It fires once, and only on a paste tmux accepted — a paste that
+// failed delivered nothing and killed nothing. It seeds the session if it does
+// not exist yet, as SetPane does.
+//
+// This is the only way a unit test can stage the gap between the paste and the
+// Enter that submits it, which is where a session can stop with the operator's
+// text already in a pane nobody is reading.
+func (f *Fake) ExitAfterPaste(name string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	s, ok := f.sessions[name]
+	if !ok {
+		s = &fakeSession{paneCommand: fakeAliveCommand, options: make(map[string]string)}
+		f.sessions[name] = s
+	}
+	s.exitAfterPaste = true
 }
 
 func (f *Fake) CapturePane(_ context.Context, name string) (string, error) {
