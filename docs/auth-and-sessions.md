@@ -328,7 +328,7 @@ form ends that argument. These checks replace it.
 | # | Check | Why here |
 |---|---|---|
 | 1 | Layer 1 — a validated **identity** assertion, exactly as on every other browser route | Nothing is asked about the request until the caller is known |
-| 2 | Same-origin on `Sec-Fetch-Site` — the **same** `crossSite` the pane stream uses, with one addition | Decided from one header, before the body is read, so a cross-site request costs one lookup |
+| 2 | Same-origin on `Sec-Fetch-Site` — the **same** `crossSite` the pane stream uses, with one addition (absent falls back to `Origin`) | Decided from one header, before the body is read, so a cross-site request costs one lookup |
 | 3 | The page token from the form, verified against the identity step 1 produced | The half a stripped header cannot remove |
 
 Then, in the handler: for a destroy the confirming field **before** the lookup, so
@@ -339,15 +339,26 @@ resolve to, which is what makes the session it starts one the API can drive. A `
 these paths is an **unknown route**, answered by the browser door's 404 with no `Allow`
 header — never a `405`, which would confirm the path exists.
 
-**On a mutating route, an absent `Sec-Fetch-Site` refuses.** That is the one addition,
-and it inverts the stream's rule deliberately. Absent-does-not-refuse is right for a
-read, because non-browser clients omit the header and refusing them adds nothing
-against the attack it is about. It does not survive the move to a route that changes
-something: the only legitimate caller of an action route is a form this daemon
-rendered, submitted by a browser, which always sends the header — and a script that
-wants to change something uses the API door and its signature. An absent header is not
-evidence of same-origin initiation, and treating it as such makes the check optional
-for anything that can omit it.
+**On a mutating route, an absent `Sec-Fetch-Site` is not admitted on its own.** That
+is the one addition, and it inverts the stream's rule deliberately. Absent-does-not-refuse
+is right for a read, because non-browser clients omit the header and refusing them adds
+nothing against the attack it is about. It does not survive the move to a route that
+changes something: the only legitimate caller of an action route is a form this daemon
+rendered, submitted by a browser, and a script that wants to change something uses the
+API door and its signature. An absent header is not evidence of same-origin initiation,
+and treating it as such makes the check optional for anything that can omit it.
+
+**Absent falls back to `Origin`** (owner's decision, 10/22/26). Browsers send Fetch
+Metadata only to a potentially trustworthy URL, HTTPS or localhost, so the password door
+served over plain `http://<LAN address>` gets no `Sec-Fetch-Site` on any request. With
+the header absent, the action is admitted only when exactly one `Origin` header is
+present, is not `null`, is a bare `http(s)://host[:port]`, has the scheme of the
+connection, and names the request's `Host` exactly: host compared case-insensitively,
+an omitted port read as the scheme's default on both sides. Anything else refuses with
+the same response as before. A present header is still the whole answer, whatever
+`Origin` says. `X-Forwarded-Host` is never read: a proxy that rewrites `Host` sits in
+front of TLS, where the browser sends `Sec-Fetch-Site` and the fallback is not reached.
+The page token (step 3) is unchanged.
 
 **The order is composition, not convention.** The gate is wrapped *inside* the layer-1
 middleware at the single point a mutating route reaches the mux, so a route cannot be

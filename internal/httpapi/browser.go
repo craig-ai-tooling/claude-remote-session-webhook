@@ -17,7 +17,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/access"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/audit"
@@ -551,26 +553,97 @@ func (s *Server) admitAction(w http.ResponseWriter, r *http.Request, operator *a
 	return s.pageKey.verify(r.PostForm.Get(fieldPageToken), operator.Email, s.clock.Now())
 }
 
+// headerOrigin is the browser's serialisation of the initiating page's origin.
+// The action gate reads it only when Sec-Fetch-Site is absent; see
+// crossSiteAction.
+const headerOrigin = "Origin"
+
 // crossSiteAction is step 2: crossSite, plus the one thing a mutating route needs
-// that a stream does not — the header must be *there*.
+// that a stream does not — positive evidence of same-origin initiation.
 //
 // crossSite admits an absent Sec-Fetch-Site on purpose (research D8,
-// docs/security.md): browsers send the header and non-browser clients do not, so
-// requiring it on the pane stream would refuse the quickstart's curl while adding
-// nothing against the attack it is about. That argument does not survive the move
-// to a route that changes something. The only legitimate caller of an action
-// route is a form this daemon rendered, submitted by a browser, which always
-// sends the header; a script that wants to change something uses the API door and
-// its signature (FR-005). So absent refuses here, which is what
-// contracts/actions.md and FR-002a both require: an absent header is not evidence
+// docs/security.md): non-browser clients do not send it, so requiring it on the
+// pane stream would refuse the quickstart's curl while adding nothing against the
+// attack it is about. That argument does not survive the move to a route that
+// changes something. The only legitimate caller of an action route is a form this
+// daemon rendered, submitted by a browser; a script that wants to change something
+// uses the API door and its signature (FR-005). An absent header is not evidence
 // of same-origin initiation, and treating it as such makes the check optional for
 // anything that can omit it.
+//
+// A browser does not always send it, though. Fetch Metadata goes only to a
+// potentially trustworthy URL — HTTPS or localhost — so the password door served
+// over plain http on a LAN address gets no Sec-Fetch-Site on any request, and
+// refusing absent outright refused every button there. So absent falls back to
+// Origin, the evidence FR-002a first asked for (owner's decision, 10/22/26): an
+// Origin naming this very host admits, and anything else refuses exactly as
+// before. A present header is still the whole answer, so where the browser does
+// send it — Cloudflare Access, a reverse proxy with TLS, localhost — nothing
+// changes.
+//
+// This loosens nothing for a non-browser caller. One that can omit the header can
+// equally send `same-origin`, which always admitted; what stands in its way is the
+// page token in step 3, not this.
 //
 // crossSite itself is untouched, and that is deliberate rather than incidental.
 // The stream's behaviour is milestone 2's, tested, and FR-014's promise is that
 // this milestone changes no response an existing client already sees.
 func crossSiteAction(r *http.Request) bool {
-	return crossSite(r) || r.Header.Get(headerSecFetchSite) == ""
+	if r.Header.Get(headerSecFetchSite) != "" {
+		return crossSite(r)
+	}
+	return !originIsThisHost(r)
+}
+
+// originIsThisHost reports whether the request's Origin header names the origin
+// the request was sent to: same scheme as this connection, and the same host and
+// port as its Host header.
+//
+// Every doubt refuses. More than one Origin, `null` (an opaque origin, which is
+// what a sandboxed frame or a no-referrer navigation sends), anything that is not
+// a bare http(s) scheme-host-port, or a mismatch on any of the three. The scheme
+// is part of an origin, so an https page is a different origin from this http
+// listener even on the same host and port; and a browser on an https page sends
+// Sec-Fetch-Site anyway, so no legitimate request reaches here with one.
+//
+// Host is compared as the client sent it. X-Forwarded-Host is not read: it is a
+// header any caller can write, and a proxy that rewrites Host sits in front of
+// TLS, where the browser sends Sec-Fetch-Site and this function is never asked.
+func originIsThisHost(r *http.Request) bool {
+	origins := r.Header.Values(headerOrigin)
+	if len(origins) != 1 {
+		return false
+	}
+	o, err := url.Parse(origins[0])
+	if err != nil || o.Opaque != "" || o.User != nil || o.Path != "" ||
+		o.RawQuery != "" || o.ForceQuery || o.Fragment != "" {
+		return false
+	}
+
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if o.Scheme != scheme {
+		return false
+	}
+
+	want := &url.URL{Host: r.Host}
+	return o.Hostname() != "" &&
+		strings.EqualFold(o.Hostname(), want.Hostname()) &&
+		portOrDefault(o, scheme) == portOrDefault(want, scheme)
+}
+
+// portOrDefault is u's port, or the scheme's default when none is written, so
+// `http://host` and `host:80` compare equal and neither side is favoured.
+func portOrDefault(u *url.URL, scheme string) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if scheme == "https" {
+		return "443"
+	}
+	return "80"
 }
 
 // refuseAction answers every failure of step 2 or step 3 identically (FR-004,

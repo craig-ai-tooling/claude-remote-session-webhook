@@ -2,7 +2,8 @@
   The page token — the evidence a mutating request came from a page this daemon
   rendered, for the identity it rendered that page for (contracts/actions.md,
   FR-002b, FR-007). It is half of the cross-site defence; the other half is the
-  Sec-Fetch-Site check the browser fills in by itself.
+  Sec-Fetch-Site check the browser fills in by itself (or Origin, where the
+  browser sends no Fetch Metadata).
 
   One partial, so the field a page renders and the field the gate reads are one
   spelling. The gate names it `fieldPageToken` in browser.go and there is no
