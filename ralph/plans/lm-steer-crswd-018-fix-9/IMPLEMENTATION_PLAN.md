@@ -69,7 +69,7 @@ dialog check and `Manager.Prompt`.
 
 ## Tasks
 
-- [ ] T1 httpapi: G1+G2. First add table test `TestPromptRefusesALeadingCommandCharacter` in `sessions_test.go`, rows `/status`, `!ls`, `"  /x"`, `"\n\t!x"`, `"\r/x"`: 400, body `bodyBadRequest`, zero tmux calls, one deny with reason `errPromptLeadingCommand.Error()`. Verify: `go test ./internal/httpapi/ -run Prompt` exits 0.
+- [x] T1 httpapi: G1+G2. First add table test `TestPromptRefusesALeadingCommandCharacter` in `sessions_test.go`, rows `/status`, `!ls`, `"  /x"`, `"\n\t!x"`, `"\r/x"`: 400, body `bodyBadRequest`, zero tmux calls, one deny with reason `errPromptLeadingCommand.Error()`. Verify: `go test ./internal/httpapi/ -run Prompt` exits 0.
 - [ ] T2 httpapi tests: add `hostilePrompts` keys `"a later slash": "fix a/b\n/compact"` and `"a later bang": "say hi!"`; add `TestTypeStillDeliversASlashCommand` in `input_test.go`: `/compact` with `confirmYes` answers 204 and the one stdin payload is `/compact`. Verify: `go test ./internal/httpapi/ -run 'Prompt|Type'` exits 0.
 - [ ] T3 docs: append one line dated 2026-10-22 to `docs/fixes-log.md` in its existing format: the API prompt route now answers 400 to text whose first non-whitespace character is `!` or `/`; the type route is unchanged. Use the word `leading`. Verify: `grep -n 'leading' docs/fixes-log.md | grep -q 2026-10-22` exits 0.
 - [ ] F1 final: run every command in VALIDATION_CONTRACT.md and record each result in PROGRESS.md. Verify: `go test ./... && go vet -tags tmux ./... && go vet -tags quickstart ./cmd/crswd` exits 0.

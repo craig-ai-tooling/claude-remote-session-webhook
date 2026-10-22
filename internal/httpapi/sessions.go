@@ -397,6 +397,13 @@ var (
 	// the record the resolver already stamped.
 	errPromptUndelivered = errors.New("the prompt could not be delivered to the session")
 
+	// errPromptLeadingCommand is why a prompt that opens with "!" or "/" is
+	// refused: Claude Code reads a leading "/" as a slash command and a leading
+	// "!" as a bash escape, so such text is not a question for the model but an
+	// instruction to the client — and on this host a bash escape is an
+	// unsandboxed command. Like every reason here it names no text.
+	errPromptLeadingCommand = errors.New("prompt text begins with a command character")
+
 	// errOutputNoSession is unreachable behind the layer-3 resolver, and fails
 	// closed for the reason errPromptNoSession does: a handler that fell back to
 	// the {id} in the path would be capturing a window on a caller's say-so.
@@ -778,6 +785,17 @@ func (s *Server) promptSession(w http.ResponseWriter, r *http.Request) {
 
 	req, ok := decode[promptRequest](s, w, r)
 	if !ok {
+		return
+	}
+
+	// Ahead of the pane read below, because this body was never going to be
+	// delivered and a refusal must cost the host nothing — not even a capture of
+	// the operator's pane. Only space, tab, CR and LF are skipped: anything else
+	// in front of the character is text Claude Code would read as text, so the
+	// rule stops there rather than chasing every rune unicode calls a space.
+	if trimmed := strings.TrimLeft(req.Text, " \t\r\n"); trimmed != "" &&
+		(trimmed[0] == '!' || trimmed[0] == '/') {
+		s.rejectBadRequest(w, r, errPromptLeadingCommand)
 		return
 	}
 
