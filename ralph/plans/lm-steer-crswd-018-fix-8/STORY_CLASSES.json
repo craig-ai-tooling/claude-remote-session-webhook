@@ -1,0 +1,220 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-8",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "a74d31a110e8543b6bb347268fe8fab5c207fd2b",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-22T15:16:38Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "d0efef4f3ed63ab2": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 Prompt pastes bracketed for every harness (D1, D3). Replace TestPromptClaudeU",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.09,
+        "design_open": 0.16,
+        "components_must_agree": 0.89,
+        "named_verification": 0.99,
+        "machine_checkable": 0.95,
+        "touches_over_three_files": 0.67,
+        "needs_outside_knowledge": 0.24,
+        "spec_ambiguous": 0.7,
+        "verification_expensive": 0.89,
+        "mechanical_port": 0.11,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.69,
+          "probabilities": {
+            "light": 0.01,
+            "standard": 0.79,
+            "heavy": 0.2
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 323,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2249,
+        "latency_ms": 425
+      }
+    },
+    "950fae2569b5a874": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 New `internal/session/prompt_tmux_test.go` (`//go:build tmux`): a pane that t",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.08,
+        "design_open": 0.14,
+        "components_must_agree": 0.85,
+        "named_verification": 0.98,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.18,
+        "needs_outside_knowledge": 0.31,
+        "spec_ambiguous": 0.17,
+        "verification_expensive": 0.12,
+        "mechanical_port": 0.08,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.64,
+          "probabilities": {
+            "light": 0.22,
+            "standard": 0.76,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 316,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2266,
+        "latency_ms": 113
+      }
+    },
+    "41cc73a13c2d8401": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 Append one line to `docs/fixes-log.md` in its existing format: a Claude promp",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.09,
+        "design_open": 0.14,
+        "components_must_agree": 0.77,
+        "named_verification": 0.98,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.05,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.67,
+        "verification_expensive": 0.1,
+        "mechanical_port": 0.22,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.77,
+          "probabilities": {
+            "light": 0.85,
+            "standard": 0.13,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 225,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2223,
+        "latency_ms": 97
+      }
+    },
+    "668b355795560792": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 Final gate: run every assertion in VALIDATION_CONTRACT.md and record each res",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.09,
+        "design_open": 0.13,
+        "components_must_agree": 0.84,
+        "named_verification": 0.98,
+        "machine_checkable": 0.83,
+        "touches_over_three_files": 0.5,
+        "needs_outside_knowledge": 0.27,
+        "spec_ambiguous": 0.49,
+        "verification_expensive": 0.91,
+        "mechanical_port": 0.18,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.31,
+          "probabilities": {
+            "light": 0.25,
+            "standard": 0.54,
+            "heavy": 0.21
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 192,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2217,
+        "latency_ms": 111
+      }
+    }
+  }
+}
