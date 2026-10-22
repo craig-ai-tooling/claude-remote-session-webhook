@@ -290,6 +290,9 @@ version = 1
 # typed into a menu. `/rc` also occupies the positional prompt argument and
 # does not carry the name through, so the session arrives in claude.ai under an
 # auto-generated one. The flag has none of those three problems.
+# The installer writes this line, uncommented, into the configuration it creates,
+# so a fresh install has the Remote Control switch (unticked by default). A file
+# from before that, or one you wrote by hand, needs it added.
 # start_commands = rc=claude --dangerously-skip-permissions --remote-control {name}
 
 # Codex is a named entry in the same set. An entry called exactly `codex`, whose

@@ -822,13 +822,15 @@ func TestConfigModeIs0600(t *testing.T) {
 		// version, the secret because no default could stand in for a credential
 		// (TestInstallGeneratesASharedSecret), and the allowlist because its
 		// default only applies where the directory already exists
-		// (TestInstallSetsTheContainmentRoot).
+		// (TestInstallSetsTheContainmentRoot), and start_commands because the
+		// create form shows no Remote Control switch until an `rc` command exists
+		// (TestInstallConfiguresTheRemoteControlCommand).
 		//
 		// The key is named in the failure and the value never is. A line that
 		// should not be here is diagnosed by which setting it is, and a test
 		// that printed the whole line would print the secret on the day this
 		// list is wrong.
-		set := map[string]bool{"version": true, "shared_secret": true, "allowed_roots": true}
+		set := map[string]bool{"version": true, "shared_secret": true, "allowed_roots": true, "start_commands": true}
 		for _, line := range strings.Split(string(body), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
@@ -1911,5 +1913,79 @@ func TestTheInstallerDoesNotReAskOnAHostThatAnswered(t *testing.T) {
 	}
 	if !regexp.MustCompile(`if \[ -e "\$HOME/\$DROPIN" \]; then`).MatchString(string(script)) {
 		t.Error("ask_about_sudo does not return early when the override already exists, so a re-run re-asks a question already answered")
+	}
+}
+
+// TestInstallConfiguresTheRemoteControlCommand pins the fresh-install half of
+// the Remote Control switch: the daemon renders the switch only when a start
+// command named `rc` exists, and nothing else writes one. The installed file is
+// loaded by the daemon's own loader, so this fails if the line is dropped,
+// misspelled, or turns into something the loader refuses.
+func TestInstallConfiguresTheRemoteControlCommand(t *testing.T) {
+	t.Parallel()
+	needsOpenSSL(t)
+
+	got := installs(t)
+	body, _ := placed(t, got, installedConfig)
+
+	commands, ok := installedValue(t, body, config.EnvStartCommands)
+	if !ok {
+		t.Fatal("the installed configuration sets no start_commands, so the create form has no Remote Control switch on a host that followed the README")
+	}
+	roots, _ := installedValue(t, body, config.EnvAllowedRoots)
+
+	tests := []struct {
+		name    string
+		pairs   map[string]string
+		wantRC  string
+		wantErr bool
+	}{
+		{
+			name:   "installed file, nothing else set",
+			pairs:  map[string]string{},
+			wantRC: config.DefaultRemoteControlCommandName,
+		},
+		{
+			name:    "a codex command cannot take the switch",
+			pairs:   map[string]string{config.EnvStartCommands: "rc=codex --dangerously-bypass-approvals-and-sandbox"},
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := map[string]string{
+				config.EnvSharedSecret:        installedSecret(t, body),
+				config.EnvAllowedRoots:        roots,
+				config.EnvAccessTeamDomain:    "example-team.cloudflareaccess.com",
+				config.EnvAccessAUD:           "test-only-audience-tag",
+				config.EnvAccessAllowedEmails: "operator@example.com",
+				config.EnvStartCommands:       commands,
+			}
+			for k, v := range tc.pairs {
+				env[k] = v
+			}
+			cfg, err := config.LoadFrom(func(k string) string { return env[k] }, io.Discard)
+			if tc.wantErr {
+				if !errors.Is(err, config.ErrCodexRemoteControl) {
+					t.Fatalf("LoadFrom() error = %v, want ErrCodexRemoteControl", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("the daemon refuses the start_commands the installer wrote: %v", err)
+			}
+			if cfg.RemoteControlCommand != tc.wantRC {
+				t.Errorf("RemoteControlCommand = %q, want %q", cfg.RemoteControlCommand, tc.wantRC)
+			}
+			rc, _ := cfg.StartCommands.Command(config.DefaultRemoteControlCommandName)
+			if want := "claude --dangerously-skip-permissions --remote-control {name}"; rc != want {
+				t.Errorf("the rc command is %q, want %q", rc, want)
+			}
+			if _, ok := cfg.StartCommands.Command(config.DefaultStartCommandName); !ok {
+				t.Error("the default start command is missing")
+			}
+		})
 	}
 }

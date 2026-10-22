@@ -201,8 +201,11 @@ and then writes four things:
 | `~/.config/crswd/config` | a starter configuration, **only if there is none** |
 
 That configuration is complete enough to start: it carries a generated
-`shared_secret` and an `allowed_roots` pointing at a directory the installer
-created. What it does not carry is a **door** — neither can be invented for you,
+`shared_secret`, an `allowed_roots` pointing at a directory the installer
+created, and `start_commands = rc=claude --dangerously-skip-permissions --remote-control {name}`,
+which is what puts the Remote Control switch on the create form. The switch is
+unticked on every new session. A configuration written by an earlier installer,
+or by hand, has no `rc` entry and no switch until you add that line. What it does not carry is a **door** — neither can be invented for you,
 one being a credential and the other a Cloudflare account — so until you choose
 one the daemon serves the API and admits nobody to the dashboard. It is not
 broken; it is closed. Opening it is what the rest of your path does.
