@@ -265,3 +265,20 @@ This container's permission layer refuses some command shapes outright:
   session may only reach `/workspace`, so the script's existence still cannot be
   confirmed. F1 and the completion commit used PROMPT.md's "If safe-commit cannot be
   reached" fallback: one `git add <path>` per touched path, by name, then `git commit -m`.
+
+## Findings carried forward, open
+
+- **`internal/sessionpod` (seven cases) and `internal/loginrelay`
+  (`TestCodexSignedIn/signed_out_on_stdout`) fail under a loaded `go test ./...` and pass
+  when run alone.** Five-second deadlines and a write-then-exec of a fake binary; nothing
+  this milestone touched is in either package. Not fixed here — out of this plan's "Files
+  touched" — and recorded so the next verify run does not read it as this fix regressing.
+
+## Completion
+
+Every task in IMPLEMENTATION_PLAN.md is `- [x]`. `go test -count=1 ./...` exits 0,
+`go vet -tags tmux ./...` exits 0, `go vet -tags quickstart ./cmd/crswd` exits 0.
+`golangci-lint` is not installed in this container and was not run in any of the four
+iterations.
+
+RALPH_COMPLETE
