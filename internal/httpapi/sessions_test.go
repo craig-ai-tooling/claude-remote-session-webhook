@@ -1032,6 +1032,12 @@ var hostilePrompts = map[string]string{
 	"two trailing semicolons":   "foo;;",
 	"a shell injection attempt": "a; echo PWNED; $(id) `whoami`",
 	"an embedded newline":       "first line\nsecond line",
+	// The leading-command refusal reads the first non-whitespace byte and
+	// nothing else, so a "/" or a "!" anywhere past it is ordinary prompt text
+	// and still travels byte-for-byte. These two are what keeps that rule from
+	// widening into a search.
+	"a later slash": "fix a/b\n/compact",
+	"a later bang":  "say hi!",
 }
 
 // TestAPromptIsDeliveredByteForByte is SC-012, and it is the reason this route

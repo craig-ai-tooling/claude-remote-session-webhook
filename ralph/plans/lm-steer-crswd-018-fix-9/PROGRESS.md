@@ -81,3 +81,47 @@ along with the test.
   reached" fallback: one `git add <path>` per touched path, by name, then `git commit -m`.
   The planning note predicted this; a later iteration should expect the same and not spend
   time on it.
+
+### T2 — the two regression guards (10/22/26)
+
+**Changed**
+
+- `internal/httpapi/sessions_test.go`: added the two `hostilePrompts` keys the task
+  names — `"a later slash": "fix a/b\n/compact"` and `"a later bang": "say hi!"` — with a
+  why-comment saying what they hold down: the T1 check reads the first non-whitespace
+  byte and nothing else, so a `/` or `!` past it is ordinary text that still travels
+  byte-for-byte. Both ride `TestAPromptIsDeliveredByteForByte` unchanged, including its
+  four-call expectation (capture-pane, load-buffer, paste-buffer, send-keys Enter).
+- `internal/httpapi/input_test.go`: added `TestTypeStillDeliversASlashCommand` above
+  `TestTypeRefusesBadTextWithItsOutcome` — `/compact` with `confirmYes` answers 204 and
+  the one call carrying stdin holds exactly `/compact`. It reads payloads the way
+  `TestTypeNormalisesCRLF` does: the type route makes two `OpPasteBracketed` calls
+  (`load-buffer`, then `paste-buffer`) and only the first carries stdin, so "the one
+  stdin payload" is one entry and not two.
+
+**No failing-before evidence, by design.** Both are regression guards for G4 — the type
+route and the later-`/` prompts were never meant to change — so they pass on T1's code
+and would have passed before it. The planning note says so; the PROMPT's failing-before
+procedure is scoped to T1.
+
+**Commands run**
+
+| Command | Result |
+|---|---|
+| `go test ./internal/httpapi/ -run 'Prompt\|Type'` | `ok ... 0.493s` |
+| the same with `-v`, grepped for the three new cases | `--- PASS: TestTypeStillDeliversASlashCommand`, `--- PASS: TestAPromptIsDeliveredByteForByte/a_later_slash`, `--- PASS: .../a_later_bang` |
+| `gofmt -l .` | prints nothing |
+| `go build ./...` | exit 0 |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `golangci-lint run` | **not installed**, exit 127 `command not found`, exactly as in T1. Not run. |
+| `test ! -e go.sum` | exit 0 |
+| `git status --short` | only `internal/httpapi/input_test.go` and `internal/httpapi/sessions_test.go`, both in "Files touched" |
+
+**For the next iteration**
+
+- `safe-commit.sh` was again unreachable from this container; T2 used the same
+  `git add <path>` + `git commit -m` fallback. Do not spend time retrying it.
+- T3 is a one-line append to `docs/fixes-log.md` — read the file's existing format first;
+  nothing in `internal/` needs to move.
