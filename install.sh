@@ -508,9 +508,10 @@ write_config() {
 # Written once, by the installer. Nothing in this project writes it again — a
 # re-install leaves whatever is here alone. This file is yours.
 #
-# The shared secret below was generated when this file was written. Everything
-# else is commented out, so in every other respect it behaves exactly like no
-# configuration file at all. Uncomment only what you mean to change. The full
+# The shared secret below was generated when this file was written, and so were
+# allowed_roots and the one start command that gives the create form its Remote
+# Control switch. Everything else is commented out, so in every other respect it
+# behaves exactly like no configuration file at all. Uncomment only what you mean to change. The full
 # annotated list of every setting there is lives at
 # https://github.com/craig-ai-tooling/claude-remote-session-webhook/blob/main/config.example
 #
@@ -566,12 +567,24 @@ CONFIG
 # alone is one that appears to have done nothing.
 CONFIG
       printf 'allowed_roots = %s\n' "$HOME/$ROOT"
+      cat <<'CONFIG'
+
+# The named start commands a session may be created with. `default` always
+# exists and is plain `claude --dangerously-skip-permissions`. This adds `rc`,
+# which is what the create form's Remote Control switch runs when it is ticked.
+# The switch is unticked on every new session, so a plain session is what you
+# get unless you ask. `{name}` is replaced with the session's name. Delete the
+# line and the form shows no switch. If you add other commands, keep this one in
+# the list: setting start_commands replaces the whole set. Codex may not be the
+# remote-control command.
+CONFIG
+      printf 'start_commands = rc=%s\n' 'claude --dangerously-skip-permissions --remote-control {name}'
     } > "$HOME/$CONFIG"
   )
   chmod 0600 -- "$HOME/$CONFIG"
   # That one was generated, never which one. The line an operator reads here is
   # the line an operator pastes into an issue.
-  say "wrote ~/$CONFIG (mode 0600, with a generated shared_secret and allowed_roots = ~/$ROOT)"
+  say "wrote ~/$CONFIG (mode 0600, with a generated shared_secret, allowed_roots = ~/$ROOT and the rc start command for the Remote Control switch)"
 }
 
 # What is left, said plainly, because nothing else is going to say it. Both of

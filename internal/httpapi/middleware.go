@@ -124,6 +124,22 @@ func (a *RequestAudit) SetSessionID(id string) {
 	a.rec.SessionID = id
 }
 
+// SetRequestID records the correlation handle the caller sent, onto the one
+// record this request will produce.
+//
+// Unlike every other value on the trail this one *is* caller-supplied, which
+// FR-042 otherwise forbids outright. What makes it admissible is that the
+// handler has already held it to 1 to 32 characters of [a-z0-9-] before calling
+// here (spec 020 FR-002, FR-017) — a closed alphabet and a bound, not free text.
+// Nothing in this method re-checks it, so a future caller of it must do that
+// check first.
+func (a *RequestAudit) SetRequestID(id string) {
+	if a == nil {
+		return
+	}
+	a.rec.RequestID = id
+}
+
 // Deny turns the record into a refusal with a server-authored reason. It is what
 // an ownership or token failure calls (T023) — the client still gets the uniform
 // 404, and this is where the truth of it is kept.

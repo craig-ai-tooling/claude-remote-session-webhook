@@ -280,10 +280,17 @@ func lastLine(out string) string {
 // standard library reads the variable out of this daemon's own environment,
 // which is the environment that is wrong about the answer.
 func lookInPATH(list, binary string) bool {
+	_, ok := findInPATH(list, binary)
+	return ok
+}
+
+// findInPATH is lookInPATH that also says where it found the binary, for a
+// caller that has to run it and not only report on it.
+func findInPATH(list, binary string) (string, bool) {
 	// A name with a separator in it is a path, and no shell searches PATH for
 	// one. TestProbesFirstWordOnly's `/opt/claude/bin/claude` is that case.
 	if strings.ContainsRune(binary, os.PathSeparator) {
-		return isExecutable(binary)
+		return binary, isExecutable(binary)
 	}
 	for _, dir := range filepath.SplitList(list) {
 		// An empty element means the working directory to a shell. This
@@ -292,11 +299,43 @@ func lookInPATH(list, binary string) bool {
 		if dir == "" {
 			continue
 		}
-		if isExecutable(filepath.Join(dir, binary)) {
-			return true
+		candidate := filepath.Join(dir, binary)
+		if isExecutable(candidate) {
+			return candidate, true
 		}
 	}
-	return false
+	return "", false
+}
+
+// ResolveBinary is the path of a program this daemon is about to run itself,
+// found the way a session would find it.
+//
+// The daemon's own PATH goes first, so a host that has one keeps the answer it
+// always had. Failing that, the login shell's PATH is searched, because tmux
+// starts a session as a login shell and a binary an installer put in
+// ~/.local/bin (Claude Code's does) is on that PATH and on none the systemd
+// user manager gives a unit. Without this fallback `auth status` is run by a
+// daemon that cannot see the program a session runs, and the dashboard reports
+// "unknown" for a host that is signed in.
+//
+// The error names the program and nothing of either PATH, for loginShellPATH's
+// disclosure reason.
+func ResolveBinary(binary string) (string, error) {
+	return resolveBinary(binary, exec.LookPath, loginShellPATH)
+}
+
+func resolveBinary(binary string, lookPath func(string) (string, error), shellPATH func() (string, error)) (string, error) {
+	if path, err := lookPath(binary); err == nil {
+		return path, nil
+	}
+	list, err := shellPATH()
+	if err != nil {
+		return "", fmt.Errorf("find %s on the daemon's PATH or the login shell's: %w", binary, err)
+	}
+	if path, ok := findInPATH(list, binary); ok {
+		return path, nil
+	}
+	return "", fmt.Errorf("find %s on the daemon's PATH or the login shell's: %w", binary, exec.ErrNotFound)
 }
 
 // isExecutable is the question exec.LookPath asks of a candidate: a regular file

@@ -1,0 +1,956 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "96ba5d6a73eb54982fd4aa8210c74e91a3e1c943",
+  "jev_model": "jev-1.13.0",
+  "classified_at": "2026-10-14T12:39:25Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "d2a91cf4f43dd407": {
+      "index": 0,
+      "mark": " ",
+      "label": "P1 Write research.md in `specs/020-prompt-route-safety/`: one `## D<n>` section ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.32,
+        "design_open": 0.17,
+        "components_must_agree": 0.68,
+        "named_verification": 0.98,
+        "machine_checkable": 0.88,
+        "touches_over_three_files": 0.07,
+        "needs_outside_knowledge": 0.2,
+        "spec_ambiguous": 0.29,
+        "verification_expensive": 0.15,
+        "mechanical_port": 0.63,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.28,
+          "probabilities": {
+            "light": 0.52,
+            "standard": 0.47,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 238,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3054,
+        "latency_ms": 341
+      }
+    },
+    "453cb70f01e505e0": {
+      "index": 1,
+      "mark": " ",
+      "label": "P2 Write spec.md in `specs/020-prompt-route-safety/` from the spec template: FRs",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.35,
+        "design_open": 0.17,
+        "components_must_agree": 0.76,
+        "named_verification": 0.97,
+        "machine_checkable": 0.95,
+        "touches_over_three_files": 0.1,
+        "needs_outside_knowledge": 0.49,
+        "spec_ambiguous": 0.48,
+        "verification_expensive": 0.4,
+        "mechanical_port": 0.2,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.79,
+          "probabilities": {
+            "light": 0.13,
+            "standard": 0.86,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 374,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3107,
+        "latency_ms": 120
+      }
+    },
+    "b278c76810b184a3": {
+      "index": 2,
+      "mark": " ",
+      "label": "P3 Write plan.md in `specs/020-prompt-route-safety/` from `.specify/templates/pl",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.21,
+        "design_open": 0.19,
+        "components_must_agree": 0.67,
+        "named_verification": 0.95,
+        "machine_checkable": 0.92,
+        "touches_over_three_files": 0.2,
+        "needs_outside_knowledge": 0.29,
+        "spec_ambiguous": 0.27,
+        "verification_expensive": 0.42,
+        "mechanical_port": 0.49,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.7,
+          "probabilities": {
+            "light": 0.19,
+            "standard": 0.8,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 4,
+        "story_chars": 359,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3083,
+        "latency_ms": 156
+      }
+    },
+    "2b65cdf2d8c07847": {
+      "index": 3,
+      "mark": " ",
+      "label": "P4 Write tasks.md in `specs/020-prompt-route-safety/`: entries T001 to T013 with",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.33,
+        "design_open": 0.2,
+        "components_must_agree": 0.75,
+        "named_verification": 0.97,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.11,
+        "needs_outside_knowledge": 0.5,
+        "spec_ambiguous": 0.58,
+        "verification_expensive": 0.15,
+        "mechanical_port": 0.22,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.23,
+          "probabilities": {
+            "light": 0.4,
+            "standard": 0.49,
+            "heavy": 0.11
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 286,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3075,
+        "latency_ms": 141
+      }
+    },
+    "1aac0adb591b65c3": {
+      "index": 4,
+      "mark": " ",
+      "label": "P5 Amend `specs/001-crswd-daemon-core/contracts/http-api.md`: prompt section gai",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.35,
+        "design_open": 0.19,
+        "components_must_agree": 0.82,
+        "named_verification": 0.96,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.08,
+        "needs_outside_knowledge": 0.16,
+        "spec_ambiguous": 0.3,
+        "verification_expensive": 0.7,
+        "mechanical_port": 0.1,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.46,
+          "probabilities": {
+            "light": 0.35,
+            "standard": 0.64,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 387,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3109,
+        "latency_ms": 133
+      }
+    },
+    "169f8036c540a40a": {
+      "index": 5,
+      "mark": " ",
+      "label": "G1 Implement gate: confirm the spec has no open question before any Go change. V",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.32,
+        "design_open": 0.2,
+        "components_must_agree": 0.71,
+        "named_verification": 0.97,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.17,
+        "needs_outside_knowledge": 0.21,
+        "spec_ambiguous": 0.28,
+        "verification_expensive": 0.11,
+        "mechanical_port": 0.19,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.89,
+          "probabilities": {
+            "light": 0.93,
+            "standard": 0.06,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 206,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3033,
+        "latency_ms": 140
+      }
+    },
+    "1efa4c9ee87d0b3b": {
+      "index": 6,
+      "mark": " ",
+      "label": "T001 audit: `Record` gains `RequestID` written as `request_id`, omitted when emp",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.25,
+        "design_open": 0.21,
+        "components_must_agree": 0.81,
+        "named_verification": 0.98,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.13,
+        "needs_outside_knowledge": 0.15,
+        "spec_ambiguous": 0.16,
+        "verification_expensive": 0.29,
+        "mechanical_port": 0.05,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.97,
+          "probabilities": {
+            "light": 0.02,
+            "standard": 0.98,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 209,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3031,
+        "latency_ms": 147
+      }
+    },
+    "9d3ff833a0fa2fef": {
+      "index": 7,
+      "mark": " ",
+      "label": "T002 httpapi: `RequestAudit.SetRequestID` in `internal/httpapi/middleware.go` ca",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.34,
+        "design_open": 0.22,
+        "components_must_agree": 0.8,
+        "named_verification": 0.97,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.12,
+        "needs_outside_knowledge": 0.14,
+        "spec_ambiguous": 0.27,
+        "verification_expensive": 0.17,
+        "mechanical_port": 0.1,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.91,
+          "probabilities": {
+            "light": 0.06,
+            "standard": 0.94,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 270,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3051,
+        "latency_ms": 190
+      }
+    },
+    "22a0be71c2dd82d9": {
+      "index": 8,
+      "mark": " ",
+      "label": "T003 httpapi: prompt body gains optional `request_id` (D7). Invalid is 400 with ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.34,
+        "design_open": 0.22,
+        "components_must_agree": 0.8,
+        "named_verification": 0.97,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.66,
+        "needs_outside_knowledge": 0.16,
+        "spec_ambiguous": 0.21,
+        "verification_expensive": 0.33,
+        "mechanical_port": 0.04,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.89,
+          "probabilities": {
+            "light": 0.02,
+            "standard": 0.93,
+            "heavy": 0.05
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 299,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3062,
+        "latency_ms": 152
+      }
+    },
+    "936bc588e6fc3d4b": {
+      "index": 9,
+      "mark": " ",
+      "label": "T004 httpapi: refuse a prompt whose first non-whitespace character is `!` or `/`",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.27,
+        "design_open": 0.17,
+        "components_must_agree": 0.63,
+        "named_verification": 0.98,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.46,
+        "needs_outside_knowledge": 0.21,
+        "spec_ambiguous": 0.14,
+        "verification_expensive": 0.26,
+        "mechanical_port": 0.04,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.91,
+          "probabilities": {
+            "light": 0.05,
+            "standard": 0.94,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 247,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3043,
+        "latency_ms": 135
+      }
+    },
+    "a5e9408adbf9adb9": {
+      "index": 10,
+      "mark": " ",
+      "label": "T005 session + httpapi: add `ErrSessionNotReady`; `Prompt` refuses a `failed` se",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.3,
+        "design_open": 0.19,
+        "components_must_agree": 0.86,
+        "named_verification": 0.98,
+        "machine_checkable": 0.95,
+        "touches_over_three_files": 0.72,
+        "needs_outside_knowledge": 0.2,
+        "spec_ambiguous": 0.15,
+        "verification_expensive": 0.28,
+        "mechanical_port": 0.04,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.85,
+          "probabilities": {
+            "light": 0.01,
+            "standard": 0.9,
+            "heavy": 0.09
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 262,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3050,
+        "latency_ms": 126
+      }
+    },
+    "1ab880be3e0701b9": {
+      "index": 11,
+      "mark": " ",
+      "label": "T006 session: `Prompt` pastes with `PasteBracketed` for every harness; `Compact`",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.26,
+        "design_open": 0.19,
+        "components_must_agree": 0.67,
+        "named_verification": 0.97,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.27,
+        "needs_outside_knowledge": 0.21,
+        "spec_ambiguous": 0.53,
+        "verification_expensive": 0.25,
+        "mechanical_port": 0.32,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.85,
+          "probabilities": {
+            "light": 0.1,
+            "standard": 0.9,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 227,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3039,
+        "latency_ms": 140
+      }
+    },
+    "bf235e13fcff4bbb": {
+      "index": 12,
+      "mark": " ",
+      "label": "T007 session: liveness gate before the paste (D2). `LivenessStopped` returns `Er",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.26,
+        "design_open": 0.19,
+        "components_must_agree": 0.73,
+        "named_verification": 0.97,
+        "machine_checkable": 0.92,
+        "touches_over_three_files": 0.55,
+        "needs_outside_knowledge": 0.32,
+        "spec_ambiguous": 0.29,
+        "verification_expensive": 0.39,
+        "mechanical_port": 0.09,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.92,
+          "probabilities": {
+            "light": 0.03,
+            "standard": 0.95,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 262,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3054,
+        "latency_ms": 158
+      }
+    },
+    "b49f8d1a690582cd": {
+      "index": 13,
+      "mark": " ",
+      "label": "T008 tmuxctl fake: add `ExitAfterPaste(name)`, which sets the pane command to `b",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.17,
+        "design_open": 0.18,
+        "components_must_agree": 0.66,
+        "named_verification": 0.97,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.13,
+        "needs_outside_knowledge": 0.16,
+        "spec_ambiguous": 0.13,
+        "verification_expensive": 0.22,
+        "mechanical_port": 0.04,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.74,
+          "probabilities": {
+            "light": 0.17,
+            "standard": 0.83,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 252,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3049,
+        "latency_ms": 137
+      }
+    },
+    "b9752b18df209099": {
+      "index": 14,
+      "mark": " ",
+      "label": "T009 session: re-check liveness after the paste. If stopped, send `C-u`, send no",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.26,
+        "design_open": 0.22,
+        "components_must_agree": 0.74,
+        "named_verification": 0.97,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.47,
+        "needs_outside_knowledge": 0.36,
+        "spec_ambiguous": 0.39,
+        "verification_expensive": 0.44,
+        "mechanical_port": 0.1,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.88,
+          "probabilities": {
+            "light": 0.05,
+            "standard": 0.92,
+            "heavy": 0.03
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 237,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3042,
+        "latency_ms": 138
+      }
+    },
+    "8789510c02850f77": {
+      "index": 15,
+      "mark": " ",
+      "label": "T010 session: `Prompt` takes the restart claim after `lockSession`; held means `",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.28,
+        "design_open": 0.19,
+        "components_must_agree": 0.76,
+        "named_verification": 0.97,
+        "machine_checkable": 0.91,
+        "touches_over_three_files": 0.36,
+        "needs_outside_knowledge": 0.18,
+        "spec_ambiguous": 0.42,
+        "verification_expensive": 0.35,
+        "mechanical_port": 0.08,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.92,
+          "probabilities": {
+            "light": 0.03,
+            "standard": 0.95,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 276,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3049,
+        "latency_ms": 158
+      }
+    },
+    "9efe0c9f979e9371": {
+      "index": 16,
+      "mark": " ",
+      "label": "T011 httpapi: fixtures in `internal/httpapi/testdata/lawnmower/` for answer, res",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.25,
+        "design_open": 0.2,
+        "components_must_agree": 0.73,
+        "named_verification": 0.97,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.9,
+        "needs_outside_knowledge": 0.41,
+        "spec_ambiguous": 0.6,
+        "verification_expensive": 0.19,
+        "mechanical_port": 0.25,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.91,
+          "probabilities": {
+            "light": 0.05,
+            "standard": 0.94,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 286,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3056,
+        "latency_ms": 140
+      }
+    },
+    "74ed23b40a0daed2": {
+      "index": 17,
+      "mark": " ",
+      "label": "T012 session tmux test: new file prompt_tmux_test.go in `internal/session/` (`//",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.23,
+        "design_open": 0.2,
+        "components_must_agree": 0.73,
+        "named_verification": 0.97,
+        "machine_checkable": 0.9,
+        "touches_over_three_files": 0.19,
+        "needs_outside_knowledge": 0.37,
+        "spec_ambiguous": 0.2,
+        "verification_expensive": 0.29,
+        "mechanical_port": 0.13,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.76,
+          "probabilities": {
+            "light": 0.15,
+            "standard": 0.84,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 328,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3067,
+        "latency_ms": 148
+      }
+    },
+    "9d16b2f4788af011": {
+      "index": 18,
+      "mark": " ",
+      "label": "T013 docs: add a \"Prompt route gates (spec 020)\" subsection under \"Non-negotiabl",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.3,
+        "design_open": 0.21,
+        "components_must_agree": 0.7,
+        "named_verification": 0.97,
+        "machine_checkable": 0.85,
+        "touches_over_three_files": 0.07,
+        "needs_outside_knowledge": 0.17,
+        "spec_ambiguous": 0.27,
+        "verification_expensive": 0.49,
+        "mechanical_port": 0.43,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.38,
+          "probabilities": {
+            "light": 0.4,
+            "standard": 0.59,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 306,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3062,
+        "latency_ms": 155
+      }
+    },
+    "af7d0feff6963ab5": {
+      "index": 19,
+      "mark": " ",
+      "label": "F1 Final gate: run `go test ./...`, `go test -tags tmux ./...` and the pre-commi",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.3,
+        "design_open": 0.2,
+        "components_must_agree": 0.74,
+        "named_verification": 0.97,
+        "machine_checkable": 0.91,
+        "touches_over_three_files": 0.42,
+        "needs_outside_knowledge": 0.2,
+        "spec_ambiguous": 0.2,
+        "verification_expensive": 0.92,
+        "mechanical_port": 0.2,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.27,
+          "probabilities": {
+            "light": 0.43,
+            "standard": 0.51,
+            "heavy": 0.06
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 324,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3087,
+        "latency_ms": 159
+      }
+    }
+  }
+}

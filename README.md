@@ -201,8 +201,11 @@ and then writes four things:
 | `~/.config/crswd/config` | a starter configuration, **only if there is none** |
 
 That configuration is complete enough to start: it carries a generated
-`shared_secret` and an `allowed_roots` pointing at a directory the installer
-created. What it does not carry is a **door** — neither can be invented for you,
+`shared_secret`, an `allowed_roots` pointing at a directory the installer
+created, and `start_commands = rc=claude --dangerously-skip-permissions --remote-control {name}`,
+which is what puts the Remote Control switch on the create form. The switch is
+unticked on every new session. A configuration written by an earlier installer,
+or by hand, has no `rc` entry and no switch until you add that line. What it does not carry is a **door** — neither can be invented for you,
 one being a credential and the other a Cloudflare account — so until you choose
 one the daemon serves the API and admits nobody to the dashboard. It is not
 broken; it is closed. Opening it is what the rest of your path does.
@@ -670,22 +673,15 @@ can read. *Writing the file yourself rather than installing?* Then
 [`config.example`](config.example) is the annotated copy, and the secret is the
 output of `openssl rand -hex 32`.
 
-**2 · Take the unit's copy of `listen` out of the way**, or the line you just
-wrote does nothing. The unit the installer wrote carries
-`Environment=CRSW_LISTEN=127.0.0.1:8765`, and **the environment beats the file**:
-leave it and the daemon goes on binding loopback, unreachable from the LAN, while
-the file says otherwise and `/settings` names the environment as the layer that
-won.
+**2 · Leave the unit alone.** The unit the installer wrote carries no active
+`CRSW_LISTEN`. The line is there as a comment, `# Environment=CRSW_LISTEN=127.0.0.1:8765`,
+so the `listen` you just wrote in the file is the one the daemon reads and
+`/settings` names the file as the layer that won. Nothing to edit, and the unit
+stays one a later re-run of the [installer](#install) can update.
 
-```bash
-$EDITOR ~/.config/systemd/user/crswd.service   # delete the CRSW_LISTEN line
-systemctl --user daemon-reload
-```
-
-Putting the LAN address on that line instead of in the file works equally well;
-what does not work is setting it in both and expecting the file to win. Either
-way the unit becomes one you edited, so a later re-run of the
-[installer](#install) leaves it alone and says so.
+**The environment beats the file.** Uncommenting that line would put loopback
+back in charge, and the file would stop meaning anything. Set `listen` in one
+place only, and make it the file.
 
 **3 · Check the file, then start.**
 

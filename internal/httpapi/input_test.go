@@ -160,6 +160,33 @@ func TestTypeNormalisesCRLF(t *testing.T) {
 	}
 }
 
+// TestTypeStillDeliversASlashCommand is the other half of the API prompt
+// route's leading-command refusal (D5): that refusal is the API door's alone.
+// The operator sitting in front of the session page typed "/compact" because
+// they meant Claude Code's slash command, and a door that refused it would take
+// away the only way to send one.
+func TestTypeStillDeliversASlashCommand(t *testing.T) {
+	t.Parallel()
+
+	ty := newTyper(t)
+	live := ty.live(t)
+
+	w := ty.typed(t, live.ID, "/compact", confirmYes)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status = %d (%s); want %d", w.Code, w.Body.String(), http.StatusNoContent)
+	}
+	var payloads []string
+	for _, call := range ty.fixture.tmux.Calls() {
+		if len(call.Stdin) > 0 {
+			payloads = append(payloads, string(call.Stdin))
+		}
+	}
+	if len(payloads) != 1 || payloads[0] != "/compact" {
+		t.Fatalf("payloads = %q; want [%q]", payloads, "/compact")
+	}
+}
+
 func TestTypeRefusesBadTextWithItsOutcome(t *testing.T) {
 	t.Parallel()
 
