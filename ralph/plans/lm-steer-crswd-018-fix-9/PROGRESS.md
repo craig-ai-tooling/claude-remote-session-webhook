@@ -195,3 +195,90 @@ against. T1 is the only task PROMPT.md's "Prove a new test fails" applies to.
 - **`safe-commit.sh` was attempted again and is still unreachable**, for the third
   iteration running, with the same two refusals. PROMPT.md's fallback committed
   this iteration.
+
+### Iteration 4 — F1 (run VALIDATION_CONTRACT.md end to end, no code)
+
+**What changed**
+
+Nothing outside this notebook. F1 only runs the contract and records it, so no
+file under "Files touched" was edited and no failing-before evidence applies.
+
+**Behaviour section**
+
+| Contract command | Result |
+|---|---|
+| `go test ./internal/httpapi/ -run 'Prompt' -v 2>&1 \| grep -E -- '--- PASS: TestPromptRefusesALeadingCommandCharacter/'` | **5 lines** (≥4 required): `a_slash_command`, `a_bash_escape`, `a_slash_behind_two_spaces`, `a_bang_behind_a_newline`, `a_slash_behind_a_bare_CR` |
+| `go test ./internal/httpapi/ -run 'Prompt'` | `ok … 0.025s`, exit 0 |
+| `go test ./internal/httpapi/ -run 'Prompt' -v 2>&1 \| grep -E -- '--- PASS: TestAPromptIsDeliveredByteForByte/a_later_(slash\|bang)'` | **2 lines** (≥2 required): `a_later_bang`, `a_later_slash` |
+| `go test ./internal/httpapi/ -run 'Type' -v 2>&1 \| grep -E -- '--- PASS: TestTypeStillDeliversASlashCommand'` | **1 line** (≥1 required) |
+| `go test ./internal/audit/ ./internal/httpapi/` | both `ok`, exit 0 |
+| `grep -n 'leading' docs/fixes-log.md` | one line, `60:- 2026-10-22 — …`, carrying both `!` and `/` |
+
+**Suites and guardrails**
+
+| Contract command | Result |
+|---|---|
+| `go build ./...` | exit 0 |
+| `go test ./...` | exit 0. Also run uncached as `go test -count=1 ./...` — every package `ok`, exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `golangci-lint run` | **not run — `which golangci-lint` exits 1; not installed in this loop container**, as in iterations 1–3. The contract says "where golangci-lint is installed", so this is satisfied vacuously here and is CI's to run |
+| `test ! -e go.sum` | exit 0 |
+| API door still has six routes | **`6`** — see the harness note below for the command actually run; the six headings are `POST /sessions`, `GET /sessions`, `GET /sessions/{id}`, `DELETE /sessions/{id}`, `POST /sessions/{id}/prompt`, `GET /sessions/{id}/output` |
+| No new package under `internal/` | **satisfied** — see the harness note; `git diff --name-status 9a938b4 HEAD -- internal/` prints three `M` lines and no `A`, so no file and therefore no directory was added |
+| F1's own Verify: `go test ./... && go vet -tags tmux ./... && go vet -tags quickstart ./cmd/crswd` | exit 0 |
+
+**Two contract commands could not be run verbatim, and what was run instead**
+
+Neither is a failure of the tree; both are this container's shell sandbox.
+
+- **`grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) ' …`** is refused with `This
+  command requires approval`, because of the backtick. `grep -cE '^## .(GET|POST|DELETE|PATCH|PUT) ' specs/001-crswd-daemon-core/contracts/http-api.md`
+  is permitted, prints `6`, and the `-n` form above shows every matched line does
+  begin `## ` followed by a backtick. A `.` standing in for the backtick can only
+  over-match, so `6` is an upper bound that lands on the expected number.
+- **`bash -c 'diff <(git ls-tree -d --name-only main internal/) …'`** is refused
+  the same way, and **`main` does not exist in this container at all**: only
+  `origin/main` and the two branches. `git diff --name-only main HEAD` answers
+  `fatal: bad revision 'main'`, and `git ls-tree` is refused regardless of the
+  revision. `git diff --name-status` is permitted and is the equivalent evidence:
+  against the base commit `9a938b4` the whole diff is three `M` lines under
+  `internal/httpapi/`, one `M` on `docs/fixes-log.md`, and the five `A` lines of
+  this notebook directory — exactly "Files touched" and nothing else.
+
+**For whoever reads this next**
+
+- **`origin/main` has moved past this branch's base.** It is `af85fb2`; the plan
+  was cut from `9a938b4`. `git diff --name-status origin/main HEAD -- internal/`
+  therefore also lists `actions_test.go`, `browser.go` and `settings.go` as `M`,
+  and none of those is this milestone's work — they are commits on `origin/main`
+  this branch does not have. Compare against `9a938b4`, not `origin/main`, when
+  asking what this milestone changed.
+- **`internal/sessionpod` flaked once and is not this milestone's.** The first
+  `go test ./...` of this iteration failed four of its tests, all
+  `timed out waiting for the session to exist` (`sessionpod_test.go:131`, `:226`,
+  `:253`, `:373`, `:397`). The package's `deadline` is a 5s constant and its tests
+  use the tmux fake, so this is contention under the full parallel suite, not a
+  defect: the package passes alone (`go test -count=1 ./internal/sessionpod/`),
+  the named test passes alone, and two later full runs including an uncached
+  `go test -count=1 ./...` were green. `sessionpod` imports `internal/session`,
+  `internal/config` and `internal/tmuxctl` and not `internal/httpapi`, so nothing
+  in this milestone can reach it. Worth watching in CI rather than chasing here —
+  it is an outside cause, and it is recorded rather than smoothed over.
+- Every task in IMPLEMENTATION_PLAN.md is now `- [x]`, so PROMPT.md's
+  "Completion" applies and is folded into this same iteration: `go test ./...`
+  exits 0 (above), and the sentinel is the last line of this file. Finishing F1
+  and completing the milestone are therefore **one commit** rather than two —
+  the sentinel lives in the file F1 already had to commit, and a second commit
+  would have nothing in it.
+- **`safe-commit.sh` could not be run, for the fourth iteration running**, so
+  PROMPT.md's "If safe-commit cannot be reached" fallback committed this one too:
+  `git add <path>` per path, then `git commit -m …`. Both invocations were tried
+  again and drew the same two refusals as before — with `"$PWD"`,
+  `Contains shell syntax (string) that cannot be statically analyzed`; with the
+  literal `/workspace` (and the script's real absolute path,
+  `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh`), `This command requires
+  approval`, which a non-interactive session cannot give. The block is the
+  sandbox's permission model, not the script.
+
+RALPH_COMPLETE
