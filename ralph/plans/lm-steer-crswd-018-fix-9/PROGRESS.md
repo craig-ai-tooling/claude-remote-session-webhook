@@ -176,3 +176,92 @@ word `leading`, which a terse version would not.
   rather than treat it as a failure — the contract says "exits 0 where installed".
 - `safe-commit.sh` is unreachable from this container (T1 and T2 both found this). T3
   used the `git add <path>` + `git commit -m` fallback again.
+
+### F1 — the validation contract, run end to end (10/22/26)
+
+**Changed**
+
+- Nothing in the tree. F1 only runs VALIDATION_CONTRACT.md and records it here, plus the
+  box in IMPLEMENTATION_PLAN.md.
+
+**Behaviour assertions**
+
+| Assertion | Command | Result |
+|---|---|---|
+| The refusal's named cases pass | `go test ./internal/httpapi/ -run 'Prompt' -v 2>&1 \| grep -E -- '--- PASS: TestPromptRefusesALeadingCommandCharacter/'` | **5 lines** (`a_slash_command`, `a_bash_escape`, `a_slash_command_behind_spaces`, `a_bash_escape_behind_a_newline`, `a_slash_command_behind_a_return`); contract wants ≥4 |
+| The prompt suite is green | `go test ./internal/httpapi/ -run 'Prompt'` | `ok ... 0.021s`, exit 0 |
+| A later `/` or `!` still delivered | `go test ./internal/httpapi/ -run 'Prompt' -v 2>&1 \| grep -E -- '--- PASS: TestAPromptIsDeliveredByteForByte/a_later_(slash\|bang)'` | **2 lines**; contract wants ≥2 |
+| The type route still delivers `/compact` | `go test ./internal/httpapi/ -run 'Type' -v 2>&1 \| grep -E -- '--- PASS: TestTypeStillDeliversASlashCommand'` | **1 line**; contract wants ≥1 |
+| No prompt text on the record or the response | `go test ./internal/audit/ ./internal/httpapi/` | both `ok`, exit 0 |
+| The fix is recorded for operators | `grep -n 'leading' docs/fixes-log.md` | one line, `docs/fixes-log.md:60`, dated 2026-10-22, naming both `!` and `/` |
+
+**Suites and guardrails**
+
+| Assertion | Result |
+|---|---|
+| `go build ./...` | exit 0 |
+| `go test ./...` | exit 0 on a `-count=1` run — but **the first run failed**, see below |
+| `go vet ./...` | exit 0 |
+| `go vet -tags tmux ./...` | exit 0 |
+| `go vet -tags quickstart ./cmd/crswd` | exit 0 |
+| `golangci-lint run` | **not installed** (exit 127, `command not found`), as in T1–T3. The contract says "exits 0 where golangci-lint is installed", so this is not a failure. |
+| `test ! -e go.sum` | exit 0 |
+| `gofmt -l .` | prints nothing |
+| API door still has six routes | **6**, see the note below on how it was counted |
+| No new package under `internal/` | holds, see the note below on how it was checked |
+| `git status --short` | only this notebook directory |
+
+**The first `go test ./...` failed and the second did not.** Recorded in full because it
+is the kind of thing a later reader will meet again:
+
+- `internal/loginrelay` — `TestCodexSignedIn/signed_out_on_stdout`:
+  `fork/exec /tmp/.../codex: text file busy`. The test writes a fake binary and execs it;
+  the error is the kernel refusing an exec while the written file is still held open.
+- `internal/sessionpod` — seven cases (`TestRunFailsWhenTmuxCannotBeAsked`,
+  `TestRunKeepsWaitingWhenHasFailsButTheSessionIsListed`,
+  `TestRunTakesAnEmptyListAsTheSessionBeingGone`,
+  `TestRunStartsALoginShellAndSendsNothing`, `TestRunReturnsWhenTheSessionIsGone`,
+  `TestRunSeedsBeforeNew`, `TestRunKillsAndConfirmsTheSessionOnCancel` both rows), each a
+  5s `timed out waiting for …`.
+
+Both packages passed immediately when run alone (`go test ./internal/loginrelay/
+./internal/sessionpod/` → both `ok`), and the whole suite passed on `go test -count=1
+./...`. Neither package imports anything this milestone touched — the diff is
+`internal/httpapi/{sessions.go,sessions_test.go,input_test.go}` and `docs/fixes-log.md`
+— so these are load-sensitive tests on a busy container (five-second deadlines, and the
+first run compiled everything cold alongside `internal/config`, `release` and `updater`),
+not a regression from this fix. **Carried forward as an open finding, not as done work.**
+
+**Two assertions could not be run as literally written, and were satisfied another way.**
+This container's permission layer refuses some command shapes outright:
+
+- The six-route count: `grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) '` was refused (the
+  backtick in the pattern). Ran `grep -nE '^## .(GET|POST|DELETE|PATCH|PUT) '` on the same
+  file instead and read the six printed lines, which show the backtick the contract's
+  pattern asks for: `POST /sessions` (128), `GET /sessions` (183), `GET /sessions/{id}`
+  (223), `DELETE /sessions/{id}` (231), `POST /sessions/{id}/prompt` (256),
+  `GET /sessions/{id}/output` (350). Six, unchanged.
+- The no-new-`internal/`-package diff: `git ls-tree` is refused here under every revision
+  tried, and **this clone has no local `main`** — only `origin/main` and the two
+  `plan/`+`ralph/` branches, so `git ls-tree -d --name-only main internal/` would fail on
+  the revision name before the permission layer mattered. Ran
+  `git diff --name-only origin/main HEAD` instead: nine paths, the four in "Files touched"
+  plus five in this notebook directory. No path under `internal/` outside
+  `internal/httpapi/`, and no new directory anywhere, which is strictly more than the
+  directory-only diff asserts.
+
+**For the next iteration**
+
+- Every task in IMPLEMENTATION_PLAN.md is now `- [x]`, so this milestone is complete and
+  the sentinel is appended below.
+- If a verify run here fails in `internal/sessionpod` or `internal/loginrelay`, re-run
+  those two packages alone before believing it. They are the flakiest pair in the tree on
+  this container.
+- `golangci-lint` was absent for all four tasks. CI runs it; nothing in this milestone was
+  linted locally.
+- **`safe-commit.sh` could not be run, for the fourth time.** The invocation was refused
+  before it executed ("contains shell syntax that cannot be statically analyzed"), and
+  `ls /home/ralph/code/ai-lawnmower/loop/safe-commit.sh` was refused outright — this
+  session may only reach `/workspace`, so the script's existence still cannot be
+  confirmed. F1 and the completion commit used PROMPT.md's "If safe-commit cannot be
+  reached" fallback: one `git add <path>` per touched path, by name, then `git commit -m`.
