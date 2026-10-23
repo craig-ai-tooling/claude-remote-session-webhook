@@ -124,7 +124,7 @@ An operator reduces a long-running session's accumulated context without losing 
 
 - **FR-001**: The daemon MUST refuse any browser-authenticated mutating request that does not carry positive evidence it was initiated by the dashboard itself. An ambient Cloudflare Access cookie MUST NOT be sufficient authorisation for any state change.
 - **FR-002**: That evidence MUST be **two independent checks, both required**:
-  - **FR-002a**: The request's `Origin` MUST match the dashboard's own origin. A request carrying **no** `Origin` header MUST be refused rather than exempted — an absent header is not evidence of same-origin, and treating it as such would make the check optional for anything that can omit it.
+  - **FR-002a**: The request's `Origin` MUST match the dashboard's own origin. A request carrying **no** `Origin` header MUST be refused rather than exempted — an absent header is not evidence of same-origin, and treating it as such would make the check optional for anything that can omit it. *(Mechanism per research R1 and its 10/22/26 amendment: `Sec-Fetch-Site: same-origin` when the browser sends it; when it is absent, an `Origin` matching the request's `Host`. Absent both, refuse.)*
   - **FR-002b**: The request MUST carry a token minted into the page that issued it, bound to the authenticated Access identity (FR-007) and invalidated with that identity's session (FR-008).
 - **FR-002c**: Neither check alone may authorise a state change, and each MUST be independently removable in a test that then fails. Two checks that cannot be shown to work separately are one check with extra steps.
 - **FR-003**: A mutating request missing the required evidence MUST be refused **before** any state changes, and the refusal MUST be audited.

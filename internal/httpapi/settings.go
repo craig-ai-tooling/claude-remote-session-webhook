@@ -20,7 +20,7 @@ package httpapi
 // This handler mints the token each of them carries. Both are registered
 // through s.handleAction, which is layer 1 plus the two checks a write needs —
 // the cross-site refusal, where an absent Sec-Fetch-Site refuses as well as a
-// wrong one, and a page token bound to the identity layer 1 verified — and both
+// wrong one unless Origin names this host, and a page token bound to the identity layer 1 verified — and both
 // run before the handler does, therefore before anything is written.
 //
 // `GET /settings` is nevertheless still the only verb registered on this path.

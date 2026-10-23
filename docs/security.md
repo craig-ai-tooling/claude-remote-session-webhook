@@ -249,7 +249,8 @@ they are not about who the caller is. The browser's credential is an ambient coo
 so "the operator's identity was verified" and "the operator asked for this" are
 different facts; the second is what the action gate establishes. See
 [`docs/auth-and-sessions.md`](./auth-and-sessions.md) for the rule in full — the short
-version is layer 1, then `Sec-Fetch-Site` (**absent refuses here**), then a stateless
+version is layer 1, then `Sec-Fetch-Site` (**absent refuses here unless `Origin` names
+this host**), then a stateless
 page token bound to the verified identity, all before the handler runs and therefore
 before anything changes.
 
@@ -545,14 +546,17 @@ never about while adding nothing against the one it is. The refusal is decided b
 any session is looked up, and the header's value is caller-authored text that never
 reaches a log line or an audit record.
 
-**On a route that changes something, absent refuses too.** Same check, same code, one
+**On a route that changes something, absent is not enough.** Same check, same code, one
 addition — and the difference is the argument above running out. The only legitimate
-caller of an action route is a form this daemon rendered, submitted by a browser, which
-always sends the header; a script that wants to change something uses the API door and
-its signature. An absent header is not evidence of same-origin initiation, and treating
-it as such makes the check optional for anything that can omit it. It is still only
-half the defence: the other half is the page token, because a header a future proxy
-could strip must not be the whole of it.
+caller of an action route is a form this daemon rendered, submitted by a browser; a
+script that wants to change something uses the API door and its signature. An absent
+header is not evidence of same-origin initiation, and treating it as such makes the
+check optional for anything that can omit it. So an absent header falls back to
+`Origin` (owner's decision, 10/22/26): browsers send no Fetch Metadata to a plain-http
+LAN address, and on that door the request is admitted only when a single, non-`null`
+`Origin` names this connection's scheme and the request's exact `Host`. Anything else
+refuses identically. It is still only half the defence: the other half is the page
+token, because a header a future proxy could strip must not be the whole of it.
 
 ## Rendering session output (the one XSS surface)
 

@@ -85,6 +85,21 @@ StandardError=journal
 # set up, since the installer writes a config and never an env.
 EnvironmentFile=-%h/.config/crswd/env
 
+# PATH, assigned and not left to the user manager. The manager reads no shell
+# profile, so its PATH has no ~/.local/bin, which is where Claude Code's own
+# installer puts `claude` and where this daemon's installer puts crswd. Without
+# it the daemon cannot run `claude auth status` and the dashboard's sign-in pill
+# stays "auth: unknown" on a fresh install. Sessions are unaffected either way:
+# tmux starts them as login shells, which run your profile.
+#
+# This replaces the manager's default PATH rather than extending it. A tool that
+# lives elsewhere (nvm, /snap/bin, /opt) goes on this line, or in a drop-in:
+# `systemctl --user edit crswd`. The daemon also looks for a start command's
+# program on your login shell's PATH when its own has none, so a binary you
+# installed somewhere unusual is still found for the sign-in check.
+# TestUnitPutsLocalBinOnPATH keeps this line honest.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
 # The rest, as comments. This is every remaining variable the daemon reads, and
 # each value shown is the daemon's own default. `.env.example` says what each one
 # refuses to start on.

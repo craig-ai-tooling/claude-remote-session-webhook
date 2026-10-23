@@ -891,3 +891,109 @@ func TestFakePanePID(t *testing.T) {
 		}
 	})
 }
+
+// ExitAfterPaste models the one race the daemon cannot otherwise produce in a
+// unit test: Claude stops between the paste and the Enter that would submit it.
+// The knob is only honest if the pane reads running right up to the paste and
+// stopped only once it has landed — a fake that reported stopped from the start
+// would let the post-paste re-check pass against a daemon that never looks.
+func TestFakeExitAfterPasteStopsThePaneOnlyOnce(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		op    tmuxctl.Op
+		paste func(context.Context, *tmuxctl.Fake, string, []byte) error
+	}{
+		{
+			name: "paste",
+			op:   tmuxctl.OpPaste,
+			paste: func(ctx context.Context, f *tmuxctl.Fake, name string, payload []byte) error {
+				return f.Paste(ctx, name, payload)
+			},
+		},
+		{
+			name: "bracketed paste",
+			op:   tmuxctl.OpPasteBracketed,
+			paste: func(ctx context.Context, f *tmuxctl.Fake, name string, payload []byte) error {
+				return f.PasteBracketed(ctx, name, payload)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			f := tmuxctl.NewFake()
+			f.Seed(tmuxctl.SessionInfo{Name: fakeName, Managed: true, Claude: tmuxctl.LivenessRunning})
+			f.ExitAfterPaste(fakeName)
+
+			if got := claudeLiveness(t, f, fakeName); got != tmuxctl.LivenessRunning {
+				t.Fatalf("before the paste: Claude = %q, want %q", got, tmuxctl.LivenessRunning)
+			}
+
+			// A paste that never reached tmux killed nothing, so the knob is still
+			// loaded afterwards.
+			boom := errors.New("boom")
+			f.FailOp(tt.op, boom)
+			if err := tt.paste(ctx, f, fakeName, []byte("hello")); !errors.Is(err, boom) {
+				t.Fatalf("paste err = %v, want the injected failure", err)
+			}
+			if got := claudeLiveness(t, f, fakeName); got != tmuxctl.LivenessRunning {
+				t.Fatalf("after a failed paste: Claude = %q, want %q", got, tmuxctl.LivenessRunning)
+			}
+			f.FailOp(tt.op, nil)
+
+			if err := tt.paste(ctx, f, fakeName, []byte("hello")); err != nil {
+				t.Fatalf("paste: %v", err)
+			}
+			if got := claudeLiveness(t, f, fakeName); got != tmuxctl.LivenessStopped {
+				t.Fatalf("after the paste: Claude = %q, want %q", got, tmuxctl.LivenessStopped)
+			}
+
+			// Once, not every time: a session the operator restarted is running
+			// again, and a knob that fired twice would stop a paste nobody armed it
+			// for.
+			f.SetPaneCommand(fakeName, "claude")
+			if err := tt.paste(ctx, f, fakeName, []byte("hello")); err != nil {
+				t.Fatalf("second paste: %v", err)
+			}
+			if got := claudeLiveness(t, f, fakeName); got != tmuxctl.LivenessRunning {
+				t.Errorf("after a second paste: Claude = %q, want %q", got, tmuxctl.LivenessRunning)
+			}
+		})
+	}
+}
+
+// Arming the knob on a name nothing created seeds the session, as SetPane does,
+// so a test can stage the race without going through New.
+func TestFakeExitAfterPasteSeedsTheSession(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	f := tmuxctl.NewFake()
+	f.ExitAfterPaste(fakeName)
+
+	if err := f.Paste(ctx, fakeName, []byte("hello")); err != nil {
+		t.Fatalf("Paste: %v", err)
+	}
+}
+
+// claudeLiveness reads one session's Claude out of List, which is the only way
+// the daemon ever learns it.
+func claudeLiveness(t *testing.T, f *tmuxctl.Fake, name string) tmuxctl.Liveness {
+	t.Helper()
+
+	sessions, err := f.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, s := range sessions {
+		if s.Name == name {
+			return s.Claude
+		}
+	}
+	t.Fatalf("List returned no session named %s", name)
+	return tmuxctl.LivenessUnknown
+}

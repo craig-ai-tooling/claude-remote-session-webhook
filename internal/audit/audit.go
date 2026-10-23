@@ -34,6 +34,9 @@ const (
 	keyDecision  = "decision"
 	keyReason    = "reason"
 	keyRemote    = "remote"
+
+	// Added by spec 020 FR-002, which amends spec 001 FR-042 for this one field.
+	keyRequestID = "request_id"
 )
 
 // Action names the operation being recorded. The constants are the actions
@@ -411,6 +414,20 @@ type Record struct {
 	// Remote is the peer address, omitted for actions with no request behind
 	// them such as the reaper and startup adoption.
 	Remote string
+
+	// RequestID is the only caller-chosen value admitted onto a record (spec
+	// 020 FR-002, amending FR-042). What makes it admissible is not that it is
+	// short but that it is a closed class: the handler refuses anything outside
+	// 1–32 characters of [a-z0-9-] before the field is ever set (FR-017), so no
+	// byte reaching here can be prompt text, pane content, or a token. Prompt
+	// text stays forbidden in every form — not the text, not its length, not a
+	// hash of it. Nothing in this package re-checks the bound; the boundary is
+	// the handler's, per docs/security.md §2.
+	//
+	// Last in the struct rather than beside SessionID because spec 001's
+	// data-model.md documents the first six fields in that order and is not in
+	// spec 020's scope.
+	RequestID string
 }
 
 // Logger writes records to one sink. Safe for concurrent use: slog's handler
@@ -494,6 +511,12 @@ func (l *Logger) Emit(rec Record) error {
 	}
 	if rec.Remote != "" {
 		r.AddAttrs(slog.String(keyRemote, rec.Remote))
+	}
+	// Omitted when empty, exactly as session_id and remote are: every record the
+	// daemon wrote before spec 020 stays byte-identical, so a reader of the
+	// trail cannot tell this field was added until a caller uses it.
+	if rec.RequestID != "" {
+		r.AddAttrs(slog.String(keyRequestID, rec.RequestID))
 	}
 
 	// The action is named so a failed write is diagnosable; nothing else from

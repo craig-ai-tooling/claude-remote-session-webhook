@@ -64,6 +64,7 @@ import (
 
 	"github.com/nctiggy/claude-remote-session-webhook/internal/claudeauth"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/codexauth"
+	"github.com/nctiggy/claude-remote-session-webhook/internal/config"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/harness"
 	"github.com/nctiggy/claude-remote-session-webhook/internal/tmuxctl"
 )
@@ -158,6 +159,11 @@ type Relay struct {
 	// `auth status` reads the same credential store a session would — asking
 	// about a different one would be a confident answer to the wrong question.
 	env []string
+
+	// resolve turns the program name into the path to run. It is
+	// config.ResolveBinary in production and a fake in tests, so that no test
+	// depends on what the machine running it has installed.
+	resolve func(binary string) (string, error)
 }
 
 // State is what an operator may be shown about a sign-in in progress.
@@ -195,6 +201,7 @@ func New(tmux Controller, startCommand, workDir string, env []string) (*Relay, e
 	return &Relay{
 		tmux: tmux, binary: binary, workDir: workDir, env: env,
 		flow: harness.Claude, window: WindowName, executable: binary,
+		resolve: config.ResolveBinary,
 	}, nil
 }
 
@@ -216,6 +223,7 @@ func NewCodex(tmux Controller, startCommand, workDir string, env []string) (*Rel
 	return &Relay{
 		tmux: tmux, binary: binary, workDir: workDir, env: env,
 		flow: harness.Codex, window: CodexWindowName, executable: executable,
+		resolve: config.ResolveBinary,
 	}, nil
 }
 
@@ -436,7 +444,11 @@ func (r *Relay) SignedIn(ctx context.Context) (bool, error) {
 	if r.flow == harness.Codex {
 		return r.codexSignedIn(ctx)
 	}
-	cmd := exec.CommandContext(ctx, r.binary, "auth", "status", "--json") //nolint:gosec // binary is binaryOf's output, argv is constant
+	program, err := r.resolveProgram(r.binary)
+	if err != nil {
+		return false, fmt.Errorf("ask %s for its authentication status: %w", r.binary, err)
+	}
+	cmd := exec.CommandContext(ctx, program, "auth", "status", "--json") //nolint:gosec // program is r.binary (binaryOf's output) resolved to a path, argv is constant
 	cmd.Env = r.env
 
 	out, err := cmd.Output()
@@ -460,6 +472,16 @@ func (r *Relay) SignedIn(ctx context.Context) (bool, error) {
 	return status.LoggedIn, nil
 }
 
+// resolveProgram is the path to run for name. A Relay built by hand rather than
+// by New has no resolver and gets the standard library's lookup, which is what
+// this package did before there was one.
+func (r *Relay) resolveProgram(name string) (string, error) {
+	if r.resolve == nil {
+		return exec.LookPath(name)
+	}
+	return r.resolve(name)
+}
+
 // codexSignedIn runs `codex login status` and reads the answer from its text.
 //
 // Signed in prints "Logged in using ..." and exits 0; signed out prints "Not
@@ -467,13 +489,17 @@ func (r *Relay) SignedIn(ctx context.Context) (bool, error) {
 // together, bounded, and the phrase decides regardless of exit code. A failure
 // with neither phrase is a host problem. The output is matched, never echoed.
 func (r *Relay) codexSignedIn(ctx context.Context) (bool, error) {
-	cmd := exec.CommandContext(ctx, r.executable, "login", "status") //nolint:gosec // executable is the operator's configured command, argv is constant
+	program, err := r.resolveProgram(r.executable)
+	if err != nil {
+		return false, fmt.Errorf("read the Codex sign-in state: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, program, "login", "status") //nolint:gosec // executable is the operator's configured command resolved to a path, argv is constant
 	cmd.Env = r.env
 	out := &boundedBuffer{limit: statusOutputLimit}
 	cmd.Stdout = out
 	cmd.Stderr = out
 
-	err := cmd.Run()
+	err = cmd.Run()
 	text := out.buf.String()
 	switch {
 	case strings.Contains(text, "Not logged in"):

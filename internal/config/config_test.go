@@ -347,6 +347,38 @@ func TestConfigFormattingNeverSpellsAStartCommand(t *testing.T) {
 // TestLoadFromResolvesTheRemoteControlCommand is what the dashboard's switch
 // means on this daemon (#58): a name the operator can read out of their own
 // configuration, never a command line the page decided on.
+// TestOperatorStartCommandsWithoutRCOfferNoSwitch holds the rule the installer
+// relies on: the daemon never invents an `rc` entry. Only the installer writes
+// one, into a file that did not exist, so an operator's own start_commands (and
+// every host installed before this) stays exactly as they wrote it.
+func TestOperatorStartCommandsWithoutRCOfferNoSwitch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		commands string
+	}{
+		{"unset", ""},
+		{"only a codex entry", "codex=codex --dangerously-bypass-approvals-and-sandbox"},
+		{"a differently named claude entry", "remote=claude --dangerously-skip-permissions --remote-control {name}"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			pairs, _ := baseEnv(t)
+			pairs[config.EnvStartCommands] = tc.commands
+			cfg := mustLoad(t, pairs)
+			if cfg.RemoteControlCommand != "" {
+				t.Errorf("RemoteControlCommand = %q, want empty", cfg.RemoteControlCommand)
+			}
+			if _, ok := cfg.StartCommands.Command(config.DefaultRemoteControlCommandName); ok {
+				t.Error("the daemon added an rc start command the operator did not write")
+			}
+		})
+	}
+}
+
 func TestLoadFromResolvesTheRemoteControlCommand(t *testing.T) {
 	t.Parallel()
 

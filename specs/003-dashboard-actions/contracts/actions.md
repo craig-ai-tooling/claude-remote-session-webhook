@@ -36,8 +36,12 @@ changes** (FR-003):
 1. **Layer 1 — Cloudflare Access.** The existing `verifyBrowser`. Failure → the existing browser
    refusal. This is what makes FR-008 structural: an ended Access session never reaches step 3.
 2. **Same-origin.** The existing `crossSite(r)` from `stream.go`: `Sec-Fetch-Site` must be exactly
-   `same-origin`. `same-site`, `none`, absent, or any other spelling → refuse
-   ([R1](../research.md#r1--the-same-origin-half-of-d1-is-already-built)).
+   `same-origin`. `same-site`, `none`, or any other spelling → refuse
+   ([R1](../research.md#r1--the-same-origin-half-of-d1-is-already-built)). **Absent** → admit only
+   when exactly one `Origin` header is present, is not `null`, is a bare `http(s)://host[:port]`
+   with the connection's scheme, and its host and port equal the request's `Host` (host
+   case-insensitive, default ports normalised on both sides); otherwise refuse
+   ([R1 amendment, 10/22/26](../research.md#r1-amendment-10222026--absent-falls-back-to-origin)).
 3. **Page token.** Form field `crsw_page_token`, validated per
    [data-model.md](../data-model.md#pagetoken).
 
