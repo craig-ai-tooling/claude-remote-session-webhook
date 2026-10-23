@@ -1,0 +1,220 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-11",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "54aefab1d8ed91224289106a98f216c74348befe",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-23T15:13:19Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "dfb96e4186c776fe": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 session: add `TestTwoConcurrentPromptsNeverInterleave` per H1 in `internal/se",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.17,
+        "components_must_agree": 0.27,
+        "named_verification": 0.98,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.09,
+        "needs_outside_knowledge": 0.07,
+        "spec_ambiguous": 0.43,
+        "verification_expensive": 0.52,
+        "mechanical_port": 0.18,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.82,
+          "probabilities": {
+            "light": 0.09,
+            "standard": 0.88,
+            "heavy": 0.03
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 274,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3037,
+        "latency_ms": 279
+      }
+    },
+    "30fe34e809dbb403": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 tmuxctl: add `TestTmuxConcurrentPastesLandWhole` per H3 in `internal/tmuxctl/",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.23,
+        "components_must_agree": 0.29,
+        "named_verification": 0.99,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.11,
+        "needs_outside_knowledge": 0.17,
+        "spec_ambiguous": 0.53,
+        "verification_expensive": 0.58,
+        "mechanical_port": 0.09,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.82,
+          "probabilities": {
+            "light": 0.09,
+            "standard": 0.88,
+            "heavy": 0.03
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 272,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3045,
+        "latency_ms": 122
+      }
+    },
+    "8b56dfc0502717cc": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 docs: append one line dated 2026-10-23 to `docs/fixes-log.md` in its existing",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.02,
+        "design_open": 0.17,
+        "components_must_agree": 0.3,
+        "named_verification": 0.98,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.04,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.3,
+        "verification_expensive": 0.14,
+        "mechanical_port": 0.21,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.83,
+          "probabilities": {
+            "light": 0.89,
+            "standard": 0.11,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 368,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3071,
+        "latency_ms": 103
+      }
+    },
+    "7fd457ace62a3ea6": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.27,
+        "components_must_agree": 0.29,
+        "named_verification": 0.98,
+        "machine_checkable": 0.79,
+        "touches_over_three_files": 0.41,
+        "needs_outside_knowledge": 0.48,
+        "spec_ambiguous": 0.63,
+        "verification_expensive": 0.92,
+        "mechanical_port": 0.14,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.52,
+          "probabilities": {
+            "light": 0.17,
+            "standard": 0.68,
+            "heavy": 0.14
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 201,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3004,
+        "latency_ms": 116
+      }
+    }
+  }
+}
