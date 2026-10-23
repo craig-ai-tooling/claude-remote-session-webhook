@@ -1,0 +1,266 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-10",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "e7ebc6f5560a960aa75d8af8afb3c518cec44b1d",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-23T12:41:26Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "28d8a76fdd48b45b": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 session: R1+R2. First add `TestPromptRefusesWhileARestartIsInFlight` to `mana",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.18,
+        "components_must_agree": 0.93,
+        "named_verification": 0.98,
+        "machine_checkable": 0.91,
+        "touches_over_three_files": 0.14,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.33,
+        "verification_expensive": 0.39,
+        "mechanical_port": 0.04,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.88,
+          "probabilities": {
+            "light": 0.03,
+            "standard": 0.92,
+            "heavy": 0.05
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 331,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3535,
+        "latency_ms": 318
+      }
+    },
+    "8385c0d5a590e22a": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 session test: add `TestConcurrentPromptsNeverInterleave` to `manager_test.go`",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.08,
+        "design_open": 0.19,
+        "components_must_agree": 0.93,
+        "named_verification": 0.98,
+        "machine_checkable": 0.82,
+        "touches_over_three_files": 0.14,
+        "needs_outside_knowledge": 0.12,
+        "spec_ambiguous": 0.22,
+        "verification_expensive": 0.31,
+        "mechanical_port": 0.09,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.73,
+          "probabilities": {
+            "light": 0.12,
+            "standard": 0.8200000000000001,
+            "heavy": 0.06
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 343,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3531,
+        "latency_ms": 131
+      }
+    },
+    "ecfeea4b37e8c742": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 httpapi: R3. First add `TestPromptNotReadyAnswers409` to `sessions_test.go`: ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.08,
+        "design_open": 0.17,
+        "components_must_agree": 0.94,
+        "named_verification": 0.99,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.1,
+        "needs_outside_knowledge": 0.09,
+        "spec_ambiguous": 0.19,
+        "verification_expensive": 0.25,
+        "mechanical_port": 0.08,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.85,
+          "probabilities": {
+            "light": 0.09,
+            "standard": 0.9,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 356,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3543,
+        "latency_ms": 128
+      }
+    },
+    "bb8371b4ae35ab85": {
+      "index": 3,
+      "mark": " ",
+      "label": "T4 docs: append one line dated 2026-10-23 to `docs/fixes-log.md` in its existing",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.1,
+        "design_open": 0.18,
+        "components_must_agree": 0.93,
+        "named_verification": 0.98,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.06,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.21,
+        "verification_expensive": 0.1,
+        "mechanical_port": 0.08,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.85,
+          "probabilities": {
+            "light": 0.9,
+            "standard": 0.08,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 348,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3537,
+        "latency_ms": 130
+      }
+    },
+    "0882b1e6d01c2132": {
+      "index": 4,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.2,
+        "components_must_agree": 0.93,
+        "named_verification": 0.98,
+        "machine_checkable": 0.87,
+        "touches_over_three_files": 0.61,
+        "needs_outside_knowledge": 0.43,
+        "spec_ambiguous": 0.6,
+        "verification_expensive": 0.9,
+        "mechanical_port": 0.22,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.27,
+          "probabilities": {
+            "light": 0.28,
+            "standard": 0.51,
+            "heavy": 0.21
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 248,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3501,
+        "latency_ms": 121
+      }
+    }
+  }
+}
