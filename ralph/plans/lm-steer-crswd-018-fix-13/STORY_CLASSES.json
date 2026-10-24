@@ -1,0 +1,220 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-13",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "90e345977da9ded4d3fcbba5a553943787a29f1d",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-24T12:39:26Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "6d35061d3652f9b7": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 testdata: run the extraction script under K1 to write the four files in `inte",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.43,
+        "components_must_agree": 0.61,
+        "named_verification": 0.97,
+        "machine_checkable": 0.95,
+        "touches_over_three_files": 0.96,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.11,
+        "verification_expensive": 0.79,
+        "mechanical_port": 0.83,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.43,
+          "probabilities": {
+            "light": 0.36,
+            "standard": 0.62,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 5,
+        "story_chars": 341,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3390,
+        "latency_ms": 271
+      }
+    },
+    "0b6c1d4e1cae8faf": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 httpapi test: create `internal/httpapi/lawnmower_payload_test.go` with `TestL",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.38,
+        "components_must_agree": 0.58,
+        "named_verification": 0.99,
+        "machine_checkable": 0.91,
+        "touches_over_three_files": 0.39,
+        "needs_outside_knowledge": 0.25,
+        "spec_ambiguous": 0.22,
+        "verification_expensive": 0.3,
+        "mechanical_port": 0.23,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.88,
+          "probabilities": {
+            "light": 0.07,
+            "standard": 0.92,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 301,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3371,
+        "latency_ms": 110
+      }
+    },
+    "9dfd2619b7e72bc1": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 docs: append one line dated 2026-10-24 to `docs/fixes-log.md` in its existing",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.37,
+        "components_must_agree": 0.48,
+        "named_verification": 0.98,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.14,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.53,
+        "verification_expensive": 0.13,
+        "mechanical_port": 0.47,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.4,
+          "probabilities": {
+            "light": 0.6,
+            "standard": 0.39,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 366,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3410,
+        "latency_ms": 129
+      }
+    },
+    "7d13839581a23038": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.04,
+        "design_open": 0.49,
+        "components_must_agree": 0.55,
+        "named_verification": 0.98,
+        "machine_checkable": 0.77,
+        "touches_over_three_files": 0.51,
+        "needs_outside_knowledge": 0.48,
+        "spec_ambiguous": 0.68,
+        "verification_expensive": 0.86,
+        "mechanical_port": 0.35,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.56,
+          "probabilities": {
+            "light": 0.16,
+            "standard": 0.71,
+            "heavy": 0.13
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 191,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3331,
+        "latency_ms": 109
+      }
+    }
+  }
+}
