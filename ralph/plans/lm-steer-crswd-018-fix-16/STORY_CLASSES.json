@@ -1,0 +1,128 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-16",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "9e6a6e5bbd3fd605daf0a3d4a46888895a6fa0d0",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-26T15:20:01Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "6b57e7bfeed0d73b": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 In `ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md`, replace the `git ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.04,
+        "components_must_agree": 0.06,
+        "named_verification": 0.98,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.02,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.11,
+        "verification_expensive": 0.11,
+        "mechanical_port": 0.2,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.98,
+          "probabilities": {
+            "light": 0.99,
+            "standard": 0.01,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 323,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2280,
+        "latency_ms": 1229
+      }
+    },
+    "7791f5de82e3bded": {
+      "index": 1,
+      "mark": " ",
+      "label": "F1 Run every command in this milestone's VALIDATION_CONTRACT.md, from a `.git`-l",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.04,
+        "design_open": 0.07,
+        "components_must_agree": 0.09,
+        "named_verification": 0.97,
+        "machine_checkable": 0.78,
+        "touches_over_three_files": 0.32,
+        "needs_outside_knowledge": 0.18,
+        "spec_ambiguous": 0.7,
+        "verification_expensive": 0.85,
+        "mechanical_port": 0.26,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.74,
+          "probabilities": {
+            "light": 0.83,
+            "standard": 0.15,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 210,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2209,
+        "latency_ms": 136
+      }
+    }
+  }
+}

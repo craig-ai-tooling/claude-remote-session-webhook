@@ -41,7 +41,7 @@ The design calls this "crswd spec 018". This repo already has
 - The API door still has exactly six routes: `grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) ' specs/001-crswd-daemon-core/contracts/http-api.md` prints `6`.
 - The real router sweep still passes: `go test ./internal/httpapi/` exits 0.
 - AGENTS.md stays under the CI limit: `bash -c 'test "$(wc -l < AGENTS.md)" -lt 150'` exits 0.
-- No new package under `internal/`: `bash -c 'diff <(git ls-tree -d --name-only main internal/) <(git ls-tree -d --name-only HEAD internal/)'` exits 0 and prints nothing.
+- No new package under `internal/` (the seventeen on `main` at `8a30044`; checked from the files alone, because the verifier's copy has no `.git`): `bash -c 'diff <(find internal -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort) <(printf "internal/%s\n" access admit audit auth buildinfo claudeauth codexauth config harness httpapi loginrelay quota release session sessionpod tmuxctl updater)'` exits 0 and prints nothing.
 
 ## After merge (checked by the merging session, not by the loop)
 
