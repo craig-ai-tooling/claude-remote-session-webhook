@@ -1,0 +1,312 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-7-fix-1",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "7f3b5bc8b863ad5280ff55f67507c1ffa0498f91",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-26T19:18:05Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "e2df7000e4b2611f": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 isolation test: add the `addressesNoWindow` exemption exactly as D2 says, wit",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.06,
+        "design_open": 0.15,
+        "components_must_agree": 0.83,
+        "named_verification": 0.98,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.09,
+        "needs_outside_knowledge": 0.06,
+        "spec_ambiguous": 0.22,
+        "verification_expensive": 0.12,
+        "mechanical_port": 0.1,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.3,
+          "probabilities": {
+            "light": 0.53,
+            "standard": 0.47,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 200,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3535,
+        "latency_ms": 839
+      }
+    },
+    "adfb1fbf4f251709": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 Codex fixture: apply D3 in `internal/session/harness_test.go`. No production ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.04,
+        "design_open": 0.12,
+        "components_must_agree": 0.6,
+        "named_verification": 0.98,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.06,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.36,
+        "verification_expensive": 0.26,
+        "mechanical_port": 0.23,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.73,
+          "probabilities": {
+            "light": 0.82,
+            "standard": 0.18,
+            "heavy": 0.0
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 151,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3522,
+        "latency_ms": 147
+      }
+    },
+    "e43e630024990b9b": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 session: D1, D4, D5. New `TestPromptWithdrawsWhenClaudeExitsMidPrompt` in `ma",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.15,
+        "components_must_agree": 0.92,
+        "named_verification": 0.99,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.47,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.25,
+        "verification_expensive": 0.41,
+        "mechanical_port": 0.05,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.8,
+          "probabilities": {
+            "light": 0.02,
+            "standard": 0.87,
+            "heavy": 0.11
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 386,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3612,
+        "latency_ms": 207
+      }
+    },
+    "cd682ce718cafabb": {
+      "index": 3,
+      "mark": " ",
+      "label": "T4 httpapi: D6. New `TestPromptAnswersNotReadyWhenClaudeExitsMidPrompt` in `sess",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.2,
+        "components_must_agree": 0.92,
+        "named_verification": 0.99,
+        "machine_checkable": 0.91,
+        "touches_over_three_files": 0.33,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.18,
+        "verification_expensive": 0.25,
+        "mechanical_port": 0.08,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.82,
+          "probabilities": {
+            "light": 0.05,
+            "standard": 0.88,
+            "heavy": 0.07
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 307,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3585,
+        "latency_ms": 140
+      }
+    },
+    "bfe55325eda5460f": {
+      "index": 4,
+      "mark": " ",
+      "label": "T5 docs: append one dated line to `docs/fixes-log.md` in its existing format: Cl",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.08,
+        "design_open": 0.16,
+        "components_must_agree": 0.88,
+        "named_verification": 0.98,
+        "machine_checkable": 0.95,
+        "touches_over_three_files": 0.06,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.38,
+        "verification_expensive": 0.13,
+        "mechanical_port": 0.31,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.88,
+          "probabilities": {
+            "light": 0.92,
+            "standard": 0.07,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 270,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3570,
+        "latency_ms": 160
+      }
+    },
+    "7d13839581a23038": {
+      "index": 5,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.19,
+        "components_must_agree": 0.9,
+        "named_verification": 0.98,
+        "machine_checkable": 0.82,
+        "touches_over_three_files": 0.55,
+        "needs_outside_knowledge": 0.46,
+        "spec_ambiguous": 0.65,
+        "verification_expensive": 0.92,
+        "mechanical_port": 0.29,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.11,
+          "probabilities": {
+            "light": 0.41,
+            "standard": 0.39,
+            "heavy": 0.2
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 191,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 3539,
+        "latency_ms": 146
+      }
+    }
+  }
+}
