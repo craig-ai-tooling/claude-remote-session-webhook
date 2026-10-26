@@ -48,7 +48,7 @@ is wrong. The contract line is.
 ## Tasks
 
 - [x] T1 In `ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md`, replace the `git ls-tree` bullet with D1's line verbatim; change no other line. Verify: `bash -c 'C=ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md; ! grep -q "git ls-tree" $C && grep -c "^- " $C | grep -qx 24 && grep -qF "tmuxctl updater)" $C'` exits 0.
-- [ ] F1 Run every command in this milestone's VALIDATION_CONTRACT.md, from a `.git`-less copy where it names git-free checks, and record each result in PROGRESS.md. Verify: `go build ./... && go test ./...` exits 0.
+- [x] F1 Run every command in this milestone's VALIDATION_CONTRACT.md, from a `.git`-less copy where it names git-free checks, and record each result in PROGRESS.md. Verify: `go build ./... && go test ./...` exits 0.
 
 ## Files touched
 
