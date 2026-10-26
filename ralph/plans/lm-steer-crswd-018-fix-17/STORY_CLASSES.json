@@ -1,0 +1,220 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-17",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "dc51518bca81455503edbb4f6e2472b8bdd8d746",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-26T17:19:25Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "c98a05557145d9be": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 Apply D1 to `ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md`. Verify: ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.04,
+        "components_must_agree": 0.9,
+        "named_verification": 0.98,
+        "machine_checkable": 0.97,
+        "touches_over_three_files": 0.03,
+        "needs_outside_knowledge": 0.07,
+        "spec_ambiguous": 0.15,
+        "verification_expensive": 0.72,
+        "mechanical_port": 0.39,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.55,
+          "probabilities": {
+            "light": 0.28,
+            "standard": 0.7,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 356,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2912,
+        "latency_ms": 731
+      }
+    },
+    "f9ba48c22a820f94": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 Apply D2: replace line 133 of `ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.04,
+        "components_must_agree": 0.87,
+        "named_verification": 0.97,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.03,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.07,
+        "verification_expensive": 0.49,
+        "mechanical_port": 0.61,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.51,
+          "probabilities": {
+            "light": 0.67,
+            "standard": 0.32,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 325,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2886,
+        "latency_ms": 128
+      }
+    },
+    "1ed1df7754896766": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 Apply D3: replace line 16 of `ralph/plans/lm-steer-crswd-018-fix-16/VALIDATIO",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.03,
+        "design_open": 0.04,
+        "components_must_agree": 0.9,
+        "named_verification": 0.97,
+        "machine_checkable": 0.96,
+        "touches_over_three_files": 0.04,
+        "needs_outside_knowledge": 0.07,
+        "spec_ambiguous": 0.07,
+        "verification_expensive": 0.33,
+        "mechanical_port": 0.35,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.55,
+          "probabilities": {
+            "light": 0.7,
+            "standard": 0.29,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 328,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2906,
+        "latency_ms": 118
+      }
+    },
+    "296dc9127cd070a3": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 Run every command in this milestone's VALIDATION_CONTRACT.md and record each ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.04,
+        "design_open": 0.05,
+        "components_must_agree": 0.89,
+        "named_verification": 0.85,
+        "machine_checkable": 0.79,
+        "touches_over_three_files": 0.23,
+        "needs_outside_knowledge": 0.23,
+        "spec_ambiguous": 0.79,
+        "verification_expensive": 0.78,
+        "mechanical_port": 0.25,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.7,
+          "probabilities": {
+            "light": 0.11,
+            "standard": 0.8,
+            "heavy": 0.09
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 153,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2801,
+        "latency_ms": 116
+      }
+    }
+  }
+}
