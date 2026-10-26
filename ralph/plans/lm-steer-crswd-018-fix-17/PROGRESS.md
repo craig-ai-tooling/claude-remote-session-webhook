@@ -200,3 +200,13 @@ command requires approval" — and with `"$PWD"` instead of the literal path the
 earlier still, as unanalyzable shell syntax. This session is non-interactive, so no approval can be
 given. Committed with `git add <path>` once per path plus a plain `git commit -m`. The pre-commit
 hook (gitleaks) still ran, so nothing was routed around.
+
+## Completion
+
+Every task in IMPLEMENTATION_PLAN.md is `- [x]` (T1, T2, T3, F1) and every one of the seven bullets
+in VALIDATION_CONTRACT.md passes, as recorded under F1 above. `go test ./...` was run from the
+repository root after F1's commit (`ddda9e2`): every package printed `ok` — most cached from F1's
+`go build ./... && go test ./...`, with `cmd/crswd` re-running in 2.150s — and `deploy/k8s/gen` and
+`web` have no test files. Exit 0. No Go file was touched by this milestone.
+
+RALPH_COMPLETE
