@@ -68,7 +68,7 @@ the wrong file.
 - [x] T1 Apply D1 to `ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md`. Verify: `! grep -qE "merge-base|MainPID|^## After merge" ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` exits 0, `grep -c '^- ' ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` prints `23`, and `wc -l < ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` prints `44`.
 - [x] T2 Apply D2: replace line 133 of `ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` with D2's line verbatim. Verify: `grep -c 'merge-base --is-ancestor' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` prints `1` and `grep -c '"After merge" check' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` prints `0`.
 - [x] T3 Apply D3: replace line 16 of `ralph/plans/lm-steer-crswd-018-fix-16/VALIDATION_CONTRACT.md` with D3's line verbatim. Verify: `grep -c "prints \`23\`" ralph/plans/lm-steer-crswd-018-fix-16/VALIDATION_CONTRACT.md` prints `1` and `grep -c "prints \`24\`" ralph/plans/lm-steer-crswd-018-fix-16/VALIDATION_CONTRACT.md` prints `0`.
-- [ ] F1 Run every command in this milestone's VALIDATION_CONTRACT.md and record each result in PROGRESS.md. Verify: `go build ./... && go test ./...` exits 0.
+- [x] F1 Run every command in this milestone's VALIDATION_CONTRACT.md and record each result in PROGRESS.md. Verify: `go build ./... && go test ./...` exits 0.
 
 ## Files touched
 

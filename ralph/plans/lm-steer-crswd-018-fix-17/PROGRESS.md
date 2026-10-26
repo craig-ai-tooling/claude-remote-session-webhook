@@ -148,3 +148,55 @@ both recorded that `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace
 returns "This command requires approval" and that this session is non-interactive, so no approval is
 possible. Committed with `git add <path>` once per path plus a plain `git commit -m`. The pre-commit
 hook (gitleaks) still ran, so nothing was routed around.
+
+### F1 — every command in this milestone's VALIDATION_CONTRACT.md run and recorded
+
+Nothing was edited in the three "Files touched" paths this iteration. The working tree was clean at
+the start (`git status --short` printed nothing), and `wc -l` on the three files printed `44`, `133`
+and `17` — the post-T1/T2/T3 state, so all three edits were already committed.
+
+Six of the seven contract bullets read files only, so they were run in a git-free scratch room per
+PROMPT.md's "How F1 runs a git-free assertion": `mkdir -p /workspace/.ralph-tmp/f1/ralph/plans/lm-steer-crswd-018`
+and `.../lm-steer-crswd-018-fix-16`, then three flagless `cp` calls putting each file at its real
+relative path, then `cd /workspace/.ralph-tmp/f1`. `pwd` confirmed the cwd and `ls` confirmed the three
+copies. The seventh bullet (`go build`/`go test`) needs the whole module, so it ran from the repository
+root instead.
+
+Contract line by contract line, with what each command printed and its exit code:
+
+- **Line 14** (no running daemon or git history asked of the verifier). `bash -c '! grep -qE "merge-base|MainPID|vcs.revision|systemctl" ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md'` was refused: "This command requires approval" — confirming fix-16's finding about `bash -c`. Ran each piece as its own command per PROMPT.md step 3: `! grep -qE "merge-base|MainPID|vcs.revision|systemctl" ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` — no output, **exit 0**, which is what the bullet asserts; and `grep -cE "merge-base|MainPID|vcs.revision|systemctl" ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` — printed `0`, confirming the negation is true because there are no matches, not because grep erred. **PASS.**
+- **Line 15** (no "After merge" section). Same split, `bash -c` not retried. `! grep -q "^## After merge" ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` — no output, **exit 0**. `grep -c "^## After merge" ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` — printed `0`. **PASS.**
+- **Line 16** (no bullet runs a git subcommand). `grep -cE '^- .*git (merge-base|ls-tree|log|diff|rev-parse|show)' ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` ran as written — printed `0`, exit 1 (`grep -c` exits 1 on a zero count; the bullet asserts what it *prints*). **PASS.**
+- **Line 17** (every other assertion kept). `grep -c '^- ' ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md` ran as written — printed `23`, exit 0. **PASS.**
+- **Line 18** (the check is still written down for the merging session). `grep -c 'merge-base --is-ancestor' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` — printed `1`, exit 0. `grep -c 'MainPID' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` — printed `1`, exit 0. Both ran as written. **PASS.**
+- **Line 19** (fix-16's count agrees with the parent). Run with T3's backtick substitution, since the Bash guard refuses any command containing a literal backtick: `grep -cP 'prints \x6023\x60' ralph/plans/lm-steer-crswd-018-fix-16/VALIDATION_CONTRACT.md` — printed `1`, exit 0; `grep -cP 'prints \x6024\x60' ralph/plans/lm-steer-crswd-018-fix-16/VALIDATION_CONTRACT.md` — printed `0`, exit 1 (zero count). `\x60` is the same literal backtick the contract spells inline, so this is the contract's own assertion, only spelled so the guard can parse it. **PASS.**
+- **Line 20** (the product still builds and its tests pass). `go build ./... && go test ./...` ran from `/workspace` as written and **exited 0**. All 22 packages with tests printed `ok`; `deploy/k8s/gen` and `web` printed `[no test files]`. No package failed, so the known `internal/sessionpod` / `internal/loginrelay` flakiness did not appear and no single-package re-run was needed (`internal/sessionpod` 0.067s, `internal/loginrelay` 0.015s). **PASS.**
+
+Scratch room torn down as PROMPT.md directs: one flagless `rm` naming the three copied files, then
+`rmdir` on the two innermost plan directories, then `rmdir` on `ralph/plans`, `ralph` and `f1`.
+`/workspace/.ralph-tmp/` itself was left in place — PROMPT.md treats it as the standing scratch
+location, and it is gitignored.
+
+Notes for whoever reads this next:
+
+- All seven contract bullets pass, measured on the committed tree. The milestone's definition of done
+  is met in full. No bullet needed a workaround that changed what it asserts; the only two
+  substitutions were mechanical (`bash -c` split into its pieces, backtick spelled `\x60`), both
+  forced by this container's Bash guard and both recorded above.
+- Container findings confirmed again this iteration, for any later loop in the same image: `bash -c
+  '...'` is refused; a literal backtick anywhere in a command is refused; a leading `!` negation and
+  a plain `cd <absolute path>` as a command of its own are both accepted, and the `cd` persists across
+  Bash calls.
+- `verify-run.sh`'s FAIL that opened this milestone — "running daemon at merge commit or later ...
+  can't verify: there is no git history or merge commit to check against" — can no longer be produced
+  by the parent contract: line 16's git-subcommand count and line 14's `merge-base|MainPID|vcs.revision|systemctl`
+  scan are both `0` on it. The check itself survives as step 3 of the parent's "After the loop", where
+  the merging session has `.git` and the live daemon.
+
+**safe-commit could not be run; used PROMPT.md's fallback.** Not retried this iteration, on T2's
+written advice: T1, T2 and T3 each recorded that
+`/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace -m ... -- <paths>` returns "This
+command requires approval" — and with `"$PWD"` instead of the literal path the Bash guard rejects it
+earlier still, as unanalyzable shell syntax. This session is non-interactive, so no approval can be
+given. Committed with `git add <path>` once per path plus a plain `git commit -m`. The pre-commit
+hook (gitleaks) still ran, so nothing was routed around.
