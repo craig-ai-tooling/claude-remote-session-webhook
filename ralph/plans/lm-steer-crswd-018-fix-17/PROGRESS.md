@@ -59,3 +59,45 @@ So the next iteration should not spend turns on safe-commit: substitute `/worksp
 expect the approval refusal, and go straight to `git add <path>` once per path plus a plain
 `git commit -m`. The commit itself still runs `.githooks/pre-commit` (gitleaks) if
 `core.hooksPath` is set, so nothing is being routed around.
+
+### T2 — D2 applied: the post-merge daemon check now lives in the parent's "After the loop"
+
+Confirmed the precondition before editing. `wc -l ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md`
+printed `133`, and `grep -n '"After merge" check' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md`
+printed `133:3. Run the "After merge" check in VALIDATION_CONTRACT.md.` — line 133 held exactly the text
+"Facts measured" says it holds.
+
+Changed: replaced line 133 of `ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` with D2's
+replacement line, copied verbatim. It is still item `3.` under "## After the loop (a session does
+these, not Ralph)", so it remains a numbered list item and `verify-run.sh`'s bullet pattern
+(`^\s*[-*]\s+(.{16,})$`) does not count it. The file is still 133 lines; nothing else moved.
+
+Commands run and what they measured:
+
+- `wc -l ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` — printed `133` before and after the edit, exit 0.
+- `grep -c 'merge-base --is-ancestor' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` — printed `1`, exit 0.
+- `grep -c '"After merge" check' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` — printed `0`. Note the exit code is `1`, because `grep -c` exits 1 when the count is zero; the task's Verify asks what it *prints*, and it prints `0`.
+- `grep -c 'MainPID' ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` — printed `1`, exit 0. This is not T2's Verify but is asserted by this milestone's VALIDATION_CONTRACT.md line 18, so F1 will find it already satisfied.
+- `git diff --stat` — `1 file changed, 1 insertion(+), 1 deletion(-)`, exit 0.
+- `git diff --name-only` — printed only `ralph/plans/lm-steer-crswd-018/IMPLEMENTATION_PLAN.md` plus this notebook directory's two files.
+
+Notes for the next iteration:
+
+- The Edit tool was used, not `sed`. The replacement was matched on the full old line and is unique,
+  so no other line could have been touched.
+- Of this milestone's seven contract bullets, five are now already true (lines 14–18 of
+  VALIDATION_CONTRACT.md). T3 makes line 19 true. F1 should still run all seven itself and record
+  each result, per its own wording.
+- A `grep -c` whose count is `0` exits `1`. Three of the contract's commands are of that shape
+  (contract lines 16 and 19). When F1 runs them, record the printed count as the measurement and
+  the exit code separately — do not read exit 1 as a failed assertion.
+- T3 next: replace line 16 of `ralph/plans/lm-steer-crswd-018-fix-16/VALIDATION_CONTRACT.md`. That
+  file was not read or touched this iteration, so its line 16 is still unverified.
+
+**safe-commit could not be run; used PROMPT.md's fallback.** This confirms T1's finding exactly.
+`/home/ralph/code/ai-lawnmower/loop/safe-commit.sh /workspace -m ... -- <paths>` — with the literal
+`/workspace` in place of `"$PWD"`, so the Bash guard had no shell syntax to reject — returned "This
+command requires approval". The session is non-interactive, so no approval is possible. Committed
+with `git add <path>` once per path plus a plain `git commit -m`. The pre-commit hook (gitleaks)
+still ran, so nothing was routed around. T3 and F1 should skip safe-commit entirely and go straight
+to the fallback; the one attempt above is the only evidence needed.

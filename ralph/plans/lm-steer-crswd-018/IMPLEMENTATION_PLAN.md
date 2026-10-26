@@ -130,4 +130,4 @@ Not in scope, ever, in this milestone: `AGENTS.md`, `k8s/`, `internal/tmuxctl/co
 
 1. Open the PR from this branch; merge through the no-mistakes path.
 2. Tag, release and let the daemon self-update.
-3. Run the "After merge" check in VALIDATION_CONTRACT.md.
+3. Confirm the running daemon is at the merge commit or later: `bash -c 'go version -m /proc/$(systemctl --user show -p MainPID --value crswd)/exe | grep vcs.revision'` prints a revision R for which `git merge-base --is-ancestor <merge commit> R` exits 0. It needs `.git` and the live daemon, so it lives here and not in VALIDATION_CONTRACT.md, whose verifier has neither.
