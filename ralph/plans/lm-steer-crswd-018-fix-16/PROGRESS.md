@@ -154,3 +154,12 @@ guard fix in its own PR someday, per AGENTS.md; out of scope for this milestone.
 **safe-commit.sh is still absent** — T1's finding, unchanged, so this commit used PROMPT.md's
 fallback again. Do not re-test for it.
 
+## Completion
+
+Every task in IMPLEMENTATION_PLAN.md is `- [x]` (T1, F1). `go test ./...` run at completion
+exits 0: 22 `ok`, 2 `[no test files]`, no failures. `git status --short` is empty and the
+only tracked file this milestone changed is
+`ralph/plans/lm-steer-crswd-018/VALIDATION_CONTRACT.md`, one line, by T1.
+
+RALPH_COMPLETE
+
