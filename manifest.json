@@ -1,0 +1,13 @@
+{
+  "run_id": "1026-vwb9",
+  "repo": "claude-remote-session-webhook",
+  "branch": "ralph/1026-vwb9",
+  "image": "docker.io/nctiggy/ralph-runner:2.1.246-ci12",
+  "captured_at": "2026-10-26T15:25:49Z",
+  "files": [
+    {
+      "path": "-workspace/077abac0-e8a9-4625-9e05-48652036619f.jsonl",
+      "bytes": 231994
+    }
+  ]
+}
