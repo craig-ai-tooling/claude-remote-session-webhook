@@ -1,0 +1,88 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-7-fix-5",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "113bbdb7ecc16523c6529c9ecb2b4fd16666554a",
+  "jev_model": null,
+  "classified_at": "2026-10-27T19:39:57Z",
+  "refused": "email",
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "c10426b63f1abe00": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 Write `.github/scripts/lint_test.sh` per D6 and D7, run it and record its fai",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "feb6fc3653675663": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 Per D8, repoint the lint bullet in the three contracts named in \"Facts measur",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "c07e49dcb75c9446": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 Append one line to `docs/fixes-log.md` in its format, dated 2026-10-27, tagge",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "f64762bee11e4058": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 Run every command in VALIDATION_CONTRACT.md and record each result in PROGRES",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    }
+  }
+}
