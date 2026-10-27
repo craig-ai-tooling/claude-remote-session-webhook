@@ -1,0 +1,450 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-7-fix-3",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "0d04a5fc093c902322418ccde23418980fdb650b",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-27T15:21:19Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "4c70df7a8efd2685": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 isolation test: if `grep -n addressesNoWindow internal/httpapi/isolation_test",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.05,
+        "design_open": 0.19,
+        "components_must_agree": 0.89,
+        "named_verification": 0.99,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.06,
+        "needs_outside_knowledge": 0.09,
+        "spec_ambiguous": 0.21,
+        "verification_expensive": 0.52,
+        "mechanical_port": 0.08,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.64,
+          "probabilities": {
+            "light": 0.76,
+            "standard": 0.23,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 257,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4649,
+        "latency_ms": 746
+      }
+    },
+    "cfda44076eee59c4": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 Codex fixture: if `codexFixture` in `internal/session/harness_test.go` alread",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.05,
+        "design_open": 0.27,
+        "components_must_agree": 0.87,
+        "named_verification": 0.99,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.08,
+        "needs_outside_knowledge": 0.13,
+        "spec_ambiguous": 0.3,
+        "verification_expensive": 0.19,
+        "mechanical_port": 0.27,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.49,
+          "probabilities": {
+            "light": 0.66,
+            "standard": 0.33,
+            "heavy": 0.01
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 217,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4641,
+        "latency_ms": 256
+      }
+    },
+    "36949315f504415c": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 session: D1, D4, D5 (skip any part `grep -rn` shows present). New `TestPrompt",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.23,
+        "components_must_agree": 0.91,
+        "named_verification": 0.99,
+        "machine_checkable": 0.91,
+        "touches_over_three_files": 0.48,
+        "needs_outside_knowledge": 0.1,
+        "spec_ambiguous": 0.35,
+        "verification_expensive": 0.62,
+        "mechanical_port": 0.05,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.72,
+          "probabilities": {
+            "light": 0.02,
+            "standard": 0.81,
+            "heavy": 0.17
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 350,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4699,
+        "latency_ms": 160
+      }
+    },
+    "a6020cf4416ab03b": {
+      "index": 3,
+      "mark": " ",
+      "label": "T4 httpapi 409: D6 (skip if `grep -n bodySessionNotReady internal/httpapi/sessio",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.06,
+        "design_open": 0.21,
+        "components_must_agree": 0.93,
+        "named_verification": 0.99,
+        "machine_checkable": 0.92,
+        "touches_over_three_files": 0.19,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.29,
+        "verification_expensive": 0.4,
+        "mechanical_port": 0.1,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.76,
+          "probabilities": {
+            "light": 0.11,
+            "standard": 0.84,
+            "heavy": 0.05
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 343,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4694,
+        "latency_ms": 166
+      }
+    },
+    "1981441c4e019736": {
+      "index": 4,
+      "mark": " ",
+      "label": "T5 session no-text: make `TestPromptNamesNoPromptTextInItsError` table-driven wi",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.23,
+        "components_must_agree": 0.89,
+        "named_verification": 0.99,
+        "machine_checkable": 0.86,
+        "touches_over_three_files": 0.33,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.23,
+        "verification_expensive": 0.18,
+        "mechanical_port": 0.13,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.76,
+          "probabilities": {
+            "light": 0.13,
+            "standard": 0.84,
+            "heavy": 0.03
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 0,
+        "story_chars": 363,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4684,
+        "latency_ms": 161
+      }
+    },
+    "20044b0b93068cba": {
+      "index": 5,
+      "mark": " ",
+      "label": "T6 httpapi no-text: new `TestANotReadyPromptCarriesNoPromptText` in `sessions_te",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.06,
+        "design_open": 0.23,
+        "components_must_agree": 0.91,
+        "named_verification": 0.99,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.2,
+        "needs_outside_knowledge": 0.07,
+        "spec_ambiguous": 0.58,
+        "verification_expensive": 0.23,
+        "mechanical_port": 0.21,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.85,
+          "probabilities": {
+            "light": 0.08,
+            "standard": 0.9,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 367,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4689,
+        "latency_ms": 160
+      }
+    },
+    "6f843949de076aa7": {
+      "index": 6,
+      "mark": " ",
+      "label": "T7 leak sweep: in `driveEveryOperation` (`internal/audit/leak_test.go`), after \"",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.06,
+        "design_open": 0.18,
+        "components_must_agree": 0.9,
+        "named_verification": 0.99,
+        "machine_checkable": 0.94,
+        "touches_over_three_files": 0.16,
+        "needs_outside_knowledge": 0.08,
+        "spec_ambiguous": 0.29,
+        "verification_expensive": 0.35,
+        "mechanical_port": 0.21,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.53,
+          "probabilities": {
+            "light": 0.29,
+            "standard": 0.69,
+            "heavy": 0.02
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 334,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4694,
+        "latency_ms": 193
+      }
+    },
+    "6f1dd47917f0588d": {
+      "index": 7,
+      "mark": " ",
+      "label": "T8 docs: append one dated line (starting with a newline) to `docs/fixes-log.md` ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.06,
+        "design_open": 0.21,
+        "components_must_agree": 0.88,
+        "named_verification": 0.99,
+        "machine_checkable": 0.93,
+        "touches_over_three_files": 0.08,
+        "needs_outside_knowledge": 0.12,
+        "spec_ambiguous": 0.39,
+        "verification_expensive": 0.18,
+        "mechanical_port": 0.13,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.86,
+          "probabilities": {
+            "light": 0.91,
+            "standard": 0.06,
+            "heavy": 0.03
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 380,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4699,
+        "latency_ms": 244
+      }
+    },
+    "7d13839581a23038": {
+      "index": 8,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.07,
+        "design_open": 0.26,
+        "components_must_agree": 0.9,
+        "named_verification": 0.98,
+        "machine_checkable": 0.74,
+        "touches_over_three_files": 0.56,
+        "needs_outside_knowledge": 0.42,
+        "spec_ambiguous": 0.65,
+        "verification_expensive": 0.86,
+        "mechanical_port": 0.34,
+        "tier3": {
+          "choice": "light",
+          "confidence": 0.27,
+          "probabilities": {
+            "light": 0.51,
+            "standard": 0.24,
+            "heavy": 0.25
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 191,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 4638,
+        "latency_ms": 166
+      }
+    }
+  }
+}
