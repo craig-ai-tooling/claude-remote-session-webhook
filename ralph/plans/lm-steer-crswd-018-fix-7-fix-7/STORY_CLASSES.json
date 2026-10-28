@@ -1,0 +1,128 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-7-fix-7",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "9ef2414c4e073455570110ec8d1ff73c60329a8a",
+  "jev_model": "jev-1.14.0",
+  "classified_at": "2026-10-28T15:13:47Z",
+  "refused": null,
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "336830ba348c05d7": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 log: apply D1 (gate), then D2, then D3 with D4, appending one line to `docs/f",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.04,
+        "design_open": 0.33,
+        "components_must_agree": 0.25,
+        "named_verification": 0.99,
+        "machine_checkable": 0.95,
+        "touches_over_three_files": 0.13,
+        "needs_outside_knowledge": 0.19,
+        "spec_ambiguous": 0.47,
+        "verification_expensive": 0.82,
+        "mechanical_port": 0.18,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.28,
+          "probabilities": {
+            "light": 0.24,
+            "standard": 0.52,
+            "heavy": 0.24
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 1,
+        "story_chars": 251,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2620,
+        "latency_ms": 338
+      }
+    },
+    "2360b1fbbc9c3aa0": {
+      "index": 1,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each command, i",
+      "status": "judged",
+      "reason": null,
+      "answers": {
+        "touches_running_system": 0.04,
+        "design_open": 0.38,
+        "components_must_agree": 0.33,
+        "named_verification": 0.98,
+        "machine_checkable": 0.77,
+        "touches_over_three_files": 0.22,
+        "needs_outside_knowledge": 0.34,
+        "spec_ambiguous": 0.58,
+        "verification_expensive": 0.83,
+        "mechanical_port": 0.24,
+        "tier3": {
+          "choice": "standard",
+          "confidence": 0.31,
+          "probabilities": {
+            "light": 0.18,
+            "standard": 0.54,
+            "heavy": 0.28
+          }
+        }
+      },
+      "facts": {
+        "paths_named": 2,
+        "story_chars": 227,
+        "names_runnable": true
+      },
+      "tier": "standard",
+      "tier_reason": "no risk signal at or above 0.8",
+      "executor": {
+        "claude": "sonnet",
+        "codex": {
+          "model": "gpt-5.6-sol",
+          "enabled": false
+        }
+      },
+      "usage": {
+        "input_tokens": 2600,
+        "latency_ms": 104
+      }
+    }
+  }
+}
