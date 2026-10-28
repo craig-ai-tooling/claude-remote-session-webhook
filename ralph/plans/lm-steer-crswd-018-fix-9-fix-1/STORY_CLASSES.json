@@ -1,0 +1,62 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-9-fix-1",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "d77913ea1c03d23590bbb6b9cb143d408e031256",
+  "jev_model": null,
+  "classified_at": "2026-10-28T17:15:40Z",
+  "refused": "ipv4",
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "e7a710d1c046fdef": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 Apply D2 and D3 to `cmd/crswd/quickstart_test.go`, then append one line to `d",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "11d1ac5310a6ccc7": {
+      "index": 1,
+      "mark": " ",
+      "label": "F1 Run every assertion in this milestone's VALIDATION_CONTRACT.md, one command a",
+      "status": "unjudged",
+      "reason": "refused: ipv4",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    }
+  }
+}
