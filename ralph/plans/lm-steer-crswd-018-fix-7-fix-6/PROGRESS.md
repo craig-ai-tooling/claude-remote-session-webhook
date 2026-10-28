@@ -53,3 +53,85 @@ Notes for the next iteration:
 - T1's edit is done and committed. F1 is next: run this milestone's VALIDATION_CONTRACT.md assertions
   per PROMPT.md's "How F1 runs a git-free assertion" (expect `bash -c`, `$(...)` and pipes to be
   refused, so inline the paths and run each piece separately), then `go build ./...` and `go test ./...`.
+
+### F1 — ran every assertion in this milestone's VALIDATION_CONTRACT.md (10/28/26)
+
+No file changed outside this notebook directory. F1 is a verification task.
+
+`bash -c` was refused on the first try, exactly as the baseline predicted
+(`bash -c '! grep -n "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md'`
+→ "This command requires approval"). Every assertion written with `bash -c` was therefore run
+piece by piece with the paths inlined, per PROMPT.md's "How F1 runs a git-free assertion".
+
+Assertion 1 — fix-7's contract no longer depends on git for the package check:
+
+- `grep -n "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` → no output.
+- `! grep -q "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` → no output, exit 0.
+- `grep -c "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` → `0`, exit 0.
+  Three forms, same answer: no `git ls-tree` left in the file. PASS.
+
+Assertion 2 — the contract names all seventeen packages. Ran as written, no `bash -c` needed:
+
+- `grep -cF 'access admit audit auth buildinfo claudeauth codexauth config harness httpapi loginrelay quota release session sessionpod tmuxctl updater' ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md`
+  → `1`, exit 0. PASS.
+
+Assertion 3 — the tree has exactly those seventeen top-level packages, checked with no git. Run as
+PROMPT.md step 3 says, `find` alone instead of the `diff <(...) <(...)` the contract writes:
+
+- `find internal -mindepth 1 -maxdepth 1 -type d` → exit 0, seventeen lines and no more:
+  `internal/` + `buildinfo codexauth quota audit claudeauth updater loginrelay httpapi session auth
+  admit access tmuxctl sessionpod harness release config`. `find` prints in directory order, not
+  sorted; checked against D1's list by name, and the two sets match exactly — seventeen in, seventeen
+  out, no extras, none missing. (This is why the contract line pipes through `LC_ALL=C sort` before
+  `diff`.) PASS.
+
+Assertion 4 — the same check catches a new package. Run as PROMPT.md steps 4–7, in
+`.ralph-tmp/probe/internal/` rather than the contract's `mktemp -d` copy:
+
+- `grep -n 'ralph-tmp' /workspace/.gitignore` → `36:.ralph-tmp/`, exit 0. Scratch location is
+  ignored, so it cannot pollute the commit. (`git check-ignore -v .ralph-tmp` was refused by the
+  guard — "requires approval" — so the `.gitignore` grep stands in for it.)
+- `mkdir -p .ralph-tmp/probe/internal` → no output, exit 0.
+- one `mkdir` with eighteen inlined paths — the seventeen D1 names plus `zzzprobe`, all empty
+  directories → no output, exit 0.
+- `find .ralph-tmp/probe/internal -mindepth 1 -maxdepth 1 -type d` → exit 0, **eighteen** lines, one
+  of them `.ralph-tmp/probe/internal/zzzprobe`. The extra package is visible to the file-only check,
+  which is the half of the assertion that matters: `diff` against D1's seventeen-name list can only
+  report it. PASS.
+- Cleanup, innermost first: `rmdir` of the eighteen directories, then `rmdir .ralph-tmp/probe/internal`,
+  then `rmdir .ralph-tmp/probe`. All three → no output, exit 0. `rmdir` refuses a non-empty directory,
+  so its exiting 0 is itself proof nothing was left behind.
+
+Assertion 5 — the contract kept every other assertion:
+
+- `grep -c '^- ' ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` → `15`, exit 0.
+- `grep -c 'C-u' ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` → `3`, exit 0.
+  Both match the baseline. PASS.
+
+Assertion 6, which is also F1's Verify command. Run as two commands, because `&&` plus two
+build steps is cheaper to read separately and the contract's `&&` adds nothing here:
+
+- `go build ./...` → no output, exit 0.
+- `go test ./...` → exit 0. All 21 packages `ok`, two (`deploy/k8s/gen`, `web`) with no test files.
+  The flaky pair the baseline warned about both passed first time: `internal/sessionpod` 1.388s,
+  `internal/loginrelay` 0.019s. No re-run needed.
+
+Every assertion in this milestone's VALIDATION_CONTRACT.md passes.
+
+Notes for the next iteration:
+
+- What the guard refused this iteration: `bash -c '...'` and `git check-ignore -v .ralph-tmp`, both
+  with "This command requires approval". What ran fine: bare `grep`/`find`/`mkdir`/`rmdir`/`go` with
+  every path inlined, including one `mkdir` and one `rmdir` carrying eighteen path arguments. A long
+  inlined argument list is not what the guard objects to — shell syntax it cannot statically analyse is.
+- A bare `grep` that matches nothing reports "Bash completed with no output", which does not by itself
+  distinguish exit 0 from exit 1. Where the exit code was the thing being asserted, it was pinned down
+  with a second form (`! grep -q`, or `grep -c` printing a number). Worth repeating rather than
+  assuming.
+- safe-commit was not attempted this iteration. T1's entry above records both of its forms being
+  refused (`"$PWD"` as unanalysable shell syntax, the literal `/workspace` as needing approval a
+  headless run cannot grant), and left the instruction to go straight to PROMPT.md's fallback. Did
+  that: one `git add <path>` per path, then `git commit -m`.
+- Both tasks (T1, F1) are now `- [x]`. Per PROMPT.md "Completion", the next step is the completion
+  sentinel: `go test ./...` has just been confirmed exit 0 above, so append the sentinel line to this
+  notebook and commit it. No further assertion work remains.

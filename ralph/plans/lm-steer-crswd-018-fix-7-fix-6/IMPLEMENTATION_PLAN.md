@@ -54,7 +54,7 @@ milestone's contract. This milestone applies the same replacement to fix-7's con
 ## Tasks
 
 - [x] T1 Replace line 30 of `ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` with D1's line verbatim; change no other line. Verify: `! grep -q "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-7/VALIDATION_CONTRACT.md` exits 0, and `grep -c '^- '` on that file prints `15`.
-- [ ] F1 Run every assertion in this milestone's VALIDATION_CONTRACT.md as PROMPT.md's "How F1 runs a git-free assertion" says, and record each command, output and exit code in PROGRESS.md. Verify: `go build ./...` exits 0 and `go test ./...` exits 0.
+- [x] F1 Run every assertion in this milestone's VALIDATION_CONTRACT.md as PROMPT.md's "How F1 runs a git-free assertion" says, and record each command, output and exit code in PROGRESS.md. Verify: `go build ./...` exits 0 and `go test ./...` exits 0.
 
 ## Files touched
 
