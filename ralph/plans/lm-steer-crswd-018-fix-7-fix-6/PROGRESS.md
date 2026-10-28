@@ -135,3 +135,12 @@ Notes for the next iteration:
 - Both tasks (T1, F1) are now `- [x]`. Per PROMPT.md "Completion", the next step is the completion
   sentinel: `go test ./...` has just been confirmed exit 0 above, so append the sentinel line to this
   notebook and commit it. No further assertion work remains.
+
+## Completion (10/28/26)
+
+Both tasks are `- [x]`. PROMPT.md "Completion" step 1 re-run after F1's commit: `go test ./...` →
+exit 0, every package `ok` (mostly `(cached)`; `cmd/crswd` re-ran at 0.837s), the same two packages
+with no test files. Milestone done — fix-7's contract line 30 is now a git-free check and every
+assertion in this milestone's contract passes.
+
+RALPH_COMPLETE
