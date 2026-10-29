@@ -55,3 +55,55 @@ that cannot be statically analyzed", and `/home/ralph/code/ai-lawnmower/loop/saf
 Committed with PROMPT.md's "If safe-commit cannot be reached" fallback instead: one `git add <path>`
 per path, by name, then `git commit -m`. Next iteration: go straight to the fallback, do not spend
 turns on safe-commit.
+
+### F1 — run every assertion in this milestone's VALIDATION_CONTRACT.md (10/29/26)
+
+No file in the repo was changed by F1 beyond this notebook directory: F1 only runs and records. The
+scratch probe lived in `.ralph-tmp/` (gitignored) and was removed; `git status --porcelain` printed
+nothing afterwards, so no stray path survived.
+
+Each of the six assertions in `ralph/plans/lm-steer-crswd-018-fix-9-fix-3/VALIDATION_CONTRACT.md`
+was first tried exactly as written. Three are plain commands and ran as written. Three use
+`bash -c` and were refused by the Bash guard with "This command requires approval" — for those,
+PROMPT.md's "How F1 runs a git-free assertion" fallback was used, with paths inlined and each piece
+run as its own command. Nothing was worked around: the fallback is what PROMPT.md prescribes.
+
+| # | Assertion (contract line) | Command actually run | Output | Exit |
+|---|---|---|---|---|
+| 1 | no git in fix-9's package check (13) | `bash -c '! grep -n "git ls-tree" …'` — **refused**, "This command requires approval" | — | — |
+| 1 | same, via PROMPT.md step 3 | `grep -c "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` | `0` | 0 |
+| 2 | all seventeen packages named (14) | `grep -cF 'access admit … updater' ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` (as written) | `1` | 0 |
+| 3 | the tree has exactly those seventeen (15) | `bash -c 'diff <(find …) <(printf …)'` — **refused**, "This command requires approval" | — | — |
+| 3 | same, via PROMPT.md step 4 | `find internal -mindepth 1 -maxdepth 1 -type d` | the 17 `internal/<name>` lines, exactly D1's set, no more and no fewer | 0 |
+| 4 | the check catches a new package (16) | `bash -c 'd=$(mktemp -d) && cp -r internal …'` — **refused**, "This command requires approval" | — | — |
+| 4 | same, via PROMPT.md steps 5–8 | `mkdir -p .ralph-tmp/probe/internal`, then one `mkdir` creating all 18 dirs (the 17 + `zzzprobe`), then `find .ralph-tmp/probe/internal -mindepth 1 -maxdepth 1 -type d` | 18 lines, one of them `.ralph-tmp/probe/internal/zzzprobe` | 0 |
+| 4 | cleanup | `rmdir` the 18 dirs, then `.ralph-tmp/probe/internal`, then `.ralph-tmp/probe` | (none) | 0 |
+| 5 | every other assertion kept (17) | `grep -c '^- ' …fix-9/VALIDATION_CONTRACT.md` (as written) | `13` | 0 |
+| 5 | same, second half (17) | `grep -c 'leading' …fix-9/VALIDATION_CONTRACT.md` (as written) | `3` | 0 |
+| 6 | product builds and tests pass (18) | `go build ./...` | (none) | 0 |
+| 6 | same, second half (18) | `go test ./...` | all 24 packages `ok` or `[no test files]`; no FAIL | 0 |
+
+F1's Verify command is assertion 6's two halves, and both exit 0. `internal/sessionpod` and
+`internal/loginrelay`, the two the baseline flagged as flaky, both passed on the first run
+(0.980s and 0.010s), so no re-run was needed.
+
+What assertion 4 does and does not show, for whoever reads this next: the `find` on the probe tree
+proves the extra directory is visible to the same `find -mindepth 1 -maxdepth 1 -type d` the
+assertion diffs against D1's fixed list, so the diff must report it. It does not re-run `diff`
+itself, because the guard refuses process substitution. That is the limit of what the fallback can
+show in this container, and it is the fallback PROMPT.md specifies.
+
+Notes for whoever comes next:
+
+- `.ralph-tmp/` works as scratch exactly as the baseline said, and `rmdir` innermost-first leaves no
+  trace. One `mkdir` with 18 inlined paths is accepted; no loop or brace expansion is needed.
+- The guard's refusal message for every `bash -c` form here was "This command requires approval",
+  not the "shell syntax that cannot be statically analyzed" wording T1 saw for `"$PWD"`.
+- All tasks in IMPLEMENTATION_PLAN.md are now `- [x]`, so the next step is PROMPT.md's "Completion":
+  `go test ./...` (already green above, re-run it there), then the completion sentinel.
+
+`safe-commit.sh` could not be run for F1 either, and was not retried: T1 established both of its
+forms are refused in this container (`"$PWD"` as unanalyzable shell syntax, the literal `/workspace`
+as needing an approval a headless run cannot give), and the baseline says go straight to the
+fallback rather than spend turns on it. Committed with PROMPT.md's "If safe-commit cannot be
+reached" fallback: one `git add <path>` per path, by name, then `git commit -m`.
