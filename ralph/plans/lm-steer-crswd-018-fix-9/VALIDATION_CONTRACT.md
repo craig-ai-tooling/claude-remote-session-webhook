@@ -34,4 +34,4 @@ browser's `POST /dashboard/sessions/{id}/type` route is not on this rule.
 - `golangci-lint run` exits 0 where golangci-lint is installed.
 - No `go.sum` exists: `test ! -e go.sum` exits 0.
 - The API door still has exactly six routes: `grep -cE '^## \`(GET|POST|DELETE|PATCH|PUT) ' specs/001-crswd-daemon-core/contracts/http-api.md` prints `6`.
-- No new package under `internal/`: `bash -c 'diff <(git ls-tree -d --name-only main internal/) <(git ls-tree -d --name-only HEAD internal/)'` exits 0 and prints nothing.
+- No new package under `internal/` (the seventeen on `main` at `5ca1507`; checked from the files alone, because the verifier's copy has no `.git`): `bash -c 'diff <(find internal -mindepth 1 -maxdepth 1 -type d | LC_ALL=C sort) <(printf "internal/%s\n" access admit audit auth buildinfo claudeauth codexauth config harness httpapi loginrelay quota release session sessionpod tmuxctl updater)'` exits 0 and prints nothing.
