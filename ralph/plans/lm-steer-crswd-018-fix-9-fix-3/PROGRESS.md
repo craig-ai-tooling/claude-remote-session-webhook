@@ -16,3 +16,42 @@ starting a task. Do not redo finished work.
 - Earlier loops found `internal/sessionpod` and `internal/loginrelay` flaky under a loaded `go test ./...`. If either fails, re-run it alone with `go test -count=1 -p 1 ./internal/sessionpod/ ./internal/loginrelay/` before believing it. This milestone touches no Go.
 
 ## Iterations
+
+### T1 — replace line 37 of fix-9's VALIDATION_CONTRACT.md (10/29/26)
+
+Precondition checked first: line 37 of `ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md`
+still began `- No new package under` and still contained `git ls-tree`. It did, so T1 was in scope.
+
+Changed: line 37 only, replaced with D1's line verbatim via the Edit tool (one-line old_string →
+one-line new_string, so no other line could move). The trailing newline is intact — `wc -l` still
+prints `37`.
+
+Commands run and what they measured:
+
+| Command | Output | Exit |
+|---|---|---|
+| `! grep -q "git ls-tree" ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` | (none) | 0 |
+| `grep -c '^- ' ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` | `13` | 0 |
+| `wc -l ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` | `37 ralph/plans/…` | 0 |
+| `grep -c 'leading' ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` | `3` | 0 |
+| `git diff --name-only` | `ralph/plans/lm-steer-crswd-018-fix-9/VALIDATION_CONTRACT.md` | 0 |
+
+Both T1 Verify conditions hold, and the two baseline counts the plan said must not move (`^- ` = 13,
+`leading` = 3) are unchanged.
+
+Notes for the next iteration (F1):
+
+- The Edit tool took the `!`-prefixed and backtick-heavy replacement line without complaint; no
+  escaping surprises, and the literal `\n` inside `printf "internal/%s\n"` survived as two characters.
+- `! grep -q …` and `grep -c …` both ran as plain single commands — the Bash guard did not object to
+  the leading `!`. No `bash -c`, `$(...)` or pipe was needed for T1, so nothing was worked around.
+- F1 still has to run the contract's own assertions; expect the guard to refuse the `bash -c` forms
+  and to need PROMPT.md's "How F1 runs a git-free assertion" fallback.
+
+`safe-commit.sh` could not be run, exactly as the baseline said. Both forms were tried once:
+`~/code/ai-lawnmower/loop/safe-commit.sh "$PWD" …` was refused with "Contains shell syntax (string)
+that cannot be statically analyzed", and `/home/ralph/code/ai-lawnmower/loop/safe-commit.sh
+/workspace …` was refused with "This command requires approval", which a headless run cannot give.
+Committed with PROMPT.md's "If safe-commit cannot be reached" fallback instead: one `git add <path>`
+per path, by name, then `git commit -m`. Next iteration: go straight to the fallback, do not spend
+turns on safe-commit.
