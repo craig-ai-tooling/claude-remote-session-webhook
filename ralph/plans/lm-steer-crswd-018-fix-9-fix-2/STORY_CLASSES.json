@@ -1,0 +1,88 @@
+{
+  "v": 1,
+  "plan": "lm-steer-crswd-018-fix-9-fix-2",
+  "question_set": "jev-story-v1",
+  "state_template": "story-state-v1",
+  "plan_blob": "635514b68f805bdc3f89d77b13b4f11f218e8f9a",
+  "jev_model": null,
+  "classified_at": "2026-10-29T12:38:37Z",
+  "refused": "email",
+  "tier_table": {
+    "light": {
+      "claude": "haiku",
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "enabled": false
+      }
+    },
+    "standard": {
+      "claude": "sonnet",
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "enabled": false
+      }
+    },
+    "heavy": {
+      "claude": "opus",
+      "codex": {
+        "model": "gpt-6-astra",
+        "enabled": false
+      }
+    }
+  },
+  "tier_table_source": "/home/nctiggy/code/ai-lawnmower/policy/models.yaml story_tiers",
+  "stories": {
+    "cb68c8d4407f53ef": {
+      "index": 0,
+      "mark": " ",
+      "label": "T1 host: rebuild the linter. Run `GOTOOLCHAIN=local GOBIN=\"$(dirname \"$(command ",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "b282e7d499f3bbc7": {
+      "index": 1,
+      "mark": " ",
+      "label": "T2 host: clear the shared cache. Run `golangci-lint cache clean`, then `golangci",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "a951892cb3b89d13": {
+      "index": 2,
+      "mark": " ",
+      "label": "T3 docs: append one line dated 2026-10-29 to `docs/fixes-log.md` in its existing",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    },
+    "1fc93c1341a01969": {
+      "index": 3,
+      "mark": " ",
+      "label": "F1 final: run every command in VALIDATION_CONTRACT.md and record each result in ",
+      "status": "unjudged",
+      "reason": "refused: email",
+      "answers": null,
+      "facts": null,
+      "tier": null,
+      "tier_reason": null,
+      "executor": null,
+      "usage": null
+    }
+  }
+}
