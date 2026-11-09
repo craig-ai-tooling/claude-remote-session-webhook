@@ -77,7 +77,7 @@ posture), channel create/archive, message formatting and chunking, rate-limit qu
 3. Per-session hook injection and an event sink, as `harness.Spec` data (`HookFlags`, `EventSource`).
 4. A per-session `surfaces` field, independent of `Mode`: `Mode` stays `local|remote` (Claude's native
    RC, per `docs/harnesses.md`), `surfaces=[slack]` works for every harness. This is the "enable Slack
-   remote control" switch, and it is the one that works behind Launchpad.
+   remote control" switch, and it works behind Launchpad.
 5. Env for the router: crswd starts commands by name only; how `ANTHROPIC_BASE_URL` and a Launchpad
    `lpai_` token reach a session needs a check against spec 008 (session environment boundary). Not
    verified here.
