@@ -1,135 +1,162 @@
 # Slack as a remote surface for coding agents: exploration
 
-Status: exploration, 11/9/26. Nothing here is built. No spec exists yet (next would be spec 021).
+Status: exploration, second pass 11/9/26. Nothing here is built and no spec exists (next would be
+spec 021). Every claim below is tagged as measured (run on this box), internal (Super / Spectro
+docs), or docs (vendor or third-party docs, not run).
 
 ## The ask
 
-Drive Claude Code, Codex, Gemini and Grok sessions from Slack, Devin-style: one channel per
+Drive Claude Code, Codex, Gemini and Grok sessions from Slack, Devin-style. One channel per
 session, live progress, Slack messages become prompts, archiving the session archives the channel.
-The reason is PaletteAI Launchpad. A model router needs `ANTHROPIC_BASE_URL` pointed at it, and
-Claude Code's native Remote Control turns itself off in that case (it needs a claude.ai login and
-Anthropic's own endpoint; confirmed in the [Remote Control docs](https://code.claude.com/docs/en/remote-control)
-and [issue 59062](https://claudeissues.com/issue/59062-bug-remote-control-wont-work-when-anthropic-auth-token-or-anthropic-api-key-is-s)).
-So the Slack path must not depend on anything Anthropic hosts.
+The reason is PaletteAI Launchpad: once a CLI's model traffic goes through the router, Claude Code's
+Remote Control stops working. "Slack remote control" should be a per-session switch beside native
+Remote Control.
 
-## What crswd gives us today
+## What changes the plan
 
-| Need | Today | Gap |
+1. **Native Claude features are closed behind the router. Measured, Claude Code 2.1.319.** With
+   router-style auth (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`, separate config dir, no
+   claude.ai login), `/remote-control` is an unknown command and `--channels` prints "Channels are
+   not currently available". Channels are Claude's native "push a chat message into a running
+   session" feature. They would have been the cheapest Slack path for Claude.
+2. **The same channel works under a claude.ai login, even with a custom base URL. Measured.** A
+   30-line MCP channel server injected `PING-FROM-SLACK-TEST` into the session, and Claude then
+   called the custom URL. This is not a usable route to Launchpad: Claude would send the user's
+   claude.ai OAuth bearer to the router, which leaks a subscription credential to another host.
+3. **Gemini CLI cannot reach Launchpad. Internal (Super, AIL-4, AIL-731, AIL-723).** The router
+   exposes OpenAI `/v1` (chat completions and Responses) and Anthropic `/v1/messages`. It has no
+   Gemini-protocol endpoint, and Gemini CLI only speaks Gemini's protocol
+   (`GOOGLE_GEMINI_BASE_URL`). "All four behind Launchpad" is three at best until Launchpad adds a
+   Gemini endpoint. Gemini through Slack direct to Google still works.
+4. **Grok behind Launchpad is unverified.** Grok Build takes a custom `base_url` per model in
+   `~/.grok/config.toml` (docs). Super says it would have to target `/v1`. Nobody has confirmed
+   which wire format Grok Build sends there.
+5. **Codex already has a multi-client protocol. Measured, codex-cli 0.160.1.** `codex app-server
+   --listen ws://…` serves JSON-RPC, and the TUI can attach to it (`codex --remote ws://…`). Two
+   websocket clients connected to one app-server. Client B received `thread/started` and
+   `thread/name/updated` for a thread client A created, without subscribing. The protocol has
+   approval requests (`item/commandExecution/requestApproval`, `item/fileChange/requestApproval`)
+   and a `serverRequest/resolved` notification. **Not tested:** turn events, and whether an
+   approval request reaches every client. That needs a model call.
+6. **Someone has built most of this already.** [openab](https://github.com/openabdev/openab)
+   (MIT, Rust, 834 stars, last push 10/31/26) bridges Slack (Socket Mode) to any ACP agent. Its
+   docs cover Claude (`claude-agent-acp`), Codex (`codex-acp`), Gemini (`gemini --acp`) and Grok
+   (`grok agent stdio`), and it ships a Helm chart. Verified from its repo docs.
+7. **Slack has an API for exactly "a channel per session". Docs.** `agents.conversations.create`
+   (with `session_id` for idempotency), `agents.sessions.setStatus`, and
+   `agents.conversations.archive` with a summary message. It is gated: `feature_disabled` unless
+   the app is a recognized agent-session app. Plain `conversations.create` / `.archive` work
+   regardless.
+
+No Launchpad was reachable from this box (`launchpad.lab.internal` does not resolve), so nothing
+was run against a real router.
+
+## What the first pass got wrong
+
+- It implied all four providers work behind Launchpad. Gemini does not (finding 3).
+- It treated Slack streaming as unknown. `chat.startStream` exists, but a stream lives at most 10
+  minutes, so long agent turns need `chat.postMessage` + status updates anyway.
+- It did not check prior art. openab, cc-connect and others exist (below).
+- It proposed hooks + screen scraping for every harness. Codex has a structured, multi-client
+  protocol that removes the scraping for Codex entirely.
+
+## The common layer: ACP
+
+The [Agent Client Protocol](https://agentclientprotocol.com) is JSON-RPC over stdio. A client
+spawns the agent and calls `session/new` or `session/load`, then `session/prompt`. The agent
+streams `session/update` (message chunks, tool calls, plan), asks `session/request_permission`
+(maps to Slack approve/deny buttons), and takes `session/cancel`. Docs, not run here:
+
+| Agent | ACP entry point | Permission requests | Resume | Custom endpoint |
+|---|---|---|---|---|
+| Claude Code | `claude-agent-acp` adapter over the Agent SDK | yes | yes (`session/resume`) | SDK honours `ANTHROPIC_BASE_URL`; adapter does not document it |
+| Codex | `codex-acp` adapter over app-server | yes | unverified | `[model_providers]` with `wire_api = "responses"`, as Launchpad's own Codex setup uses |
+| Gemini | native `gemini --acp` | yes (third-party report) | yes (`loadSession`) | Gemini protocol only, so not Launchpad |
+| Grok | native `grok agent stdio` | yes | unverified | `base_url` per model, format unverified |
+
+The cost of ACP: the agent runs headless. There is no TUI in a tmux pane for crswd's dashboard to
+show, and slash commands and TUI-only features are gone.
+
+## Prior art
+
+| Project | Fit | Gaps for this ask |
 |---|---|---|
-| Create / list / destroy a session | Signed API: `POST/GET /sessions`, `GET/DELETE /sessions/{id}` | None |
-| Send a prompt | Signed `POST /sessions/{id}/prompt` | None |
-| Read output | Signed `GET /sessions/{id}/output` (tmux screen text). Browser door has an SSE screen stream | Output is a terminal screen, not messages. Redraws, spinners and diffs make a bad Slack feed |
-| Press keys (approve, Esc, Ctrl-C) | Browser door only (spec 018) | No signed route |
-| Lifecycle events | Browser-door fleet SSE; signed door must poll `GET /sessions` | No signed event feed |
-| Dialog detection (trust, approval) | `session.DetectDialogFor` per harness | Internal only |
-| Harness differences | `internal/harness.Spec`: Claude and Codex, everything else is `Other` | Gemini and Grok are `Other` |
-| Remote control | `Mode=remote` is `claude --remote-control`, Claude only | Slack is a different axis, see below |
-| Isolation, audit, k8s pods, resume | Done (specs 008, 012, 017) | Reuse, do not rebuild |
+| **openab** | Slack + all four via ACP, Helm, `allowed_users`, Slack streaming, session pool with idle TTL | Thread per session, not channel. Permission requests are **auto-replied**, so nobody approves actions on an unsandboxed host. No cancel on Slack (its docs say so). Router env pass-through unverified |
+| cc-connect (16k stars, active) | Slack, Telegram and others; Claude, Codex, Gemini, any ACP | Grok not listed. Licence unclear (README says MIT, GitHub API shows none). Slack session model and buttons unverified |
+| Untether | Best approval UX (inline buttons) | Telegram only, dropped Gemini |
+| Claude Code in Slack (Anthropic) | Polished | Runs Claude Code on the web. Disqualified by the router |
+| happy, omnara | Active | Own apps, not Slack |
 
-crswd never opens a conversation `.jsonl` (spec 013 FR-025). Any structured-output design has to
-respect that or change it deliberately in a spec.
+No project found does channel-per-session on Slack. All use threads.
 
-## The central problem: structured output
+## How this relates to crswd
 
-Slack wants messages ("ran tests, 3 failed", "needs approval: rm -rf build"). tmux gives a
-repainted screen. Four ways to get messages, per provider:
+crswd is a tmux runtime. Its signed API is six routes: create, list, get and destroy a session,
+send a prompt, read the screen. Keys and the live stream are on the browser door only. It never
+opens a conversation transcript (spec 013 FR-025). What each option asks of it:
 
-| Provider | Structured side channel (verify before relying) |
+| Need | ACP route (openab or own) | crswd-native route |
+|---|---|---|
+| Session lifecycle | owned by the bridge; crswd not involved | crswd, as today |
+| Structured output | ACP `session/update` | Claude: hooks via `--settings`. Codex: app-server second client. Others: screen diff |
+| Approvals | `session/request_permission` to Slack buttons | Claude: none in the TUI except key presses. Codex: app-server approval requests |
+| Dashboard visibility | none | as today, the TUI is still there |
+| crswd changes | none | signed key route, lifecycle feed, hook injection, Codex app-server launch, a `surfaces` field beside `Mode` |
+
+## Security
+
+A Slack message that reaches an agent is unsandboxed code execution on the host. Whichever option:
+
+- Authorize by Slack user ID allowlist on every event. Channel membership is not authorization.
+- Private channels only. Drop events with `bot_id`, a subtype, or a user not on the list.
+- Approvals for shell and file changes go to a button only an allowlisted user can press. openab's
+  auto-reply has to be replaced before it runs on a host that matters.
+- Output posted to Slack leaves the host and may hold secrets. Default it per session, opt-in.
+- Never route a claude.ai OAuth token through the router (finding 2).
+
+## Slack limits that shape the bot
+
+`chat.postMessage` about 1/sec per channel, which favours a channel per session over one shared
+channel. `chat.update` rejects text over 4,000 chars. Long output goes up as a file
+(`files.getUploadURLExternal` + `files.completeUploadExternal`). `conversations.create` and
+`.archive` are Tier 2 (20/min). Socket Mode allows 10 connections per app and keeps the host free
+of inbound ports. On an Enterprise Grid org, admin approval of apps is on by default.
+
+## Options
+
+**A. Spike openab (adopt).** Deploy its Helm chart on the Pi cluster with Claude and Codex pointed
+at Launchpad. Measure the router env pass-through and how the thread UX feels. Then upstream or
+fork: channel-per-session, archive on close, human approvals, cancel. Cheapest way to learn, with
+no crswd change. Leaves crswd and Slack sessions as two separate worlds.
+
+**B. Build crswd-native.** A `crswd-slack` bridge as a signed crswd client. Claude: TUI in tmux,
+hooks for output, prompts via the existing route, approvals limited to key presses. Codex: TUI
+attached to an app-server, bridge as a second client with real approvals. Gemini and Grok: screen
+diff until each is wired. Keeps one session world and the dashboard. Most crswd work.
+
+**C. Headless ACP runner inside crswd.** crswd gains a second runtime: ACP sessions with a
+transcript view instead of a pane, Slack as one client. Uniform across all four agents. Largest
+change, and it means two runtimes in one daemon.
+
+Recommendation: **A first, for one or two days**, because it answers the router and UX questions
+with real sessions for little cost. Decide between forking openab and B with that evidence.
+
+## Phases after the decision
+
+| Phase | Work |
 |---|---|
-| Claude Code | Hooks (`Stop`, `Notification`, `PreToolUse`, `PostToolUse`, `UserPromptSubmit`) injected with `--settings`; hook payload names the transcript path. Or headless `claude -p --output-format stream-json` / Agent SDK with permission callbacks |
-| Codex | Hooks (crswd already passes `--dangerously-bypass-hook-trust`), `codex exec --json`, rollout files, `codex app-server` |
-| Gemini CLI | Headless `--output-format stream-json` ([docs](https://geminicli.com/docs/cli/headless/)). No stream-json input, so no interactive approve/deny headless. Hooks exist, whether they fire in headless is unverified |
-| Grok Build | Headless `--output-format streaming-json`; 0.2.116 added tool calls, results and usage, and a `streaming-messages-json` format ([docs](https://docs.x.ai/build/cli/headless-scripting)). Schema not formally published |
-| Any other CLI | Fallback: diff the tmux screen, post only settled frames |
+| 0 | Slack app in a sandbox or the chosen workspace; openab on the cluster with Claude + Codex on Launchpad |
+| 1 | Channel per session + archive on end; human approvals; allowlist; opt-in output |
+| 2 | Grok on Launchpad once its wire format is confirmed; Gemini direct to Google, or on Launchpad once it has a Gemini endpoint |
+| 3 | crswd integration chosen from A/B/C: a `surfaces=[slack]` field beside `Mode`, so the Slack switch lives on the session |
 
-I did not run Gemini or Grok. The table is from docs and third-party notes.
+## What was run
 
-## Two architectures
-
-**A. Bridge beside crswd, TUI stays in tmux (recommended).**
-A new `crswd-slack` binary is an ordinary signed client of crswd, like `crswd-axi`. crswd keeps
-owning sessions, isolation, audit, k8s, resume. The bridge owns Slack. Output comes from the
-provider's side channel (hooks posting to the bridge, or the file path a hook names), with
-screen-diff as fallback. Input goes through `/prompt`, plus a new signed key route for approvals.
-Works unchanged for Claude, Codex, `Other`, and in k8s mode. Cost: hook injection per harness,
-and Slack buttons for approvals have to be mapped onto key presses in a TUI.
-
-**B. Headless runner, no tmux.**
-Run each agent as `claude -p --input-format stream-json --output-format stream-json` (or the Agent
-SDK) and speak JSON. Cleanest Slack UX: Block Kit approve/deny from a permission callback, real
-streaming. Cost: it is a second runtime beside crswd's tmux one, duplicates lifecycle, resume and
-isolation, and Gemini has no equivalent input mode. That is a structural decision, so it needs
-Craig's call. Not recommended as the first move.
-
-A can grow into B for Claude later without throwing the bridge away: the bridge's internal
-interface is "session events in, prompts and decisions out".
-
-## What is independent of crswd
-
-All of the Slack side: app manifest, Socket Mode connection (no inbound port, matching crswd's
-posture), channel create/archive, message formatting and chunking, rate-limit queue, mapping
-`session id <-> channel id` (small on-disk store), Slack-user authorization.
-
-## What touches crswd
-
-1. Signed key/approve route (today browser door only).
-2. Signed lifecycle feed, or the bridge polls `GET /sessions` every few seconds (fine for phase 1).
-3. Per-session hook injection and an event sink, as `harness.Spec` data (`HookFlags`, `EventSource`).
-4. A per-session `surfaces` field, independent of `Mode`: `Mode` stays `local|remote` (Claude's native
-   RC, per `docs/harnesses.md`), `surfaces=[slack]` works for every harness. This is the "enable Slack
-   remote control" switch, and it works behind Launchpad.
-5. Env for the router: crswd starts commands by name only; how `ANTHROPIC_BASE_URL` and a Launchpad
-   `lpai_` token reach a session needs a check against spec 008 (session environment boundary). Not
-   verified here.
-6. Close hook: on destroy or reap, crswd tells the bridge, the bridge archives the channel.
-
-## Security: the part that decides the design
-
-A Slack message that reaches `/prompt` is unsandboxed code execution on the host. So:
-
-- Authorization is a Slack user ID allowlist in the bridge config, checked on every event. Channel
-  membership alone is not authorization.
-- Private channels only, created by the bot. Ignore bot messages, edits, and anything from a user
-  not on the list, including in shared or Slack Connect channels.
-- Output posted to Slack leaves the host. Pane and transcript content can hold secrets. Redaction
-  and an opt-in per session are needed, and `docs/security.md` rules for rendering pane output apply.
-- Slack tokens (bot, app-level) live only in the bridge. crswd's HMAC key lives in the bridge too,
-  scoped to that client.
-- Prompt injection: a session that reads Slack threads or web pages can be steered. Approvals for
-  destructive actions should require the allowlisted user's button press, not text.
-
-## Slack constraints that shape it
-
-Channel names: lowercase, 80 chars. `conversations.create` and `chat.postMessage` are rate limited
-(about one message per second per channel), so the bridge batches and edits one "status" message
-rather than posting per tool call. Message text is capped (40k; section blocks 3k), so long output
-goes as a file snippet. Needs scopes for channels/groups write and manage, chat write, files write,
-and Socket Mode. Channel sprawl is real: offer `channel` (default, as asked) or `thread` per session
-in one channel. Slack's newer streaming APIs for AI apps may suit live progress; unverified.
-
-## Phases
-
-| Phase | What | Crswd change | Rough size |
-|---|---|---|---|
-| 0 | Spike: Slack app, one hard-coded session, poll `/output`, post settled diffs, Slack text to `/prompt` | none | 1-2 days |
-| 1 | Channel per session, archive on close, allowlist authz, rate-limited status message, Claude hooks as source | hook injection | about 1 week |
-| 2 | Spec 021: `surfaces`, signed key route, lifecycle feed, Slack approve buttons | yes | 1-2 weeks |
-| 3 | Codex adapter (hooks / `exec --json`) | `Spec` data | few days |
-| 4 | Gemini, Grok adapters; fallback screen mode for the rest | `Spec` data | few days each, after verifying each CLI |
-| 5 | Optional headless runner for Claude (architecture B) | large | decide after phase 2 |
-
-Phase 0 needs a Slack app in Spectro's workspace; that is a workspace admin step.
-
-## Decisions for Craig
-
-1. Architecture A (bridge, tmux stays) or B (headless runner). Recommend A.
-2. Channel per session (as asked) or thread per session.
-3. Same repo (`cmd/crswd-slack`, shares `internal/harness`) or its own repo. Recommend same repo.
-4. Whether output may leave the host to Slack by default, or only per-session opt-in.
-5. Who creates the Slack app and in which workspace.
-
-## Checked, not built
-
-Repo read: AGENTS.md, `docs/harnesses.md`, `internal/harness`, `internal/session/input.go`,
-`internal/httpapi` routes and stream. Web: Remote Control requirements, Gemini and Grok headless docs.
-Not run: any Slack API call, any Gemini or Grok CLI, any hook.
+- Claude Code 2.1.319 in a private tmux socket: token auth plus custom base URL, Remote Control
+  and channels both checked; claude.ai login plus custom base URL, channel injection checked. Test
+  server at the session scratchpad, not committed.
+- codex-cli 0.160.1 app-server on loopback with a scratch `CODEX_HOME`, two websocket clients, no
+  model calls.
+- Super query on Launchpad's client protocols.
+- Repo docs read for openab (Slack, Claude, Codex, Gemini, Grok pages).
+- Not run: any Slack API call, any Gemini or Grok CLI, any request to a real Launchpad.
