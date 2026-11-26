@@ -21,20 +21,13 @@ jobs:
   # ---------------------------------------------------------------------------
   guardrails:
     name: Template guardrails
-    # Self-hosted (#77). GitHub-hosted runners stalled for six hours on
-    # 2026-08-06 — checks queued at 16:37Z were still queued at 22:43Z — and
-    # three verified branches could not merge because main requires checks that
-    # were never going to run.
-    #
-    # These are crswd-runner-1/2 on the lab's VLAN 19, sharing hosts with the
-    # nodewright and smart-gate-trigger runners. If they go offline, jobs
-    # targeting them queue forever: the same failure this replaced, with a
-    # different cause. Treat "runner offline" as an outage.
-    #
-    # The claude-fix lane deliberately stays on GitHub-hosted: it carries a
-    # subscription token and runs an agent with write access, and it should not
-    # share a machine with code from pull requests.
-    runs-on: [self-hosted, linux, x64]
+    # GitHub-hosted. From #77 (8/6/26) this ran on crswd-runner-1/2, lab VMs on
+    # VLAN 19, after hosted runners stalled for six hours. By 11/26/26 both were
+    # gone (runner-1 offline, runner-2 unregistered, alongside the sgt and
+    # nodewright runners on the same hosts), and every PR sat queued 24 h and was
+    # cancelled. This repo is public: hosted minutes are free here, and a public
+    # repo's pull requests must not run on the lab's own machines.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -142,7 +135,7 @@ jobs:
   # ---------------------------------------------------------------------------
   project:
     name: Build / test / lint
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     needs: guardrails
     steps:
       - uses: actions/checkout@v7
@@ -206,9 +199,14 @@ jobs:
       # runs is worse than no suite, because it reads as coverage.
       #
       # They need a real tmux and a real binary, which is what they are for and
-      # why they are tagged. The self-hosted runners have tmux; the `has` probe
-      # in tmuxctl is what turns its absence into a skip rather than a failure,
-      # so a runner without one reports honestly instead of going red.
+      # why they are tagged. The hosted image has no tmux, and the `has` probe
+      # in tmuxctl would turn that into a silent skip, so install it here.
+      - name: Install tmux
+        if: steps.stack.outputs.present == 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tmux
+
       - name: Test (tmux)
         if: steps.stack.outputs.present == 'true'
         run: go test -tags tmux ./...

@@ -442,6 +442,11 @@ func (h *host) env(over map[string]string) []string {
 		// Empty of shell startup files, so the pane's login shell cannot undo
 		// the PATH above and shadow the stand-in with the real thing.
 		"HOME": h.home,
+
+		// config.JournalPath prefers XDG_CONFIG_HOME over $HOME/.config, and
+		// GitHub-hosted runners set it, so the daemon wrote its journal outside
+		// the suite's temp home and TestSessionCarriesWhatRevivalNeeds found none.
+		"XDG_CONFIG_HOME": unset,
 	}
 	for k, v := range over {
 		base[k] = v
